@@ -1,17 +1,20 @@
-import { base44 } from '@/api/base44Client';
+import { base44, supabase } from '@/api/base44Client';
 
 /**
- * Update budget category (BudgetAllocation) when order status changes.
- * 
+ * Update budget category (BudgetAllocation) or supplier credit when an order's
+ * status changes.
+ *
  * Rules:
  * - Draft → no effect
- * - Approved → add to category.reserved_amount
- * - Received (full/partial) → move from reserved to spent
+ * - Approved → add to reserved_amount
+ * - Received (full/partial) → move from reserved to spent/used
  * - Cancelled → release from reserved
- * 
- * BudgetSource totals are always auto-computed from categories on the Credits page.
+ *
+ * The actual mutation happens atomically in Postgres via the
+ * apply_order_budget_transition RPC (supabase/migrations/0003_budget_inventory_rpc.sql) —
+ * it re-validates the budget_updated guard and locks the relevant rows itself,
+ * so a stale client-side read can't cause a double-application or lost update.
  */
-
 export async function handleBudgetOnStatusChange(order, newStatus) {
   if (!order.budget_category_id && !order.credit_id) return;
   if (order.budget_updated && newStatus === 'approved') {
@@ -22,143 +25,29 @@ export async function handleBudgetOnStatusChange(order, newStatus) {
   const amount = order.total_amount || 0;
   if (amount <= 0) return;
 
-  try {
-    if (order.budget_category_id) {
-      await updateBudgetCategory(order, newStatus, amount);
-    } else if (order.credit_id) {
-      await updateSupplierCredit(order, newStatus, amount);
-    }
-  } catch (e) {
-    console.error('Budget update failed:', e);
-    throw e;
-  }
-}
-
-async function updateBudgetCategory(order, newStatus, amount) {
-  const cats = await base44.entities.BudgetAllocation.filter({ id: order.budget_category_id });
-  if (!cats[0]) return;
-
-  const cat = cats[0];
-  let updates = {};
-  let transactionEntry = null;
-
-  if (newStatus === 'approved') {
-    updates.reserved_amount = (cat.reserved_amount || 0) + amount;
-    await base44.entities.PurchaseOrder.update(order.id, { budget_updated: true });
-
-  } else if (newStatus === 'received_full' || newStatus === 'received_partial') {
-    updates.reserved_amount = Math.max(0, (cat.reserved_amount || 0) - amount);
-    updates.spent_amount = (cat.spent_amount || 0) + amount;
-
-    transactionEntry = {
-      date: new Date().toISOString().split('T')[0],
-      amount,
-      supplier_name: order.supplier_name || '',
-      description: `הזמנת רכש שהתקבלה: ${order.title || order.id}`,
-      is_manual: false,
-      order_id: order.id,
-    };
-
-  } else if (newStatus === 'cancelled') {
-    updates.reserved_amount = Math.max(0, (cat.reserved_amount || 0) - amount);
-    await base44.entities.PurchaseOrder.update(order.id, { budget_updated: false });
-  }
-
-  if (Object.keys(updates).length > 0) {
-    const newReserved = updates.reserved_amount !== undefined ? updates.reserved_amount : (cat.reserved_amount || 0);
-    const newSpent = updates.spent_amount !== undefined ? updates.spent_amount : (cat.spent_amount || 0);
-    updates.remaining_amount = Math.max(0, (cat.allocated_amount || 0) - newReserved - newSpent);
-
-    if (transactionEntry) {
-      updates.transactions = [...(cat.transactions || []), transactionEntry];
-    }
-
-    await base44.entities.BudgetAllocation.update(cat.id, updates);
-  }
-
-  // Recalculate BudgetSource totals
-  if (cat.budget_source_id) {
-    await recalcBudgetSource(cat.budget_source_id);
-  }
-}
-
-async function updateSupplierCredit(order, newStatus, amount) {
-  const crs = await base44.entities.SupplierCredit.filter({ id: order.credit_id });
-  if (!crs[0]) return;
-
-  const credit = crs[0];
-  let updates = {};
-
-  if (newStatus === 'approved') {
-    updates.reserved_amount = (credit.reserved_amount || 0) + amount;
-    await base44.entities.PurchaseOrder.update(order.id, { budget_updated: true });
-
-    updates.transactions = [...(credit.transactions || []), {
-      date: new Date().toISOString().split('T')[0],
-      amount,
-      order_id: order.id,
-      description: `שוריין להזמנה ${order.title || order.id}`,
-      action: 'reserved',
-    }];
-
-  } else if (newStatus === 'received_full' || newStatus === 'received_partial') {
-    updates.reserved_amount = Math.max(0, (credit.reserved_amount || 0) - amount);
-    updates.used_amount = (credit.used_amount || 0) + amount;
-
-    updates.transactions = [...(credit.transactions || []), {
-      date: new Date().toISOString().split('T')[0],
-      amount,
-      order_id: order.id,
-      description: `נוצל להזמנה ${order.title || order.id}`,
-      action: 'used',
-    }];
-
-  } else if (newStatus === 'cancelled') {
-    updates.reserved_amount = Math.max(0, (credit.reserved_amount || 0) - amount);
-    await base44.entities.PurchaseOrder.update(order.id, { budget_updated: false });
-
-    updates.transactions = [...(credit.transactions || []), {
-      date: new Date().toISOString().split('T')[0],
-      amount,
-      order_id: order.id,
-      description: `שוחרר מביטול הזמנה ${order.title || order.id}`,
-      action: 'released',
-    }];
-  }
-
-  if (Object.keys(updates).length > 0) {
-    const newReserved = updates.reserved_amount !== undefined ? updates.reserved_amount : credit.reserved_amount;
-    const newUsed = updates.used_amount !== undefined ? updates.used_amount : credit.used_amount;
-    updates.remaining_amount = Math.max(0, (credit.total_amount || 0) - (newReserved || 0) - (newUsed || 0));
-
-    if (updates.remaining_amount !== undefined && updates.remaining_amount <= 0 && credit.status === 'active') {
-      updates.status = 'exhausted';
-    }
-
-    await base44.entities.SupplierCredit.update(credit.id, updates);
+  const { error } = await supabase.rpc('apply_order_budget_transition', {
+    p_order_id: order.id,
+    p_new_status: newStatus,
+  });
+  if (error) {
+    console.error('Budget update failed:', error);
+    throw error;
   }
 }
 
 /**
- * Recalculate BudgetSource totals from its categories.
+ * Recalculate BudgetSource totals from its categories (also called internally
+ * by the apply_order_budget_transition RPC after it updates a category).
  */
 export async function recalcBudgetSource(sourceId) {
-  const cats = await base44.entities.BudgetAllocation.filter({ budget_source_id: sourceId }, 'name', 200);
-  const total = cats.reduce((s, c) => s + (c.allocated_amount || 0), 0);
-  const reserved = cats.reduce((s, c) => s + (c.reserved_amount || 0), 0);
-  const spent = cats.reduce((s, c) => s + (c.spent_amount || 0), 0);
-  const available = Math.max(0, total - reserved - spent);
-
-  await base44.entities.BudgetSource.update(sourceId, {
-    total_amount: total,
-    reserved_amount: reserved,
-    spent_amount: spent,
-    available_amount: available,
-  });
+  const { error } = await supabase.rpc('recalc_budget_source', { p_source_id: sourceId });
+  if (error) throw error;
 }
 
 /**
- * Validate budget selection for an order.
+ * Validate budget selection for an order. Stays a plain client-side read (no
+ * mutation risk) — a lightweight pre-flight UX check; the RPC above is the
+ * authoritative check and will reject if this pre-check was stale.
  */
 export async function validateBudgetSelection(order) {
   const amount = order.total_amount || 0;

@@ -2,11 +2,9 @@ import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { base44 } from '@/api/base44Client';
+import { base44, supabase } from '@/api/base44Client';
 import { canManageInventory } from '@/lib/permissions';
 import { Package, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -51,7 +49,6 @@ export default function GoodsReceiptDialog({ open, onOpenChange, order, onConfir
     setSaving(true);
 
     const allFull = items.every((item, i) => (receivedQtys[i] || 0) >= (item.quantity || 0));
-    const someReceived = items.some((item, i) => (receivedQtys[i] || 0) > 0);
     const status = allFull ? 'received_full' : 'received_partial';
     const today = new Date().toISOString().split('T')[0];
 
@@ -59,66 +56,27 @@ export default function GoodsReceiptDialog({ open, onOpenChange, order, onConfir
       const userData = await base44.auth.me().catch(() => ({}));
       const confirmedBy = userData?.full_name || userData?.email || '';
 
-      // Update inventory for each received item
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const qty = receivedQtys[i] || 0;
-        if (qty <= 0) continue;
-
-        // Match: by name + category
-        const existing = await base44.entities.InventoryItem.filter({
+      const receivedItems = items
+        .map((item, i) => ({
           name: item.name,
-          category: order.category,
-        });
+          quantity: receivedQtys[i] || 0,
+          unit_price: item.unit_price || 0,
+          isbn: item.isbn || '',
+        }))
+        .filter((item) => item.quantity > 0);
 
-        const movement = {
-          date: today,
-          type: 'קבלת הזמנה',
-          purchase_order_id: order.id,
-          supplier_name: order.supplier_name || '',
-          quantity_added: qty,
-        };
-
-        if (existing.length > 0) {
-          const inv = existing[0];
-          const movements = [...(inv.movements || []), movement];
-          await base44.entities.InventoryItem.update(inv.id, {
-            current_quantity: (inv.current_quantity || 0) + qty,
-            last_purchase_order_id: order.id,
-            last_received_date: today,
-            last_supplier_id: order.supplier_id || '',
-            last_unit_price: item.unit_price || 0,
-            supplier_id: order.supplier_id || inv.supplier_id,
-            supplier_name: order.supplier_name || inv.supplier_name,
-            movements,
-          });
-        } else {
-          await base44.entities.InventoryItem.create({
-            name: item.name,
-            category: order.category || '',
-            subcategory: order.subcategory || '',
-            current_quantity: qty,
-            minimum_quantity: 1,
-            unit: 'יחידות',
-            last_purchase_order_id: order.id,
-            last_received_date: today,
-            last_supplier_id: order.supplier_id || '',
-            last_unit_price: item.unit_price || 0,
-            supplier_id: order.supplier_id || '',
-            supplier_name: order.supplier_name || '',
-            isbn: item.isbn || '',
-            movements: [movement],
-          });
-        }
-      }
-
-      // Update order
-      await base44.entities.PurchaseOrder.update(order.id, {
-        status,
-        received_date: today,
-        receipt_confirmed_by: confirmedBy,
-        inventory_updated: true,
+      // Atomic on the Postgres side: upserts inventory_items (match by name +
+      // category), appends a movement per item, and marks the order received —
+      // all in one transaction (see apply_goods_receipt in
+      // supabase/migrations/0003_budget_inventory_rpc.sql).
+      const { error } = await supabase.rpc('apply_goods_receipt', {
+        p_order_id: order.id,
+        p_new_status: status,
+        p_received_date: today,
+        p_confirmed_by: confirmedBy,
+        p_received_items: receivedItems,
       });
+      if (error) throw error;
 
       toast.success(`הקבלה נקלטה · ${status === 'received_full' ? 'התקבלה במלואה' : 'התקבלה חלקית'}`);
       setSaving(false);

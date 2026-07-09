@@ -296,4 +296,26 @@ Bucket יחיד ב-Supabase Storage, למשל `library-files`, **ציבורי** 
 - אתגר טכני שנתקלתי בו ותועד לתועלת עתידית: כלי ה-Edit נכשל שוב ושוב בהתאמת מחרוזות שמכילות את התווים הבלתי-נראים המקוריים (zero-width space וכו') ב-regex של `cleanColumnName` — נפתר ע"י שימוש בסקריפט Node (`fs.readFileSync`/`splice`/`writeFileSync`) לעריכה כירורגית לפי מספרי שורות, תוך אימות קודי התווים בפועל (`codePointAt`) כדי לוודא שהתוכן הסופי זהה סמנטית למקור.
 - **אימות**: `npm run build` עבר בהצלחה אחרי כל שינוי (3 פעמים לאורך הדרך). `npm run lint` — אפס שגיאות בשלושת הקבצים שנגעתי בהם (`excelImport.js` חדש, נקי; `BookListForm.jsx` ו-`Inventory.jsx` — נקיים אחרי ניקוי ה-imports המתים).
 
-**לא בוצע**: בדיקה חיה בדפדפן אמיתי (לא זמינה בסביבה זו) — מומלץ שהמשתמשת תבדוק ידנית את שני זרימות הייבוא (רשימת ספרים + מלאי) ברגע שהאתר החי נגיש. טרם הועלה/נדחף ל-GitHub.
+**לא בוצע**: בדיקה חיה בדפדפן אמיתי (לא זמינה בסביבה זו) — מומלץ שהמשתמשת תבדוק ידנית את שני זרימות הייבוא (רשימת ספרים + מלאי) ברגע שהאתר החי נגיש.
+
+### 2026-07-09 — שלב 5: commit + push
+**סטטוס:** ✅ הצליח
+
+המשתמשת אישרה. `git add -A`, commit ("Replace AI-based Excel import with deterministic column matching (migration step 5)"), נדחף ל-`origin/main` (4 קבצים).
+
+### 2026-07-09 — שלב 6: RPC-ים לתקציב/מלאי
+**סטטוס:** ✅ הצליח
+
+בוצע לפי §4:
+- **`supabase/migrations/0003_budget_inventory_rpc.sql`** (חדש): שלוש פונקציות `plpgsql`, כולן `security definer`:
+  - `apply_order_budget_transition(order_id, new_status)` — פורט מלא ואטומי של `updateBudgetCategory`/`updateSupplierCredit` המקוריים מ-`budgetUpdater.js`. נועל את שורת ההזמנה (`for update`), בודק את דגל `budget_updated` **מחדש בתוך הטרנזקציה** (לא סומך על מה שהלקוח קרא קודם — סוגר את מרוץ התנאים שהגרסה הישנה לא יכלה לסגור), מטפל בכל ארבעת המצבים (approved/received_full/received_partial/cancelled) הן לקטגוריית תקציב והן לזיכוי ספק, כולל בניית רשומות `transactions` (jsonb) זהות לפורמט המקורי.
+  - `recalc_budget_source(source_id)` — פורט ישיר של סכימת ה-`reduce` המקורית ל-SQL aggregates, נקרא מתוך הפונקציה הראשונה (לא מסבב-הלוך-ושוב נפרד מהלקוח).
+  - `apply_goods_receipt(order_id, new_status, received_date, confirmed_by, received_items)` — מחליף את לולאת ה-N+1 הסדרתית ב-`GoodsReceiptDialog.jsx` בלולאת `jsonb_array_elements` אחת בתוך הפונקציה: upsert ל-`inventory_items` (התאמה לפי name+category, בדיוק כמו הלוגיקה המקורית), הוספת movement, וסימון ההזמנה כ-received — הכל בטרנזקציה אחת.
+  - `grant execute` מפורש ל-`authenticated` על שלוש הפונקציות.
+  - אומת תחביר: איזון סוגריים תקין (0), 6 מפרידי `$$` (3 זוגות = 3 פונקציות).
+- **`src/lib/budgetUpdater.js`**: שוכתב — `handleBudgetOnStatusChange`/`recalcBudgetSource` הפכו לעטיפות דקות סביב `supabase.rpc(...)`, **חתימות הפונקציות זהות לחלוטין** (אומת ב-grep ששני קוראים — `Credits.jsx` ו-`OrderDetail.jsx` — ממשיכים לעבוד בלי שינוי). `validateBudgetSelection` **נשאר ללא שינוי** לגמרי (בדיקת UX מוקדמת בצד לקוח, כמתוכנן — ה-RPC הוא הבדיקה הסמכותית).
+- **`src/components/GoodsReceiptDialog.jsx`**: `processReceipt` שוכתב — הלולאה הסדרתית (N+1 קריאות `InventoryItem.filter`/`create`/`update`) הוחלפה בקריאת RPC יחידה. הוסרה גם משתנה מתה שהייתה קיימת כבר לפני השינוי (`someReceived`, מחושבת אך לא נעשה בה שימוש בפועל).
+- ניקוי אגבי: הוסרו שני imports מתים שהיו קיימים כבר לפני השינוי (`Label`, `Textarea`) — אומת עם `git show HEAD:...` שהיו מתים גם קודם.
+- **אימות**: `npm run build` עבר בהצלחה. `npm run lint` — אפס שגיאות בכל הקבצים שנגעתי בהם.
+
+**לא בוצע**: קובץ המיגרציה `0003_budget_inventory_rpc.sql` **לא הורץ בפועל** על הפרויקט ב-Supabase (כמו בשלבים 1/4 — דורש הרצה ידנית ב-SQL Editor). בדיקה חיה של זרימת אישור/קבלת הזמנה אמיתית תלויה גם בגישה לאתר החי (עדיין ממתין לנטפרי) וגם בהרצת המיגרציה הזו. טרם הועלה/נדחף ל-GitHub.
