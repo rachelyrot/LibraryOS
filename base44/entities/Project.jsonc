@@ -1,0 +1,126 @@
+{
+  "name": "Project",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8"
+    },
+    "description": {
+      "type": "string",
+      "description": "\u05ea\u05d9\u05d0\u05d5\u05e8"
+    },
+    "project_type": {
+      "type": "string",
+      "enum": [
+        "establishment",
+        "renovation",
+        "large_purchase",
+        "annual_plan",
+        "operational",
+        "it",
+        "hr",
+        "other"
+      ],
+      "description": "\u05e1\u05d5\u05d2 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8: \u05d4\u05e7\u05de\u05ea \u05e1\u05e4\u05e8\u05d9\u05d9\u05d4 / \u05e9\u05d9\u05e4\u05d5\u05e5-\u05d1\u05d9\u05e0\u05d5\u05d9 / \u05e8\u05db\u05e9 \u05d2\u05d3\u05d5\u05dc / \u05ea\u05d5\u05db\u05e0\u05d9\u05ea \u05e2\u05d1\u05d5\u05d3\u05d4 \u05e9\u05e0\u05ea\u05d9\u05ea / \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05ea\u05e4\u05e2\u05d5\u05dc\u05d9 / \u05de\u05d7\u05e9\u05d5\u05d1-\u05ea\u05db\u05e0\u05d5\u05ea / \u05db\u05d5\u05d7 \u05d0\u05d3\u05dd / \u05d0\u05d7\u05e8"
+    },
+    "branch_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05e1\u05e0\u05d9\u05e3 \u05e7\u05e9\u05d5\u05e8"
+    },
+    "branch_name": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05e1\u05e0\u05d9\u05e3 (\u05ea\u05e6\u05d5\u05d2\u05d4)"
+    },
+    "manager_name": {
+      "type": "string",
+      "description": "\u05d0\u05d7\u05e8\u05d0\u05d9\u05ea \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date",
+      "description": "\u05ea\u05d0\u05e8\u05d9\u05da \u05d4\u05ea\u05d7\u05dc\u05d4"
+    },
+    "target_end_date": {
+      "type": "string",
+      "format": "date",
+      "description": "\u05ea\u05d0\u05e8\u05d9\u05da \u05d9\u05e2\u05d3 \u05dc\u05e1\u05d9\u05d5\u05dd"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "planning",
+        "active",
+        "on_hold",
+        "completed",
+        "cancelled"
+      ],
+      "default": "draft",
+      "description": "\u05e1\u05d8\u05d8\u05d5\u05e1: \u05d8\u05d9\u05d5\u05d8\u05d4 / \u05d1\u05ea\u05db\u05e0\u05d5\u05df / \u05e4\u05e2\u05d9\u05dc / \u05d1\u05d4\u05de\u05ea\u05e0\u05d4 / \u05d4\u05d5\u05e9\u05dc\u05dd / \u05d1\u05d5\u05d8\u05dc"
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "default": "medium",
+      "description": "\u05e2\u05d3\u05d9\u05e4\u05d5\u05ea: \u05d2\u05d1\u05d5\u05d4\u05d4 / \u05d1\u05d9\u05e0\u05d5\u05e0\u05d9\u05ea / \u05e0\u05de\u05d5\u05db\u05d4"
+    },
+    "progress_percentage": {
+      "type": "number",
+      "default": 0,
+      "description": "\u05d0\u05d7\u05d5\u05d6 \u05d4\u05ea\u05e7\u05d3\u05de\u05d5\u05ea"
+    },
+    "budget_planned": {
+      "type": "number",
+      "default": 0,
+      "description": "\u05ea\u05e7\u05e6\u05d9\u05d1 \u05de\u05ea\u05d5\u05db\u05e0\u05df"
+    },
+    "budget_approved": {
+      "type": "number",
+      "default": 0,
+      "description": "\u05ea\u05e7\u05e6\u05d9\u05d1 \u05de\u05d0\u05d5\u05e9\u05e8"
+    },
+    "budget_used": {
+      "type": "number",
+      "default": 0,
+      "description": "\u05ea\u05e7\u05e6\u05d9\u05d1 \u05de\u05e0\u05d5\u05e6\u05dc"
+    },
+    "budget_is_approved": {
+      "type": "boolean",
+      "default": false,
+      "description": "\u05d4\u05d0\u05dd \u05d4\u05ea\u05e7\u05e6\u05d9\u05d1 \u05d0\u05d5\u05e9\u05e8 \u05e8\u05e9\u05de\u05d9\u05ea"
+    },
+    "budget_approval_date": {
+      "type": "string",
+      "format": "date",
+      "description": "\u05ea\u05d0\u05e8\u05d9\u05da \u05d0\u05d9\u05e9\u05d5\u05e8 \u05ea\u05e7\u05e6\u05d9\u05d1"
+    },
+    "budget_approver": {
+      "type": "string",
+      "description": "\u05d2\u05d5\u05e8\u05dd \u05de\u05d0\u05e9\u05e8 \u05ea\u05e7\u05e6\u05d9\u05d1"
+    },
+    "budget_approval_file_url": {
+      "type": "string",
+      "description": "\u05e7\u05d5\u05d1\u05e5 \u05d0\u05d9\u05e9\u05d5\u05e8 \u05ea\u05e7\u05e6\u05d9\u05d1"
+    },
+    "budget_source_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05de\u05e7\u05d5\u05e8 \u05ea\u05e7\u05e6\u05d9\u05d1"
+    },
+    "budget_source_name": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05de\u05e7\u05d5\u05e8 \u05ea\u05e7\u05e6\u05d9\u05d1 (\u05ea\u05e6\u05d5\u05d2\u05d4)"
+    },
+    "notes": {
+      "type": "string",
+      "description": "\u05d4\u05e2\u05e8\u05d5\u05ea"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "name": "Branch",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05e1\u05e0\u05d9\u05e3"
+    },
+    "address": {
+      "type": "string",
+      "description": "\u05db\u05ea\u05d5\u05d1\u05ea"
+    },
+    "phone": {
+      "type": "string",
+      "description": "\u05d8\u05dc\u05e4\u05d5\u05df \u05e1\u05e0\u05d9\u05e3"
+    },
+    "email": {
+      "type": "string",
+      "description": "\u05de\u05d9\u05d9\u05dc \u05e1\u05e0\u05d9\u05e3"
+    },
+    "manager_name": {
+      "type": "string",
+      "description": "\u05d0\u05d7\u05e8\u05d0\u05d9\u05ea \u05e1\u05e0\u05d9\u05e3"
+    },
+    "notes": {
+      "type": "string",
+      "description": "\u05d4\u05e2\u05e8\u05d5\u05ea"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive"
+      ],
+      "default": "active",
+      "description": "\u05e1\u05d8\u05d8\u05d5\u05e1: \u05e4\u05e2\u05d9\u05dc / \u05dc\u05d0 \u05e4\u05e2\u05d9\u05dc"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

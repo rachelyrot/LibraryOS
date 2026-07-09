@@ -1,0 +1,150 @@
+{
+  "name": "QuoteRequest",
+  "type": "object",
+  "properties": {
+    "quote_number": {
+      "type": "string",
+      "description": "\u05de\u05e1\u05e4\u05e8 \u05d4\u05e6\u05e2\u05ea \u05de\u05d7\u05d9\u05e8 \u2013 \u05d0\u05d5\u05d8\u05d5\u05de\u05d8\u05d9"
+    },
+    "title": {
+      "type": "string",
+      "description": "\u05db\u05d5\u05ea\u05e8\u05ea \u05d4\u05d4\u05e6\u05e2\u05d4"
+    },
+    "request_title": {
+      "type": "string",
+      "description": "\u05db\u05d5\u05ea\u05e8\u05ea \u05d4\u05d1\u05e7\u05e9\u05d4 \u2013 \u05dc\u05e7\u05d9\u05d1\u05d5\u05e5 \u05d5\u05d4\u05e9\u05d5\u05d5\u05d0\u05ea \u05d4\u05e6\u05e2\u05d5\u05ea"
+    },
+    "supplier_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05e1\u05e4\u05e7"
+    },
+    "supplier_name": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05d4\u05e1\u05e4\u05e7 (\u05ea\u05e6\u05d5\u05d2\u05d4)"
+    },
+    "category": {
+      "type": "string",
+      "description": "\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4 \u2013 \u05de\u05d4\u05de\u05d0\u05d2\u05e8 \u05d4\u05de\u05e8\u05db\u05d6\u05d9"
+    },
+    "subcategory": {
+      "type": "string",
+      "description": "\u05ea\u05ea-\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4"
+    },
+    "open_date": {
+      "type": "string",
+      "format": "date",
+      "description": "\u05ea\u05d0\u05e8\u05d9\u05da \u05e4\u05ea\u05d9\u05d7\u05d4"
+    },
+    "validity_date": {
+      "type": "string",
+      "format": "date",
+      "description": "\u05ea\u05d5\u05e7\u05e3 \u05d4\u05d4\u05e6\u05e2\u05d4"
+    },
+    "funding_source": {
+      "type": "string",
+      "description": "\u05de\u05e7\u05d5\u05e8 \u05de\u05d9\u05de\u05d5\u05df (\u05e9\u05d3\u05d4 \u05d9\u05e9\u05df \u2013 \u05e0\u05e9\u05de\u05e8 \u05dc\u05ea\u05d0\u05d9\u05de\u05d5\u05ea \u05dc\u05d0\u05d7\u05d5\u05e8)"
+    },
+    "funding_source_type": {
+      "type": "string",
+      "enum": [
+        "municipal",
+        "culture_ministry",
+        "mifal_hapais",
+        "kol_kore",
+        "supplier_credit",
+        "other"
+      ],
+      "description": "\u05e1\u05d5\u05d2 \u05de\u05e7\u05d5\u05e8 \u05de\u05d9\u05de\u05d5\u05df (\u05de\u05d1\u05e0\u05d4 \u05d7\u05d3\u05e9)"
+    },
+    "budget_source_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05de\u05e7\u05d5\u05e8 \u05ea\u05e7\u05e6\u05d9\u05d1 \u2013 \u05e7\u05d9\u05e9\u05d5\u05e8 \u05dc-BudgetSource"
+    },
+    "budget_category_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d9\u05ea \u05ea\u05e7\u05e6\u05d9\u05d1 \u2013 \u05e7\u05d9\u05e9\u05d5\u05e8 \u05dc-BudgetAllocation"
+    },
+    "credit_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05d6\u05d9\u05db\u05d5\u05d9 \u05e1\u05e4\u05e7 \u2013 \u05e7\u05d9\u05e9\u05d5\u05e8 \u05dc-SupplierCredit"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "sent_to_supplier",
+        "received",
+        "in_review",
+        "pending_approval",
+        "approved",
+        "rejected",
+        "expired",
+        "converted_to_order"
+      ],
+      "default": "draft",
+      "description": "\u05e1\u05d8\u05d8\u05d5\u05e1 \u05d4\u05d4\u05e6\u05e2\u05d4"
+    },
+    "total_amount": {
+      "type": "number",
+      "description": "\u05e1\u05db\u05d5\u05dd \u05db\u05d5\u05dc\u05dc"
+    },
+    "notes": {
+      "type": "string",
+      "description": "\u05d4\u05e2\u05e8\u05d5\u05ea"
+    },
+    "file_url": {
+      "type": "string",
+      "description": "\u05e7\u05d5\u05d1\u05e5 \u05d4\u05e6\u05e2\u05ea \u05de\u05d7\u05d9\u05e8 \u05de\u05e6\u05d5\u05e8\u05e3"
+    },
+    "order_created": {
+      "type": "boolean",
+      "default": false,
+      "description": "\u05d4\u05d0\u05dd \u05e0\u05d5\u05e6\u05e8\u05d4 \u05de\u05de\u05e0\u05d4 \u05d4\u05d6\u05de\u05e0\u05ea \u05e8\u05db\u05e9"
+    },
+    "linked_order_id": {
+      "type": "string",
+      "description": "\u05e7\u05d9\u05e9\u05d5\u05e8 \u05dc\u05d4\u05d6\u05de\u05e0\u05ea \u05d4\u05e8\u05db\u05e9 \u05e9\u05e0\u05d5\u05e6\u05e8\u05d4"
+    },
+    "selected": {
+      "type": "boolean",
+      "default": false,
+      "description": "\u05d4\u05d0\u05dd \u05e0\u05d1\u05d7\u05e8\u05d4 \u05db\u05d4\u05e6\u05e2\u05d4 \u05d4\u05d6\u05d5\u05db\u05d4"
+    },
+    "items": {
+      "type": "array",
+      "description": "\u05e4\u05e8\u05d9\u05d8\u05d9\u05dd \u05d1\u05d4\u05e6\u05e2\u05d4",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "\u05e9\u05dd \u05e4\u05e8\u05d9\u05d8"
+          },
+          "description": {
+            "type": "string",
+            "description": "\u05ea\u05d9\u05d0\u05d5\u05e8 / \u05de\u05e4\u05e8\u05d8"
+          },
+          "quantity": {
+            "type": "number",
+            "description": "\u05db\u05de\u05d5\u05ea"
+          },
+          "unit_price": {
+            "type": "number",
+            "description": "\u05de\u05d7\u05d9\u05e8 \u05d9\u05d7\u05d9\u05d3\u05d4"
+          },
+          "total": {
+            "type": "number",
+            "description": "\u05e1\u05d4\u05f4\u05db \u05e9\u05d5\u05e8\u05d4"
+          },
+          "notes": {
+            "type": "string",
+            "description": "\u05d4\u05e2\u05e8\u05d5\u05ea"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "title"
+  ]
+}

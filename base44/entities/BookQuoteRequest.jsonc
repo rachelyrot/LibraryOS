@@ -1,0 +1,218 @@
+{
+  "name": "BookQuoteRequest",
+  "type": "object",
+  "properties": {
+    "request_number": {
+      "type": "string",
+      "description": "\u05de\u05e1\u05e4\u05e8 \u05d1\u05e7\u05e9\u05d4 \u05d0\u05d5\u05d8\u05d5\u05de\u05d8\u05d9"
+    },
+    "title": {
+      "type": "string",
+      "description": "\u05db\u05d5\u05ea\u05e8\u05ea \u05d1\u05e7\u05e9\u05ea \u05d4\u05e6\u05e2\u05ea \u05de\u05d7\u05d9\u05e8"
+    },
+    "source_book_list_id": {
+      "type": "string",
+      "description": "\u05e7\u05d9\u05e9\u05d5\u05e8 \u05dc\u05e8\u05e9\u05d9\u05de\u05ea \u05e1\u05e4\u05e8\u05d9\u05dd \u05de\u05e7\u05d5\u05e8"
+    },
+    "source_book_list_title": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05e8\u05e9\u05d9\u05de\u05ea \u05d4\u05e1\u05e4\u05e8\u05d9\u05dd (\u05ea\u05e6\u05d5\u05d2\u05d4)"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "sent_to_suppliers",
+        "awaiting_quotes",
+        "partial_quotes",
+        "all_quotes_received",
+        "in_comparison",
+        "suppliers_selected",
+        "transferred_to_orders",
+        "closed"
+      ],
+      "default": "draft",
+      "description": "\u05e1\u05d8\u05d8\u05d5\u05e1 \u05d1\u05e7\u05e9\u05ea \u05d4\u05e6\u05e2\u05ea \u05de\u05d7\u05d9\u05e8 \u05dc\u05e1\u05e4\u05e8\u05d9\u05dd"
+    },
+    "supplier_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "\u05de\u05d6\u05d4\u05d9 \u05e1\u05e4\u05e7\u05d9\u05dd \u05e9\u05e7\u05d9\u05d1\u05dc\u05d5 \u05d0\u05ea \u05d4\u05d1\u05e7\u05e9\u05d4"
+    },
+    "supplier_names": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "\u05e9\u05de\u05d5\u05ea \u05e1\u05e4\u05e7\u05d9\u05dd (\u05ea\u05e6\u05d5\u05d2\u05d4)"
+    },
+    "email_subject": {
+      "type": "string",
+      "description": "\u05e0\u05d5\u05e9\u05d0 \u05d4\u05de\u05d9\u05d9\u05dc"
+    },
+    "email_body": {
+      "type": "string",
+      "description": "\u05d2\u05d5\u05e3 \u05d4\u05de\u05d9\u05d9\u05dc"
+    },
+    "excel_file_url": {
+      "type": "string",
+      "description": "\u05e7\u05d5\u05d1\u05e5 Excel \u05e9\u05e0\u05d5\u05e6\u05e8 \u05dc\u05e9\u05dc\u05d9\u05d7\u05d4 \u05dc\u05e1\u05e4\u05e7\u05d9\u05dd"
+    },
+    "sent_date": {
+      "type": "string",
+      "format": "date",
+      "description": "\u05ea\u05d0\u05e8\u05d9\u05da \u05e9\u05dc\u05d9\u05d7\u05d4"
+    },
+    "created_by": {
+      "type": "string",
+      "description": "\u05de\u05d9 \u05d9\u05e6\u05e8"
+    },
+    "notes": {
+      "type": "string",
+      "description": "\u05d4\u05e2\u05e8\u05d5\u05ea"
+    },
+    "books": {
+      "type": "array",
+      "description": "\u05e1\u05e4\u05e8\u05d9\u05dd \u05d1\u05d1\u05e7\u05e9\u05d4 \u05e2\u05dd \u05d4\u05e6\u05e2\u05d5\u05ea \u05de\u05d7\u05d9\u05e8 \u05dc\u05e1\u05e4\u05e7\u05d9\u05dd",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "\u05e9\u05dd \u05e1\u05e4\u05e8"
+          },
+          "author": {
+            "type": "string",
+            "description": "\u05de\u05d7\u05d1\u05e8"
+          },
+          "publisher": {
+            "type": "string",
+            "description": "\u05d4\u05d5\u05e6\u05d0\u05d4"
+          },
+          "isbn": {
+            "type": "string",
+            "description": "ISBN"
+          },
+          "category": {
+            "type": "string",
+            "description": "\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d9\u05ea \u05e1\u05e4\u05e8\u05d9\u05dd"
+          },
+          "requested_quantity": {
+            "type": "number",
+            "description": "\u05db\u05de\u05d5\u05ea \u05de\u05d1\u05d5\u05e7\u05e9\u05ea"
+          },
+          "nylon_required": {
+            "type": "string",
+            "enum": [
+              "with_nylon",
+              "without_nylon",
+              "any"
+            ],
+            "default": "any",
+            "description": "\u05e2\u05dd \u05e0\u05d9\u05d9\u05dc\u05d5\u05df / \u05d1\u05dc\u05d9 \u05e0\u05d9\u05d9\u05dc\u05d5\u05df / \u05dc\u05d0 \u05de\u05e9\u05e0\u05d4 (\u05dc\u05e4\u05d9 \u05d4\u05d6\u05d5\u05dc)"
+          },
+          "existing_in_agron": {
+            "type": "boolean",
+            "default": false,
+            "description": "\u05e7\u05d9\u05d9\u05dd \u05d1\u05d0\u05d2\u05e8\u05d5\u05df"
+          },
+          "existing_copies": {
+            "type": "number",
+            "default": 0,
+            "description": "\u05de\u05e1\u05e4\u05e8 \u05e2\u05d5\u05ea\u05e7\u05d9\u05dd \u05e7\u05d9\u05d9\u05de\u05d9\u05dd"
+          },
+          "system_recommendation": {
+            "type": "string",
+            "description": "\u05d4\u05de\u05dc\u05e6\u05ea \u05de\u05e2\u05e8\u05db\u05ea"
+          },
+          "selected_for_quote": {
+            "type": "boolean",
+            "default": true,
+            "description": "\u05e0\u05d1\u05d7\u05e8 \u05dc\u05d1\u05e7\u05e9\u05ea \u05d4\u05e6\u05e2\u05ea \u05de\u05d7\u05d9\u05e8"
+          },
+          "book_status": {
+            "type": "string",
+            "description": "\u05e1\u05d8\u05d8\u05d5\u05e1 \u05e1\u05e4\u05e8"
+          },
+          "supplier_quotes": {
+            "type": "array",
+            "description": "\u05d4\u05e6\u05e2\u05d5\u05ea \u05de\u05d7\u05d9\u05e8 \u05de\u05e1\u05e4\u05e7\u05d9\u05dd",
+            "items": {
+              "type": "object",
+              "properties": {
+                "supplier_id": {
+                  "type": "string"
+                },
+                "supplier_name": {
+                  "type": "string"
+                },
+                "price_with_nylon": {
+                  "type": "number",
+                  "description": "\u05de\u05d7\u05d9\u05e8 \u05e2\u05dd \u05e0\u05d9\u05d9\u05dc\u05d5\u05df"
+                },
+                "price_without_nylon": {
+                  "type": "number",
+                  "description": "\u05de\u05d7\u05d9\u05e8 \u05d1\u05dc\u05d9 \u05e0\u05d9\u05d9\u05dc\u05d5\u05df"
+                },
+                "availability": {
+                  "type": "string",
+                  "description": "\u05d6\u05de\u05d9\u05e0\u05d5\u05ea"
+                },
+                "delivery_time": {
+                  "type": "string",
+                  "description": "\u05d6\u05de\u05df \u05d0\u05e1\u05e4\u05e7\u05d4"
+                },
+                "notes": {
+                  "type": "string",
+                  "description": "\u05d4\u05e2\u05e8\u05d5\u05ea \u05e1\u05e4\u05e7"
+                },
+                "matched": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "\u05d4\u05d0\u05dd \u05d4\u05d4\u05ea\u05d0\u05de\u05d4 \u05d5\u05d3\u05d0\u05d9\u05ea"
+                }
+              }
+            }
+          },
+          "cheapest_supplier_id": {
+            "type": "string",
+            "description": "\u05d4\u05e1\u05e4\u05e7 \u05d4\u05d6\u05d5\u05dc \u05d1\u05d9\u05d5\u05ea\u05e8"
+          },
+          "cheapest_price": {
+            "type": "number",
+            "description": "\u05d4\u05de\u05d7\u05d9\u05e8 \u05d4\u05d6\u05d5\u05dc \u05d1\u05d9\u05d5\u05ea\u05e8"
+          },
+          "selected_supplier_id": {
+            "type": "string",
+            "description": "\u05e1\u05e4\u05e7 \u05e9\u05e0\u05d1\u05d7\u05e8 \u05d1\u05e4\u05d5\u05e2\u05dc"
+          },
+          "selected_supplier_name": {
+            "type": "string",
+            "description": "\u05e9\u05dd \u05d4\u05e1\u05e4\u05e7 \u05e9\u05e0\u05d1\u05d7\u05e8"
+          },
+          "selection_reason": {
+            "type": "string",
+            "description": "\u05e1\u05d9\u05d1\u05ea \u05d1\u05d7\u05d9\u05e8\u05ea \u05e1\u05e4\u05e7 \u05d0\u05d7\u05e8 \u05de\u05d4\u05d6\u05d5\u05dc \u05d1\u05d9\u05d5\u05ea\u05e8"
+          },
+          "selected_for_order": {
+            "type": "boolean",
+            "default": false,
+            "description": "\u05e0\u05d1\u05d7\u05e8 \u05dc\u05d4\u05d6\u05de\u05e0\u05d4"
+          }
+        }
+      }
+    },
+    "linked_order_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "\u05de\u05d6\u05d4\u05d9 \u05d4\u05d6\u05de\u05e0\u05d5\u05ea \u05e8\u05db\u05e9 \u05e9\u05e0\u05d5\u05e6\u05e8\u05d5 \u05de\u05d1\u05e7\u05e9\u05d4 \u05d6\u05d5"
+    }
+  },
+  "required": [
+    "title"
+  ]
+}

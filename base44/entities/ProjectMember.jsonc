@@ -1,0 +1,61 @@
+{
+  "name": "ProjectMember",
+  "type": "object",
+  "properties": {
+    "project_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8"
+    },
+    "project_name": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 (\u05ea\u05e6\u05d5\u05d2\u05d4)"
+    },
+    "person_type": {
+      "type": "string",
+      "enum": [
+        "employee",
+        "volunteer"
+      ],
+      "default": "employee",
+      "description": "\u05e1\u05d5\u05d2 \u05d0\u05d3\u05dd: \u05e2\u05d5\u05d1\u05d3\u05ea / \u05de\u05ea\u05e0\u05d3\u05d1\u05ea"
+    },
+    "person_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05e2\u05d5\u05d1\u05d3\u05ea/\u05de\u05ea\u05e0\u05d3\u05d1\u05ea"
+    },
+    "person_name": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05e2\u05d5\u05d1\u05d3\u05ea/\u05de\u05ea\u05e0\u05d3\u05d1\u05ea (\u05ea\u05e6\u05d5\u05d2\u05d4)"
+    },
+    "role_in_project": {
+      "type": "string",
+      "description": "\u05ea\u05e4\u05e7\u05d9\u05d3 \u05d1\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8"
+    },
+    "branch_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05e1\u05e0\u05d9\u05e3"
+    },
+    "branch_name": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05e1\u05e0\u05d9\u05e3 (\u05ea\u05e6\u05d5\u05d2\u05d4)"
+    },
+    "planned_hours": {
+      "type": "number",
+      "default": 0,
+      "description": "\u05e9\u05e2\u05d5\u05ea \u05de\u05ea\u05d5\u05db\u05e0\u05e0\u05d5\u05ea"
+    },
+    "actual_hours": {
+      "type": "number",
+      "default": 0,
+      "description": "\u05e9\u05e2\u05d5\u05ea \u05d1\u05e4\u05d5\u05e2\u05dc"
+    },
+    "notes": {
+      "type": "string",
+      "description": "\u05d4\u05e2\u05e8\u05d5\u05ea"
+    }
+  },
+  "required": [
+    "project_id",
+    "person_name"
+  ]
+}

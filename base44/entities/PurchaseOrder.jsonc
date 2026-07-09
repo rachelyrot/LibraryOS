@@ -1,0 +1,215 @@
+{
+  "name": "PurchaseOrder",
+  "type": "object",
+  "properties": {
+    "order_number": {
+      "type": "string",
+      "description": "\u05de\u05e1\u05e4\u05e8 \u05d4\u05d6\u05de\u05e0\u05d4"
+    },
+    "title": {
+      "type": "string",
+      "description": "\u05db\u05d5\u05ea\u05e8\u05ea / \u05ea\u05d9\u05d0\u05d5\u05e8 \u05d7\u05d5\u05e4\u05e9\u05d9"
+    },
+    "category": {
+      "type": "string",
+      "description": "\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4 \u05e8\u05d0\u05e9\u05d9\u05ea \u2013 \u05de\u05d4\u05de\u05d0\u05d2\u05e8 \u05d4\u05de\u05e8\u05db\u05d6\u05d9"
+    },
+    "subcategory": {
+      "type": "string",
+      "description": "\u05ea\u05ea-\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4"
+    },
+    "supplier_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05e1\u05e4\u05e7"
+    },
+    "supplier_name": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05d4\u05e1\u05e4\u05e7 (\u05ea\u05e6\u05d5\u05d2\u05d4)"
+    },
+    "supplier_contact": {
+      "type": "string",
+      "description": "\u05d0\u05d9\u05e9 \u05e7\u05e9\u05e8 \u05d1\u05e1\u05e4\u05e7"
+    },
+    "order_type": {
+      "type": "string",
+      "description": "\u05e1\u05d5\u05d2 \u05d4\u05d4\u05d6\u05de\u05e0\u05d4 (books/supplies/equipment/other)"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "pending_approval",
+        "approved",
+        "ordered",
+        "received_full",
+        "received_partial",
+        "cancelled",
+        "rejected"
+      ],
+      "default": "draft",
+      "description": "\u05e1\u05d8\u05d8\u05d5\u05e1 \u05d4\u05d4\u05d6\u05de\u05e0\u05d4"
+    },
+    "created_by": {
+      "type": "string",
+      "description": "\u05de\u05d9 \u05d9\u05e6\u05e8"
+    },
+    "requested_by": {
+      "type": "string",
+      "description": "\u05de\u05d9 \u05d1\u05d9\u05e7\u05e9"
+    },
+    "submitted_by": {
+      "type": "string",
+      "description": "\u05de\u05d9 \u05d4\u05d2\u05d9\u05e9 \u05dc\u05d0\u05d9\u05e9\u05d5\u05e8"
+    },
+    "submitted_date": {
+      "type": "string",
+      "format": "date",
+      "description": "\u05ea\u05d0\u05e8\u05d9\u05da \u05d4\u05d2\u05e9\u05d4"
+    },
+    "approved_by": {
+      "type": "string",
+      "description": "\u05de\u05d9 \u05d0\u05d9\u05e9\u05e8"
+    },
+    "approved_date": {
+      "type": "string",
+      "format": "date",
+      "description": "\u05ea\u05d0\u05e8\u05d9\u05da \u05d0\u05d9\u05e9\u05d5\u05e8"
+    },
+    "rejected_by": {
+      "type": "string",
+      "description": "\u05de\u05d9 \u05d3\u05d7\u05d4"
+    },
+    "rejected_date": {
+      "type": "string",
+      "format": "date",
+      "description": "\u05ea\u05d0\u05e8\u05d9\u05da \u05d3\u05d7\u05d9\u05d9\u05d4"
+    },
+    "rejection_reason": {
+      "type": "string",
+      "description": "\u05e1\u05d9\u05d1\u05ea \u05d3\u05d7\u05d9\u05d9\u05d4"
+    },
+    "cancelled_by": {
+      "type": "string",
+      "description": "\u05de\u05d9 \u05d1\u05d9\u05d8\u05dc"
+    },
+    "cancelled_date": {
+      "type": "string",
+      "format": "date",
+      "description": "\u05ea\u05d0\u05e8\u05d9\u05da \u05d1\u05d9\u05d8\u05d5\u05dc"
+    },
+    "total_amount": {
+      "type": "number",
+      "description": "\u05e1\u05db\u05d5\u05dd \u05db\u05d5\u05dc\u05dc"
+    },
+    "funding_source_type": {
+      "type": "string",
+      "enum": [
+        "municipal",
+        "culture_ministry",
+        "mifal_hapais",
+        "kol_kore",
+        "supplier_credit",
+        "other"
+      ],
+      "description": "\u05e1\u05d5\u05d2 \u05de\u05e7\u05d5\u05e8 \u05de\u05d9\u05de\u05d5\u05df"
+    },
+    "budget_source_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05de\u05e7\u05d5\u05e8 \u05ea\u05e7\u05e6\u05d9\u05d1 \u2013 \u05e7\u05d9\u05e9\u05d5\u05e8 \u05dc-BudgetSource"
+    },
+    "budget_source_name": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05de\u05e7\u05d5\u05e8 \u05d4\u05ea\u05e7\u05e6\u05d9\u05d1 (\u05ea\u05e6\u05d5\u05d2\u05d4)"
+    },
+    "budget_category_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d9\u05ea \u05ea\u05e7\u05e6\u05d9\u05d1 \u2013 \u05e7\u05d9\u05e9\u05d5\u05e8 \u05dc-BudgetAllocation"
+    },
+    "budget_category_name": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d9\u05ea \u05ea\u05e7\u05e6\u05d9\u05d1 (\u05ea\u05e6\u05d5\u05d2\u05d4)"
+    },
+    "credit_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05d6\u05d9\u05db\u05d5\u05d9 \u05e1\u05e4\u05e7 \u2013 \u05e7\u05d9\u05e9\u05d5\u05e8 \u05dc-SupplierCredit"
+    },
+    "budget_updated": {
+      "type": "boolean",
+      "default": false,
+      "description": "\u05d4\u05d0\u05dd \u05d4\u05ea\u05e7\u05e6\u05d9\u05d1 \u05e2\u05d5\u05d3\u05db\u05df \u05de\u05d4\u05d6\u05de\u05e0\u05d4 \u05d6\u05d5 (\u05de\u05e0\u05d9\u05e2\u05ea \u05e0\u05d9\u05e6\u05d5\u05dc \u05db\u05e4\u05d5\u05dc)"
+    },
+    "project_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u2013 \u05e7\u05d9\u05e9\u05d5\u05e8 \u05dc-Project"
+    },
+    "project_name": {
+      "type": "string",
+      "description": "\u05e9\u05dd \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 (\u05ea\u05e6\u05d5\u05d2\u05d4)"
+    },
+    "notes": {
+      "type": "string",
+      "description": "\u05d4\u05e2\u05e8\u05d5\u05ea"
+    },
+    "items": {
+      "type": "array",
+      "description": "\u05e4\u05e8\u05d9\u05d8\u05d9\u05dd \u05d1\u05d4\u05d6\u05de\u05e0\u05d4",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "unit_price": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          },
+          "isbn": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "received_date": {
+      "type": "string",
+      "format": "date",
+      "description": "\u05ea\u05d0\u05e8\u05d9\u05da \u05e7\u05d1\u05dc\u05d4"
+    },
+    "receipt_confirmed_by": {
+      "type": "string",
+      "description": "\u05de\u05d9 \u05d0\u05d9\u05e9\u05e8 \u05e7\u05d1\u05dc\u05d4"
+    },
+    "source_quote_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05d4\u05e6\u05e2\u05ea \u05d4\u05de\u05d7\u05d9\u05e8 \u05e9\u05de\u05de\u05e0\u05d4 \u05e0\u05d5\u05e6\u05e8\u05d4 (\u05d0\u05dd \u05e8\u05dc\u05d5\u05d5\u05e0\u05d8\u05d9)"
+    },
+    "source_book_list_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05e8\u05e9\u05d9\u05de\u05ea \u05d4\u05e1\u05e4\u05e8\u05d9\u05dd \u05e9\u05de\u05de\u05e0\u05d4 \u05e0\u05d5\u05e6\u05e8\u05d4 (\u05d0\u05dd \u05e8\u05dc\u05d5\u05d5\u05e0\u05d8\u05d9)"
+    },
+    "source_book_quote_request_id": {
+      "type": "string",
+      "description": "\u05de\u05d6\u05d4\u05d4 \u05d1\u05e7\u05e9\u05ea \u05d4\u05e6\u05e2\u05ea \u05de\u05d7\u05d9\u05e8 \u05dc\u05e1\u05e4\u05e8\u05d9\u05dd \u05e9\u05de\u05de\u05e0\u05d4 \u05e0\u05d5\u05e6\u05e8\u05d4 (\u05d0\u05dd \u05e8\u05dc\u05d5\u05d5\u05e0\u05d8\u05d9)"
+    },
+    "inventory_updated": {
+      "type": "boolean",
+      "default": false,
+      "description": "\u05d4\u05d0\u05dd \u05d4\u05de\u05dc\u05d0\u05d9 \u05e2\u05d5\u05d3\u05db\u05df \u05de\u05d4\u05d6\u05de\u05e0\u05d4 \u05d6\u05d5"
+    },
+    "file_url": {
+      "type": "string",
+      "description": "\u05e7\u05d5\u05d1\u05e5 \u05de\u05e6\u05d5\u05e8\u05e3"
+    }
+  },
+  "required": []
+}

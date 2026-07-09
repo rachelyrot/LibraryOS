@@ -1,0 +1,219 @@
+# מעבר LibraryOS מ-Base44 ל-Supabase + Cloudflare Pages
+
+## Context (רקע)
+
+האתר (LibraryOS) בנוי כיום לגמרי על גבי הפלטפורמה Base44 — מסד נתונים, התחברות (auth) ואחסון קבצים כולם דרך `@base44/sdk`, ואין קוד שרת מקומי בכלל. המשתמש רוצה לפרוס את האתר להיות **עצמאי לחלוטין מ-Base44**, עם דגש על **עלות נמוכה** ומספר משתמשים קטן (ספרייה עירונית אחת, צוות מצומצם).
+
+הוחלט יחד עם המשתמש:
+- **בק-אנד**: Supabase (Postgres + Auth + Storage). פרויקט בטיר החינמי "נרדם" (מושהה) אחרי 7 ימים ללא תעבורה, ודורש שחזור **ידני** בלוח הבקרה (לא מתעורר לבד) — לכן נכלל בתוכנית פתרון פינג אוטומטי חינמי (§8) כדי שזה לעולם לא יקרה בפועל.
+- **נתונים**: אין נתוני אמת בייצור כיום — **מתחילים מאפס**, ללא ייבוא/ייצוא מ-Base44.
+- **ייבוא אקסל למלאי**: מחליפים את זיהוי ה-AI של Base44 (`ExtractDataFromUploadedFile`) בפרסור דטרמיניסטי של עמודות קבועות (בדיוק כמו שכבר קיים היום ב-`BookListForm.jsx` לרשימות ספרים).
+- **אחסון פרונט**: Cloudflare Pages.
+
+נבדק ואומת (לא רק תוכנן): כ-51 קבצים / כ-215 נקודות קריאה פונות ל-`base44.entities.*`/`base44.auth.*`/`base44.integrations.*`, **כולן** דרך אותו import יחיד: `import { base44 } from '@/api/base44Client'`. זו נקודת מנוף מרכזית — אם המחליף שומר על אותה צורת אובייקט (`base44.entities.X.list/filter/get/create/update/delete/bulkCreate`, `base44.auth.me/logout`, `base44.integrations.Core.UploadFile`), רוב נקודות הקריאה לא ידרשו שינוי קוד כלל.
+
+נמצא גם: הרכיב `ProtectedRoute.jsx` אינו בשימוש בפועל (קוד מת — `App.jsx` שוער ישירות דרך `AuthenticatedApp`), ו-`GoodsReceiptDialog.jsx`/`Inventory.jsx` אומתו כתואמים בדיוק לתיאור בתוכנית (לולאת receipt סדרתית ללא אטומיות; ייבוא אקסל דרך UploadFile+ExtractDataFromUploadedFile+bulkCreate).
+
+---
+
+## 0. כלי עבודה: סקיל להרצת שלבי התוכנית (`@run-step`)
+
+לפני תחילת המימוש בפועל (עוד לפני "תשתית" ב-§9), ליצור מבנה כלים ב-Claude Code ברמת הפרויקט:
+
+- **`.claude/skills/run-step/SKILL.md`** — סקיל פרויקטלי, מופעל כ-`@run-step <מספר/שם שלב>` (למשל `@run-step שלב 1`). כשמופעל:
+  1. קורא את קובץ התוכנית הזה (`C:\Users\רחלי\.claude\plans\replicated-moseying-reef.md`) ומזהה את השלב המבוקש מתוך §9 (סדר העבודה).
+  2. מבצע בפועל את מה שהשלב דורש (כתיבת/עריכת קוד, יצירת סכמה, הרצת פקודות וכו', בהתאם לתוכן הסעיף הרלוונטי).
+  3. עם סיום, מוסיף רשומה **ישירות בתחתית קובץ התוכנית הזה**, תחת כותרת "## יומן ביצוע" (ליצור אם לא קיימת): תאריך ושעה, מספר/שם השלב, סטטוס (✅ הצליח / ❌ נכשל / ⚠️ הצליח חלקית), הסבר קצר של מה שנעשה בפועל, ואם היו בעיות — מה לא הסתדר ולמה.
+  4. אם השלב נכשל בניסיון הראשון — מנסה לאבחן ולתקן לפני שמוותר ומדווח כישלון (לא עוצר על השגיאה הראשונה).
+- **`.claude/agents/`** — תיקייה נלווית, נוצרת ריקה/מוכנה לשימוש עתידי (למשל אם ירצו שסקיל מסוים יאציל ביצוע לסוכן ייעודי/מבודד); אין צורך בתוכן בשלב זה אלא אם יוחלט אחרת בהמשך.
+
+זהו למעשה **צעד ראשון ממש, לפני שלב 0 הקיים** ב-§9 — נבנה פעם אחת, ולאחר מכן כל שלבי §9 מבוצעים דרך `@run-step`.
+
+---
+
+## 1. סכמת Supabase (טבלה לכל ישות)
+
+טבלה אחת ל-Postgres לכל אחד מ-23 קבצי `base44/entities/*.jsonc` (חוץ מ-`User`, ראה §2), בשמות snake_case זהים ל-jsonc (`purchase_orders`, `suppliers`, `categories`, וכו'). לכל טבלה: `id uuid primary key default gen_random_uuid()`, `created_date timestamptz default now()`, `updated_date timestamptz default now()` (**לא** לשנות לשמות `created_at`/`updated_at` — יגרור שינוי בכ-40 קריאות `.list('-created_date', ...)`). טריגר לעדכון `updated_date` בכל UPDATE.
+
+**שדות מערך מקוננים → JSONB, לא טבלאות נפרדות**: `PurchaseOrder.items`, `BudgetAllocation.transactions`, `SupplierCredit.transactions`, `SupplierBookList.books`, `InventoryItem.movements`, `ProjectTask.file_urls` — כולם `jsonb` (ברירת מחדל `'[]'::jsonb`). הצדקה: אף אחד מהם לא מסונן/נשאל לפי שדה-פנימי באף מקום בקוד (נבדק ב-`PriceComparison.jsx`, `BookListDetail.jsx`, `budgetUpdater.js`) — תמיד נקראים/נכתבים כבלוק שלם. נרמול לטבלאות בנות יסבך את הפונקציות האטומיות ב-§4 ללא תועלת.
+
+**מפתחות זרים (FK)**: כל שדה `_id` (supplier_id, budget_source_id, budget_category_id, credit_id, project_id וכו') הופך ל-`uuid references <table>(id)`, **nullable**, עם `on delete set null` (המערכת מארכבת נתוני-אב דרך `status`, לא מוחקת בפועל).
+
+**שדות "שם מטמון" (supplier_name, budget_source_name וכו')**: להשאיר **כמו שהם היום** — עמודות `text` רגילות שנכתבות ע"י הלקוח בזמן היצירה, בדיוק כמו היום. לא לעבור ל-views/joins בשלב הזה (אפשר להוסיף views בעתיד כתוספת נקייה, בלי לגעת בטבלאות הבסיס, אם יתעורר צורך אמיתי בדיווח).
+
+**תיקיית `base44/entities/*.jsonc`**: להשאיר, להעביר ל-`docs/legacy-base44-schema/` כתיעוד קפוא (יש בה תיאורים בעברית ששימושיים) — לא למחוק.
+
+---
+
+## 2. Supabase Auth + טבלת `profiles`
+
+**סכמה**: `profiles` — `id uuid primary key references auth.users(id) on delete cascade`, `email text`, `full_name text`, `role text not null default 'user' check (role in ('admin','remote_manager','local_manager','user'))`, `created_date timestamptz default now()`. טריגר `handle_new_user()` על `auth.users` יוצר שורת profile אוטומטית עם `role='user'` ברירת מחדל (least privilege — admin מקדם ידנית).
+
+**שיוך תפקידים (role)**: **עריכה ישירה בטבלה דרך Supabase Studio**, לא מסך ניהול חדש באפליקציה. הצדקה: צוות קטן, שינויי תפקיד נדירים, אין היום שום UI לזה גם ב-Base44 (זה היה בלוח הבקרה של Base44 עצמו). לתעד בעברית ב-`src/pages/Settings.jsx` הפניה ל-Supabase Studio לניהול משתמשים. מסך "ניהול משתמשים" אמיתי — לדחות לעתיד אם הצוות יגדל.
+
+**שער האימות מחדש** (`src/lib/AuthContext.jsx`):
+1. `supabase.auth.getSession()` + `onAuthStateChange` בעת טעינה.
+2. אין session → `authError.type = 'auth_required'` — אבל בניגוד להיום, **צריך UI התחברות מקומי אמיתי** (`src/pages/Login.jsx` חדש, עם `signInWithPassword`/`signUp`, אימייל+סיסמה — הכי פשוט וזול לצוות קטן), כי Base44 סיפק את כל מסך ההתחברות עד היום.
+3. יש session → `select * from profiles where id = session.user.id`. אין שורה → אותו `authError.type = 'user_not_registered'` ואותו רכיב `UserNotRegisteredError.jsx` בדיוק כמו היום.
+4. יש שורה → `user` בקונטקסט הופך ל-`{ id, email, full_name, role }` — בדיוק הצורה ש-`permissions.js` וכל קוד ה-audit-stamping (`created_by: user?.full_name || user?.email`) כבר מצפים לה. **`src/lib/permissions.js` נשאר כמעט ללא שינוי**.
+
+`src/lib/app-params.js` הופך מיותר לגמרי — Supabase JS client מנהל session בעצמו ב-localStorage.
+
+**RLS (הגנת שכבה שנייה)**: להפעיל RLS על כל הטבלאות. ברירת מחדל: כל authenticated user יכול select/insert/update (משקף את המצב היום — הכל נאכף רק ב-UI). מדיניות מחמירה **רק** על הפעולות הרגישות שכבר מזוהות ב-`permissions.js`: כתיבה ל-`budget_allocations`/`budget_sources`/`supplier_credits` — admin בלבד; כתיבה לעמודת `role` ב-`profiles` — admin בלבד (דרך פונקציית `security definer` שבודקת את התפקיד *הנוכחי* בטבלה, לא ערך שנשלח מהלקוח).
+
+---
+
+## 3. שכבת גישה-לנתונים דקה — `src/api/base44Client.js`
+
+**לשכתב את התוכן הפנימי של `src/api/base44Client.js`, לא למחוק את הקובץ** — כך שכל כ-51 הקבצים הקוראים לו ממשיכים לעבוד בלי שינוי. הקובץ החדש עוטף את `@supabase/supabase-js` ושומר על אותה צורת אובייקט מקונן:
+
+```js
+function makeEntity(table) {
+  return {
+    list: (sort, limit) => applySort(supabase.from(table).select('*'), sort).limit(limit ?? 1000).then(unwrap),
+    filter: (query, sort, limit) => applySort(applyEq(supabase.from(table).select('*'), query), sort).limit(limit ?? 1000).then(unwrap),
+    get: (id) => supabase.from(table).select('*').eq('id', id).maybeSingle().then(unwrap),
+    create: (data) => supabase.from(table).insert(data).select().single().then(unwrap),
+    update: (id, data) => supabase.from(table).update(data).eq('id', id).select().single().then(unwrap),
+    delete: (id) => supabase.from(table).delete().eq('id', id).then(unwrap),
+    bulkCreate: (rows) => supabase.from(table).insert(rows).select().then(unwrap),
+  };
+}
+```
+
+`applySort` ממיר את מוסכמת המחרוזת הקיימת (`'-created_date'`/`'name'`) ל-`.order(field, { ascending })`. `applyEq` ממיר אובייקט שוויון פשוט (`{ field: value }`) לשרשרת `.eq()` — תואם בדיוק לדפוס הקיים (אין OR/range operators בשום מקום בקוד). `unwrap` זורק שגיאה אם `{ error }` קיים, אחרת מחזיר `data` — כך ש-`.then()`/`await`/`.catch()` הקיימים ממשיכים לעבוד. `base44.auth` עוטף את `supabase.auth` (`me()` ממזג `getUser()` עם שורת ה-profile). `base44.integrations.Core.UploadFile` הופך לעטיפת Storage (§5). טבלת מיפוי סטטית (`PurchaseOrder` → `purchase_orders`) בראש הקובץ.
+
+**לממש פעם אחת, לא ישות-אחר-ישות** — זה קובץ אחד מאחורי ממשק אחיד; הפיצול-לשלבים הרלוונטי הוא לבדיקה ידנית (§9), לא לכתיבת קוד.
+
+---
+
+## 4. אטומיות תקציב/זיכוי — פונקציות RPC ב-Postgres
+
+להחליף את הלוגיקה הסדרתית (ללא אטומיות) ב-`src/lib/budgetUpdater.js` בפונקציות `plpgsql`, נקראות דרך `supabase.rpc(...)`. **חתימות הפונקציות ב-JS (`handleBudgetOnStatusChange`, `recalcBudgetSource`, `validateBudgetSelection`) נשארות זהות** — רק המימוש הפנימי משתנה לקריאת RPC, כך ש-`OrderDetail.jsx`/`GoodsReceiptDialog.jsx` לא צריכים להשתנות.
+
+- **`apply_order_budget_transition(order_id uuid, new_status text)`**: `select ... for update` על שורת ההזמנה (נעילה נגד הגשה כפולה בו-זמנית), בדיקת דגל `budget_updated` **בתוך** הטרנזקציה (לא לסמוך על ערך שהלקוח קרא קודם), הענפים בדיוק כמו היום (approved → שריון + ולידציה מחדש של יתרה; received_full/partial → מעבר reserved→spent/used + הוספת רשומה ל-`transactions` jsonb; cancelled → שחרור שריון), קורא ל-`recalc_budget_source` באותה טרנזקציה.
+- **`recalc_budget_source(source_id uuid)`**: פורט ישיר של `recalcBudgetSource` ללוגיקת `sum()` ב-SQL.
+- **`apply_goods_receipt(order_id uuid, received_items jsonb)`**: מחליף את הלולאה הסדרתית ב-`GoodsReceiptDialog.jsx` (N+1 קריאות) בלולאת `jsonb_array_elements` בתוך הפונקציה — upsert ל-`inventory_items` + הוספה ל-`movements` + `inventory_updated = true`, הכל בטרנזקציה אחת. לשלב באותו שלב עבודה כמו §תקציב (שני הם אותה בעיית flag-guard/אטומיות).
+
+`validateBudgetSelection` יכול להישאר בדיקה קריאה-בלבד בצד לקוח (UX מוקדם) — ה-RPC עצמו הוא הבדיקה הסמכותית בפועל.
+
+---
+
+## 5. אחסון קבצים
+
+Bucket יחיד ב-Supabase Storage, למשל `library-files`, **ציבורי** (לא signed URLs) — כלי פנימי לצוות מאומת בלבד, קבצים לא רגישים מספיק כדי להצדיק את המורכבות/עלות הנוספת של signed URLs. מוסכמת נתיב: `<entity>/<uuid>-<שם-קובץ>`. מחליף את `base44.integrations.Core.UploadFile({ file })` — `upload()` + `getPublicUrl()`, מוחזר כ-`{ file_url }` (אותה צורה שכל 6 נקודות הקריאה כבר מפרקות).
+
+---
+
+## 6. ייבוא אקסל למלאי (`src/pages/Inventory.jsx`)
+
+**היקף מצומצם ממה שחשבנו בהתחלה**: ייבוא רשימות ספרים (`BookListForm.jsx`) **כבר** דטרמיניסטי היום (פרסור `xlsx` בצד לקוח + `COLUMN_MAP` פאזי) — ה-AI של Base44 (`ExtractDataFromUploadedFile`) משמש **רק** בייבוא המלאי ב-`Inventory.jsx`. לכן: לחלץ את לוגיקת מיפוי-העמודות הקיימת מ-`BookListForm.jsx` ל-`src/lib/excelImport.js` משותף (`parseExcelRows(file, columnMap)`), ושני מקומות הקריאה (`BookListForm.jsx` ו-`Inventory.jsx`) ישתמשו בו. `Inventory.jsx`'s `handleImport` הופך מ-`UploadFile→ExtractDataFromUploadedFile→bulkCreate` ל-`parseExcelRows→ולידציה→bulkCreate`, עם אותה קבוצת עמודות קבועה שכבר מקודדת היום ב-`json_schema` (name/category/subcategory/current_quantity/minimum_quantity/unit/isbn/author). אין צורך אפילו בהעלאת קובץ לשרת — פרסור צד-לקוח ישיר של ה-`File`.
+
+---
+
+## 7. הסרת הצימוד ל-Base44 בבנייה
+
+- `package.json`: הסרת `@base44/sdk`, `@base44/vite-plugin`; הוספת `@supabase/supabase-js`.
+- `vite.config.js`: הסרת רישום ה-plugin `base44(...)` לגמרי.
+- `src/api/base44Client.js`: משוכתב בפנים (§3), **לא נמחק**.
+- `src/lib/app-params.js`: נמחק (מיותר); להסיר את ה-import שלו מ-`AuthContext.jsx`.
+- `base44/` directory: מועבר ל-`docs/legacy-base44-schema/`.
+- `CLAUDE.md`: לעדכן קטעי Data access / Auth / dev-env בשלב הסופי (לא לשכוח — ידריך שיחות Claude Code עתידיות).
+- `.env.local`: `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` במקום משתני ה-Base44.
+
+---
+
+## 8. פריסה ל-Cloudflare Pages
+
+- Build command: `npm run build` (ללא שינוי). Output directory: `dist`.
+- משתני סביבה בהגדרות הפרויקט ב-Cloudflare Pages (לא ב-git): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (ה-anon key מיועד לחשיפה בצד לקוח לפי עיצוב Supabase — **RLS, לא סודיות המפתח, הוא ההגנה בפועל**; לתעד את זה כדי שאיש לא יבהל וירוטט את המפתח בעתיד).
+- ראוטינג SPA: קובץ `public/_redirects` עם `/*  /index.html  200` (חובה כי `react-router-dom`'s `BrowserRouter` ידרוש נפילה-חזרה בקישורים עמוקים, למשל `/orders/abc123`).
+- דרישת קדם: **לאתחל git repo + remote** (אין כרגע — `git init`, לדחוף ל-GitHub, לחבר את Cloudflare Pages לענף הראשי).
+
+### מניעת "השהיה" (pause) של Supabase בטיר החינמי
+
+בטיר החינמי, פרויקט ללא תעבורת API במשך 7 ימים רצופים מושהה, ודורש שחזור **ידני** בלוח הבקרה (לא מתעורר לבד מבקשה נכנסת) — הפרעת שירות אמיתית אם אף אחד לא שם לב. כדי למנוע זאת מראש: להוסיף workflow מתוזמן ב-GitHub Actions (`.github/workflows/keep-alive.yml`) שמבצע קריאת REST פשוטה ל-Supabase (עם ה-anon key, שהוא ציבורי ממילא) פעם ב-5 ימים (`cron: '0 3 */5 * *'`). ללא עלות (בתוך מכסת הדקות החינמית של GitHub Actions), ללא תחזוקה שוטפת, קובץ YAML אחד שנכתב פעם אחת. זה מבטל את הצורך בשחזור ידני ובכל השפעה בפועל של מדיניות ה-pause.
+
+---
+
+## 9. סדר עבודה מומלץ (שלבים)
+
+צעד מקדים (חד-פעמי, לפני הכל): **יצירת הסקיל `@run-step`** לפי §0 — מכאן ואילך, כל שלב מתחתיו מבוצע ע"י הפעלת `@run-step <מספר שלב>`.
+
+0. **תשתית**: `git init` + remote, יצירת פרויקט Supabase, יצירת פרויקט Cloudflare Pages (יכול להצביע על deploy ריק בהתחלה).
+1. **סכמה + RLS ב-Supabase**: כל 23 הטבלאות + `profiles`, FKs, עמודות JSONB, מדיניות RLS בסיסית, טריגר `handle_new_user`. עבודת SQL/Studio טהורה, ללא שינוי קוד עדיין.
+2. **ליבת האימות**: שכתוב מלא של `src/api/base44Client.js` (§3, כל 24 הישויות בבת אחת) + שכתוב `src/lib/AuthContext.jsx` (§2) + `src/pages/Login.jsx` חדש + חיווט/מחיקה סופית של `ProtectedRoute.jsx` (להחליט אחד מהשניים, לא לשמור את שתי דרכי השערור). בסוף השלב הזה — כל עמוד קיים אמור לעבוד מול Supabase בלי שינוי נוסף לעמוד עצמו.
+3. **בדיקה ידנית לפי קבוצות תת-מערכת**: (א) הזמנות+תקציב+זיכויים+קבלת סחורה יחד (הכי תלויים זה בזה); (ב) ספקים+קטגוריות+מלאי; (ג) זרימת ספרים ו-זרימת ציוד/הצעות מחיר בנפרד (לפי הכלל בתיעוד שלא לערבב); (ד) כוח אדם; (ה) ניהול פרויקטים.
+4. **העלאת קבצים** (§5): מימוש עטיפת ה-Storage, בדיקת 6 נקודות הקריאה.
+5. **ייבוא אקסל** (§6): `excelImport.js` + שכתוב `Inventory.jsx`.
+6. **RPC-ים לתקציב** (§4): כתיבה ופריסה של הפונקציות, שכתוב פנים `budgetUpdater.js` + `GoodsReceiptDialog.jsx`.
+7. **הסרת צימוד הבנייה** (§7): package.json/vite.config.js, מחיקת app-params.js, העברת base44/, עדכון CLAUDE.md.
+8. **פריסה ל-Cloudflare Pages** (§8): משתני סביבה, `_redirects`, deploy ראשון, בדיקת קישורים עמוקים, וה-workflow השומר על Supabase ער (§8, "מניעת השהיה").
+9. **מעבר בדיקה ידני מקצה-לקצה** על ה-URL הפרוס האמיתי: login/logout, יצירה→הגשה→אישור→קבלה של הזמנת רכש (עם וידוא effects תקציב+מלאי), רשימת ספרים→ייבוא אקסל→הצעת מחיר→המרה להזמנה, נוכחות כוח אדם, יצירת פרויקט עם העלאת מסמך, התראת מלאי נמוך. **רק אחרי המעבר הזה** Base44 בטוח להוצאה משימוש סופית.
+
+---
+
+## 10. מה נשאר מחוץ להיקף (במפורש)
+
+- אין מסך ניהול-משתמשים באפליקציה — עריכה ב-Supabase Studio מספיקה לשלב זה.
+- אין מדיניות RLS מעבר לפעולות הרגישות שכבר צוינו — שאר הטבלאות נשארות נאכפות ב-UI בלבד (כמו היום).
+- טיפול ב"הירדמות" הפרויקט בטיר החינמי **נכלל** בתוכנית (§8, workflow קטן ב-GitHub Actions) — לא הוצא מההיקף, בניגוד להחלטה הראשונית.
+- אין נרמול של שדות ה-JSONB (items/transactions/books) לטבלאות בנות.
+- אין signed/expiring URLs לאחסון — bucket ציבורי.
+- אין איחוד של כ-20 נקודות הקריאה הכפולות ל-`base44.auth.me()` (השכבה הדקה בשלב 3 עושה שהן ימשיכו לעבוד בלי שינוי) — ניקוי נחמד-אבל-לא-הכרחי.
+- אין ייבוא/ייצוא נתונים מ-Base44 (אושר: מתחילים מאפס).
+- אין סוויטת בדיקות אוטומטיות — האימות הוא מעבר ידני (שלב 9).
+
+## קבצים קריטיים למימוש
+
+- `src/api/base44Client.js` — כל שכבת הגישה ל-Supabase (§3), הקובץ בעל המנוף הגבוה ביותר.
+- `src/lib/AuthContext.jsx` — שכתוב מלא לאימות Supabase + שער profiles (§2).
+- `src/lib/budgetUpdater.js` — פנים מוחלפים בקריאות RPC (§4), חתימות נשמרות.
+- `src/components/GoodsReceiptDialog.jsx` — לולאת קבלת מלאי הופכת לקריאת RPC (§4).
+- `src/pages/Inventory.jsx` — שכתוב ייבוא אקסל (§6).
+- `src/components/bookLists/BookListForm.jsx` — מקור דפוס מיפוי-העמודות לחילוץ ל-`src/lib/excelImport.js` (§6).
+- `vite.config.js`, `package.json` — הסרת צימוד בנייה (§7).
+- `base44/entities/*.jsonc` (24 קבצים) — מקור אמת לכתיבת ה-DDL של Postgres (§1).
+
+---
+
+## יומן ביצוע
+
+### 2026-07-09 — צעד מקדים: יצירת הסקיל `@run-step`
+**סטטוס:** ✅ הצליח
+
+נוצרו: `.claude/skills/run-step/SKILL.md` (סקיל פרויקטלי עם frontmatter תקין — name/description — המתאר את תהליך הרצת שלב, טיפול בכישלונות, ותיעוד ביומן זה) ו-`.claude/agents/README.md` (placeholder מתעד לתיקיית agents ריקה, מוכנה לשימוש עתידי). לא נדרשו תיקונים. מכאן ואילך, כל שלב מ-§9 יופעל ויתועד דרך `@run-step`.
+
+### 2026-07-09 — קביעת עותק קנוני לקובץ התוכנית
+**סטטוס:** ✅ הצליח
+
+נוצרה תיקיית `.claude/plans/` בתוך הפרויקט והועתק אליה קובץ התוכנית (זהה בתוכנו לעותק ב-`~/.claude/plans/`). הוחלט: **עותק זה שבתוך הפרויקט הוא הקנוני מעכשיו** — הסקיל `run-step` עודכן (§"קובץ התוכנית") להצביע עליו ולכתוב אליו בלבד את יומן הביצוע וכל עדכון עתידי. העותק ב-`~/.claude/plans/` נשאר כסנאפשוט קפוא מרגע היצירה, ולא יעודכן יותר.
+
+### 2026-07-09 — שלב 1: סכמה + RLS ב-Supabase
+**סטטוס:** ⚠️ הצליח חלקית
+
+נכתב קובץ מיגרציה מלא: `supabase/migrations/0001_init_schema.sql` (752 שורות). כולל:
+- **25 טבלאות** (24 ישויות מ-`base44/entities/*.jsonc` + `profiles`) — תוקן פער קטן בתוכנית: §1 כתב "23 טבלאות" אך יש בפועל 24 קבצי jsonc ישויות (לא כולל User) + profiles, כפי שגם מצוין נכון ב"קבצים קריטיים למימוש" בתחתית התוכנית. נספרו/אומתו כל 25 ה-`create table` בקובץ.
+- כל שדות ה-`id`/`created_date`/`updated_date` לפי המוסכמה בתוכנית.
+- שדות מערך מקוננים (`items`/`transactions`/`books`/`movements`/וכו') כ-`jsonb not null default '[]'::jsonb`.
+- `check` constraints על כל שדה enum שהוגדר במפורש ב-jsonc המקורי (סטטוסים, סוגי מימון וכו'), כולל ברירות המחדל התואמות.
+- כל מפתחות ה-FK (nullable, `on delete set null` לנתוני-אב שמאורכבים ולא נמחקים; `on delete cascade` לטבלאות-בת של project שתלויות לגמרי בפרויקט האב — project_contacts/documents/domains/goals/members/milestones/tasks). שדות `person_id` פולימורפיים (schedules, project_members) הושארו במכוון בלי FK, כמתועד בתוכנית.
+- טריגר `set_updated_date` על כל 24 טבלאות הישויות.
+- **`profiles`**: טבלה + טריגר `handle_new_user` (SECURITY DEFINER, יוצר שורת profile אוטומטית עם role='user' בכל הרשמה) + פונקציית `is_admin()` + טריגר `protect_profile_role` שחוסם הסלמת הרשאות עצמית (מונע ממשתמש לא-admin לשנות את שדה ה-role של עצמו).
+- **RLS**: מופעל על כל 25 הטבלאות. 21 טבלאות בסיס: select/insert/update/delete פתוח לכל authenticated (משקף את המצב הקיים היום, נאכף רק ב-UI). 3 טבלאות רגישות (budget_sources, budget_allocations, supplier_credits): select פתוח, insert/update/delete admin-בלבד דרך `is_admin()`. profiles: select פתוח לכולם, update מוגבל לשורה של המשתמש עצמו (הגנת role דרך הטריגר, לא מדיניות RLS נפרדת — Postgres לא תומך ב-RLS ברמת עמודה בודדת).
+- נמצאה ותוקנה טעות: בטיוטה ראשונית של הקובץ נכנסו בטעות שתי שורות placeholder לא-תקינות (`create table ... _unused_placeholder_do_not_use () ;` ואז `drop table`) — הוסרו לפני השמירה הסופית.
+- אומת: איזון סוגריים תקין (בדיקת סקריפט Node), ומספר תקין וזוגי של מפרידי `$$` (14 = 7 בלוקים).
+
+**מה לא בוצע ולמה (הצלחה חלקית)**: הקובץ **לא הורץ בפועל** נגד מסד נתונים חי, כי **עדיין אין פרויקט Supabase קיים** (שלב 0 בתוכנית — יצירת חשבון/פרויקט ב-Supabase — טרם בוצע). זוהי פעולה שדורשת הרשמה/יצירת פרויקט דרך אתר Supabase בפועל, ואינה ניתנת לביצוע אוטומטי על ידי הסוכן ללא פרטי חשבון. **הפעולה הנדרשת מהמשתמשת**: להירשם ל-Supabase וליצור פרויקט חדש (Supabase.com → New Project), ואז להדביק את תוכן הקובץ ב-SQL Editor של הפרויקט (או לקשר עם Supabase CLI ולהריץ `supabase db push`). לאחר מכן ניתן להריץ `@run-step שלב 2`.
+
+### 2026-07-09 — שלב 0 (חלקי): פרויקט Supabase נוצר + git init
+**סטטוס:** ⚠️ הצליח חלקית
+
+המשתמשת יצרה פרויקט Supabase בפועל (אזור Tokyo/ap-northeast-1), והריצה (לפי דיווחה) את `supabase/migrations/0001_init_schema.sql` דרך ה-SQL Editor. בנוסף בוצע `git init` בשורש הפרויקט (ריפו ריק, ללא commit עדיין — לא בוצע commit כי לא התבקש).
+
+**נותר לשלב 0**: יצירת remote ב-GitHub (אין gh CLI מותקן/מאומת בסביבה — נדרשת פעולה ידנית: יצירת ריפו ב-github.com והוספתו כ-remote, או לחלופין דילוג על git ופריסה ל-Cloudflare Pages בדרך "Direct Upload" ללא git), ויצירת פרויקט Cloudflare Pages. קבלת Project URL + anon key מ-Supabase (Project Settings → API) נדרשת גם לשלב 2.
+
+### 2026-07-09 — שלב 1: אימות סופי
+**סטטוס:** ✅ הצליח
+
+המשתמשת אישרה: 25 טבלאות מופיעות ב-Table Editor של Supabase. שלב 1 (סכמה + RLS) סגור לגמרי.
