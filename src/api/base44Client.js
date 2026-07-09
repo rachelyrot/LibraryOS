@@ -58,6 +58,21 @@ function applyEq(query, filters) {
   return q;
 }
 
+// Forms across the app default unset optional fields (uuid FKs like branch_id,
+// date inputs like start_date) to '' rather than omitting them or using null.
+// Postgres rejects '' for uuid/date/numeric columns (though it also happens to
+// tolerate it for plain text columns) — Base44's backend was lenient about this,
+// Postgres via PostgREST is not. Converting '' -> null at the boundary (top-level
+// fields only, not inside jsonb array blobs like items/transactions/books) avoids
+// having to special-case every call site across ~40 files.
+function sanitizePayload(data) {
+  const sanitized = {};
+  for (const [key, value] of Object.entries(data)) {
+    sanitized[key] = value === '' ? null : value;
+  }
+  return sanitized;
+}
+
 function makeEntity(table) {
   return {
     list: (sort, limit = 1000) =>
@@ -67,13 +82,13 @@ function makeEntity(table) {
     get: (id) =>
       supabase.from(table).select('*').eq('id', id).maybeSingle().then(unwrap),
     create: (data) =>
-      supabase.from(table).insert(data).select().single().then(unwrap),
+      supabase.from(table).insert(sanitizePayload(data)).select().single().then(unwrap),
     update: (id, data) =>
-      supabase.from(table).update(data).eq('id', id).select().single().then(unwrap),
+      supabase.from(table).update(sanitizePayload(data)).eq('id', id).select().single().then(unwrap),
     delete: (id) =>
       supabase.from(table).delete().eq('id', id).then(unwrap),
     bulkCreate: (rows) =>
-      supabase.from(table).insert(rows).select().then(unwrap),
+      supabase.from(table).insert(rows.map(sanitizePayload)).select().then(unwrap),
   };
 }
 
