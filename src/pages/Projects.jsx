@@ -58,7 +58,7 @@ export default function Projects() {
     try {
       if (editing) { await base44.entities.Project.update(editing.id, data); toast.success('פרויקט עודכן'); }
       else { await base44.entities.Project.create(data); toast.success('פרויקט נוצר'); }
-      setEditing(null); load();
+      setEditing(null); setDialogOpen(false); load();
     } catch (e) { toast.error('שגיאה בשמירה'); }
   };
 
