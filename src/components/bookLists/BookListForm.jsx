@@ -5,13 +5,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Upload, Plus, Trash2, AlertTriangle, Check, FileSpreadsheet, Edit3, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, Check, FileSpreadsheet, Edit3, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
-import { base44 } from '@/api/base44Client';
 import useCategories from '@/hooks/useCategories';
 import { cn } from '@/lib/utils';
 import { nylonLabel, normalizeNylon } from '@/lib/bookQuoteExcel';
-import * as XLSX from 'xlsx';
+import { cleanColumnName, detectKey, readExcelRows } from '@/lib/excelImport';
 
 // ── Column detection ────────────────────────────────────────────
 const COLUMN_MAP = {
@@ -54,69 +53,12 @@ const COLUMN_MAP = {
   ],
 };
 
-function cleanColumnName(raw) {
-  if (!raw) return '';
-  // Remove hidden / zero-width / RTL / non-printable characters
-  let s = raw.replace(/[\u200B-\u200D\uFEFF\u200E\u200F\u00A0]/g, ' ');
-  // Collapse any repeated whitespace into a single space
-  s = s.replace(/\s+/g, ' ');
-  // Trim
-  s = s.trim();
-  // Remove surrounding quotes (single, double, Hebrew geresh/gershayim) if the whole string is wrapped
-  s = s.replace(/^[\u2018\u2019\u201C\u201D\u05F3\u05F4'"](.*)[\u2018\u2019\u201C\u201D\u05F3\u05F4'"]$/, '$1');
-  return s;
-}
-
-function detectKey(row, field) {
-  const candidates = COLUMN_MAP[field];
-  if (!candidates) return null;
-  const originalKeys = Object.keys(row);
-  for (const ok of originalKeys) {
-    const cleaned = cleanColumnName(ok).toLowerCase();
-    if (!cleaned) continue;
-    for (const c of candidates) {
-      if (cleanColumnName(c).toLowerCase() === cleaned) return ok;
-    }
-  }
-  return null;
-}
-
-function detectColumns(row) {
-  const mapping = {};
-  for (const field of Object.keys(COLUMN_MAP)) {
-    const src = detectKey(row, field);
-    if (src) mapping[field] = cleanColumnName(src);
-  }
-  return mapping;
-}
-
 // ── Header-row detection ──
 const HEADER_SIGNALS = ['שם ספר', 'שם הספר', 'כותר', 'isbn', 'מחבר', 'מחיר', 'title', 'שם כותר', 'שם המוצר', 'שם הכותר'];
-function looksLikeHeaderRow(row) {
-  const vals = Object.values(row).map(v => cleanColumnName(String(v || '')).toLowerCase());
-  const hits = HEADER_SIGNALS.filter(s => vals.includes(s.toLowerCase()));
-  return hits.length >= 1;
-}
-
-// ── Find real header row index in sheet (for files where row 0 is a note) ──
-// Returns the 0-based row index that contains column headers, or -1 if not found
-function findHeaderRowIndex(ws) {
-  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-  const titleVariants = COLUMN_MAP.title.map(s => cleanColumnName(s).toLowerCase());
-  for (let r = range.s.r; r <= Math.min(range.s.r + 9, range.e.r); r++) {
-    for (let c = range.s.c; c <= range.e.c; c++) {
-      const cell = ws[XLSX.utils.encode_cell({ r, c })];
-      if (!cell) continue;
-      const val = cleanColumnName(String(cell.v || '')).toLowerCase();
-      if (titleVariants.includes(val)) return r;
-    }
-  }
-  return -1;
-}
 
 // ── Parse a single row ──────────────────────────────────────────
 function parseRow(row) {
-  const g = (f) => { const k = detectKey(row, f); return k ? row[k] : undefined; };
+  const g = (f) => { const k = detectKey(row, COLUMN_MAP, f); return k ? row[k] : undefined; };
   const title = g('title'); const author = g('author'); const publisher = g('publisher');
   const isbn = g('isbn'); const category = g('category');
   const supplier_price = parseFloat(g('supplier_price'));
@@ -217,48 +159,29 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
     setFileName(file.name);
     setParsing(true);
     try {
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
+      const { dataRows, detectedColumns: cols, allColumns } = await readExcelRows(file, {
+        columnMap: COLUMN_MAP,
+        anchorField: 'title',
+        headerSignals: HEADER_SIGNALS,
+      });
 
-      // First try default (row 0 as header)
-      let rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
-      if (rows.length === 0) {
+      if (allColumns.length === 0) {
         toast.error('לא זוהו נתונים. ודאו שהקובץ מכיל רשימת ספרים ואינו ריק.');
         setParsing(false);
         return;
-      }
-
-      // Check if first row already has a title column
-      let dataRows = rows.filter(r => !looksLikeHeaderRow(r));
-      let cols = dataRows.length > 0 ? detectColumns(dataRows[0]) : {};
-
-      // If title not found, scan first 10 rows for real header row
-      if (!cols.title) {
-        const headerRowIdx = findHeaderRowIndex(ws);
-        if (headerRowIdx > 0) {
-          rows = XLSX.utils.sheet_to_json(ws, { defval: '', range: headerRowIdx });
-          dataRows = rows.filter(r => !looksLikeHeaderRow(r));
-          cols = dataRows.length > 0 ? detectColumns(dataRows[0]) : {};
-        }
       }
 
       setDetectedColumns(cols);
 
       // Check title column exists — show which columns were found to help debug
       if (!cols.title) {
-        const foundCols = Object.keys(rows[0] || {}).map(k => cleanColumnName(k)).filter(Boolean).join(', ');
+        const foundCols = allColumns.map(k => cleanColumnName(k)).filter(Boolean).join(', ');
         toast.error(`לא נמצאה עמודת "שם ספר" בקובץ.\nעמודות שנמצאו: ${foundCols || 'לא זוהו'}\nנדרשת עמודה בשם: שם ספר / כותר / Title`, { duration: 10000 });
         setParsing(false);
         return;
       }
 
-      // Filter out rows with no title (empty or whitespace-only)
-      const nonEmptyDataRows = dataRows.filter(r =>
-        Object.values(r).some(v => v !== '' && v != null)
-      );
-      const allParsed = nonEmptyDataRows.map(parseRow);
+      const allParsed = dataRows.map(parseRow);
       // Drop rows without a title silently
       const parsed = allParsed.filter(b => b.title);
       setBooks(parsed);

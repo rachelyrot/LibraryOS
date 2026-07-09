@@ -279,4 +279,21 @@ Bucket יחיד ב-Supabase Storage, למשל `library-files`, **ציבורי** 
 ### 2026-07-09 — שלב 4: מיגרציית ה-Storage הורצה
 **סטטוס:** ✅ הצליח
 
-המשתמשת הריצה את `supabase/migrations/0002_storage.sql` ב-SQL Editor — "Success. No rows returned." ה-bucket `library-files` והמדיניות RLS שלו נוצרו בפועל. שלב 4 סגור מבחינת התשתית והקוד. עדיין ממתין: בדיקת העלאת קובץ אמיתית באתר החי (חסום ע"י נטפרי, לא דחוף). קוד השלב טרם נדחף ל-GitHub.
+המשתמשת הריצה את `supabase/migrations/0002_storage.sql` ב-SQL Editor — "Success. No rows returned." ה-bucket `library-files` והמדיניות RLS שלו נוצרו בפועל. שלב 4 סגור מבחינת התשתית והקוד. עדיין ממתין: בדיקת העלאת קובץ אמיתית באתר החי (חסום ע"י נטפרי, לא דחוף).
+
+### 2026-07-09 — שלב 4: commit + push
+**סטטוס:** ✅ הצליח
+
+המשתמשת אישרה. `git add -A`, commit ("Add Supabase Storage file uploads (migration step 4)"), נדחף ל-`origin/main` (3 קבצים). המשתמשת ביקשה להמשיך ישר לשלב 5 בזמן שהיא ממתינה לפתיחת גישה ב-Netfree.
+
+### 2026-07-09 — שלב 5: ייבוא אקסל למלאי
+**סטטוס:** ✅ הצליח
+
+בוצע לפי §6:
+- **`src/lib/excelImport.js`** (חדש): חולצו ההלוגיקה הגנרית של זיהוי-עמודות מ-`BookListForm.jsx` — `cleanColumnName`, `detectKey`, `detectColumns`, `looksLikeHeaderRow`, `findHeaderRowIndex`, ופונקציית תזמור חדשה `readExcelRows(file, { columnMap, anchorField, headerSignals })` שמאחדת את כל תהליך הקריאה (כולל הסריקה החוזרת למציאת שורת הכותרות האמיתית כשיש שורת הערה לפני זה). כל הפונקציות כעת מקבלות `columnMap` כפרמטר מפורש (במקום קבוע ברמת המודול), כדי שיתאימו לכל קורא.
+- **`src/components/bookLists/BookListForm.jsx`**: שוכתב לצרוך את המודול המשותף במקום להגדיר את אותה לוגיקה מקומית — התנהגות זהה לחלוטין (אומת ע"י קריאה קפדנית והשוואת התהליך שורה-שורה, לא ניתן לבדוק בדפדפן אמיתי בסביבה הזו). תוך כדי, נוקו שני imports מתים שהיו קיימים כבר לפני השינוי הזה (`Upload`, `base44`) — אומת עם `git show HEAD:...` שהיו מתים גם בגרסה הקודמת, לא נגרמו ע"י הריפקטור.
+- **`src/pages/Inventory.jsx`**: `handleImport` נכתב מחדש לגמרי — הוסר לגמרי `base44.integrations.Core.UploadFile`+`ExtractDataFromUploadedFile` (אין יותר העלאת קובץ לשרת בכלל לצורך הייבוא — פרסור צד-לקוח ישיר). נוסף `INVENTORY_COLUMN_MAP` (name/category/subcategory/current_quantity/minimum_quantity/unit/isbn/author, תואם בדיוק לשדות שהיו מקודדים קודם ב-`json_schema`) ו-`parseInventoryRow`. הודעת השגיאה/הצלחה וטקסט הדיאלוג עודכנו לשקף ייבוא דטרמיניסטי (הוסרה ההתייחסות ל"אגרון"/AI).
+- אתגר טכני שנתקלתי בו ותועד לתועלת עתידית: כלי ה-Edit נכשל שוב ושוב בהתאמת מחרוזות שמכילות את התווים הבלתי-נראים המקוריים (zero-width space וכו') ב-regex של `cleanColumnName` — נפתר ע"י שימוש בסקריפט Node (`fs.readFileSync`/`splice`/`writeFileSync`) לעריכה כירורגית לפי מספרי שורות, תוך אימות קודי התווים בפועל (`codePointAt`) כדי לוודא שהתוכן הסופי זהה סמנטית למקור.
+- **אימות**: `npm run build` עבר בהצלחה אחרי כל שינוי (3 פעמים לאורך הדרך). `npm run lint` — אפס שגיאות בשלושת הקבצים שנגעתי בהם (`excelImport.js` חדש, נקי; `BookListForm.jsx` ו-`Inventory.jsx` — נקיים אחרי ניקוי ה-imports המתים).
+
+**לא בוצע**: בדיקה חיה בדפדפן אמיתי (לא זמינה בסביבה זו) — מומלץ שהמשתמשת תבדוק ידנית את שני זרימות הייבוא (רשימת ספרים + מלאי) ברגע שהאתר החי נגיש. טרם הועלה/נדחף ל-GitHub.
