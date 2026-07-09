@@ -339,4 +339,16 @@ Bucket יחיד ב-Supabase Storage, למשל `library-files`, **ציבורי** 
 - הורץ `npm install` מחדש — 21 חבילות הוסרו (Base44 SDK + תלויות משנה שלו). 623 חבילות נותרו.
 - **אימות**: `npm run build` נכשל בהתחלה (הבעיה עם ה-alias שתוארה למעלה), תוקן ואז עבר בהצלחה. `npm run lint` — 59 שגיאות, כולן קיימות מראש בקבצים שלא נגעתי בהם (ירד מ-63 בשלב 2 בזכות הניקויים האגביים בשלבים 5-6). הרצתי שרת dev מקומי ווידאתי עם curl ש-`@/App.jsx` ו-`@/pages/Login.jsx` נטענים תקין (HTTP 200) — כלומר ה-alias שתוקן עובד גם ב-dev וגם ב-build.
 
-**לא בוצע**: טרם הועלה/נדחף ל-GitHub — ממתין לאישור.
+### 2026-07-09 — שלב 7: commit + push
+**סטטוס:** ✅ הצליח
+
+המשתמשת אישרה (אחרי בקשת הבהרה על הודעה לא ברורה). `git add -A` — git זיהה נכון 26 rename מ-`base44/` ל-`docs/legacy-base44-schema/` (לא delete+add). commit ("Remove Base44 build coupling (migration step 7)"), נדחף ל-`origin/main` (33 קבצים). זה יפעיל דיפלוי Cloudflare חדש — כדאי לוודא שה-build המרוחק גם עובד עם תיקון ה-alias (אמור לעבוד, זו אותה קונפיגורציית vite בדיוק, אך טרם אומת בפועל שם).
+
+### 2026-07-09 — שלב 8: קובץ _redirects לניתוב SPA
+**סטטוס:** ⚠️ הצליח חלקית
+
+בוצע לפי §8: נוצר `public/_redirects` עם `/*  /index.html  200` (fallback לניתוב צד-לקוח של react-router). אומת ב-build מקומי (`npm run build`) שהקובץ אכן מועתק ל-`dist/_redirects`. שאר §8 (build command `npm run build`, output directory `dist`, git+GitHub) כבר הושלמו בשלבים קודמים.
+
+**פער שהתגלה בבדיקה**: **אין אישור מפורש** שמשתני הסביבה `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` אכן הוגדרו בהגדרות פרויקט Cloudflare (התבקש מהמשתמשת מוקדם יותר בשיחה, אך לא אושר בפירוש שבוצע בפועל). בלי זה, האתר החי לא יוכל להתחבר ל-Supabase כלל, גם אחרי כל שאר השלבים. **נדרש אימות מהמשתמשת** לפני שאפשר לראות בשלב 9.
+
+**אושר בפועל**: המשתמשת ניגשה לאתר החי וקיבלה שגיאת קונסולה `Uncaught Error: supabaseUrl is required` — מאשר במדויק את הפער שזוהה: משתני הסביבה אינם מוגדרים ב-Cloudflare. (שגיאה נפרדת ולא-קשורה: `manifest.json` syntax error + משאב אחד חסום ע"י NetFree (סטטוס 418) — כנראה לא קריטי לתפקוד, לא ה-Supabase client עצמו). **הפעולה הנדרשת**: להוסיף את שני המשתנים ב-Cloudflare Settings → Variables and Secrets, ואז להריץ דיפלוי מחדש (שינוי משתני סביבה לא חל על build קיים — Vite "אופה" אותם לתוך הקוד בזמן build, לא נקרא בזמן ריצה).
