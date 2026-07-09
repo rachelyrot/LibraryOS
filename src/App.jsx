@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
+import Login from '@/pages/Login';
 import Layout from '@/components/Layout';
 import Dashboard from '@/pages/Dashboard';
 import Orders from '@/pages/Orders';
@@ -21,9 +22,9 @@ import Projects from '@/pages/Projects';
 import ProjectDetail from '@/pages/ProjectDetail';
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+  const { isLoadingAuth, authError } = useAuth();
 
-  if (isLoadingPublicSettings || isLoadingAuth) {
+  if (isLoadingAuth) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
@@ -35,8 +36,7 @@ const AuthenticatedApp = () => {
     if (authError.type === 'user_not_registered') {
       return <UserNotRegisteredError />;
     } else if (authError.type === 'auth_required') {
-      navigateToLogin();
-      return null;
+      return <Login />;
     }
   }
 

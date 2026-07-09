@@ -217,3 +217,43 @@ Bucket יחיד ב-Supabase Storage, למשל `library-files`, **ציבורי** 
 **סטטוס:** ✅ הצליח
 
 המשתמשת אישרה: 25 טבלאות מופיעות ב-Table Editor של Supabase. שלב 1 (סכמה + RLS) סגור לגמרי.
+
+### 2026-07-09 — שלב 0: git + GitHub
+**סטטוס:** ✅ הצליח
+
+הענף המקומי שונה מ-`master` ל-`main`. נוסף remote `origin` → `https://github.com/rachelyrot/LibraryOS.git`. כל 186 קבצי הפרויקט נבדקו (`git status --short`, ווידוא ידני שאין קבצי `.env` בין הקבצים שנוספו) ונוספו ל-commit ראשוני ("Initial commit: LibraryOS migration off Base44 to Supabase"). נדחף בהצלחה ל-`origin/main`.
+
+**נותר לשלב 0**: יצירת פרויקט Cloudflare Pages וחיבורו ל-repo. קבלת Project URL + anon key מ-Supabase (Project Settings → API) נדרשת לשלב 2.
+
+### 2026-07-09 — שלב 0: Cloudflare (Workers/Pages) — דיפלוי ראשון
+**סטטוס:** ✅ הצליח
+
+המשתמשת חיברה את הריפו (`rachelyrot/LibraryOS`) ל-Cloudflare דרך "Continue with GitHub". הדיפלוי הראשון עבר בהצלחה (build תקין, `npm run build`, output `dist`). האתר החי: **https://libraryos.rh3224430.workers.dev**. הערה: Cloudflare השתמש בגרסה המאוחדת "Workers" (עם `wrangler.jsonc` שנוצר אוטומטית בסביבת ה-build המרוחקת, לא commit-מי מקומית) במקום "Pages" הקלאסי — מבחינה פונקציונלית זהה למתוכנן. **צפוי שהאתר לא יעבוד בפועל עדיין** (עדיין מדבר עם Base44, לא Supabase) — זה מצופה, ימתין לשלב 2.
+
+### 2026-07-09 — פרטי Supabase לשלב 2
+**סטטוס:** ✅ הצליח
+
+אומת: לפרויקט Supabase הנוכחי (name: "LibraryOS", project ref: `idktdopfvycenheizqbf`, אזור Tokyo) **יש טבלאות קיימות** ב-Table Editor — כלומר זהו פרויקט תקין עם הסכמה מיושמת (גם אם ה-ref שונה מהצילום מסך הראשון בתחילת השיחה — כנראה בלבול/פרויקט שהוחלף בדרך, לא נחקר לעומק כי המשתמשת אישרה שהטבלאות קיימות בפרויקט הנוכחי, וזה הפרויקט היחיד שממנו נלקחו הפרטים בפועל).
+
+נאספו:
+- **Project URL**: `https://idktdopfvycenheizqbf.supabase.co`
+- **Publishable key** (= "anon key", השם החדש ב-Supabase למפתח הבטוח לחשיפה בצד לקוח, מוגן ע"י RLS): `sb_publishable_WKpL0-5frbtjP4dXDrMRwQ_OUt1nhu7`
+
+נוצר קובץ `.env.local` בשורש הפרויקט עם `VITE_SUPABASE_URL` ו-`VITE_SUPABASE_ANON_KEY` (אומת עם `git check-ignore` שהקובץ אכן מתעלם ע"י git, לא נוסף ל-commit). **secret key לא נאסף ולא נחשף** — לא נדרש בצד לקוח.
+
+**נותר**: להוסיף את אותם שני משתני סביבה גם בהגדרות פרויקט Cloudflare (Settings → Environment Variables), כדי שהאתר החי ידע להתחבר ל-Supabase ברגע שקוד שלב 2 יעלה.
+
+### 2026-07-09 — שלב 2: ליבת האימות
+**סטטוס:** ✅ הצליח
+
+בוצע לפי §2 ו-§3 בתוכנית:
+- **`package.json`**: נוסף `@supabase/supabase-js`. הורץ `npm install` מקומית בהצלחה (643 חבילות; `node_modules` לא היה קיים כלל קודם בסביבה המקומית).
+- **`src/api/base44Client.js`** — שוכתב במלואו: יצוא `supabase` (קליינט Supabase גולמי, לשימוש `AuthContext`) + יצוא `base44` השומר על אותה צורת אובייקט מדויקת (`base44.entities.<Name>.list/filter/get/create/update/delete/bulkCreate` על כל 24 הישויות דרך מיפוי `TABLE_MAP`, `base44.auth.me/logout`). `base44.integrations.Core.UploadFile`/`ExtractDataFromUploadedFile` הושארו כ-stub שזורק שגיאה ברורה ("יגיע בשלב מאוחר יותר") — לא מומש בכוונה, כי זה שלב 4/6 בתוכנית, לא שלב 2.
+- **`src/lib/AuthContext.jsx`** — שוכתב במלואו: `supabase.auth.getSession()` + `onAuthStateChange`, בדיקת שורת `profiles` (מבחין בין `auth_required` ל-`user_not_registered` בדיוק לפי §2), `user` בקונטקסט בצורת `{ id, email, full_name, role }`. `src/lib/permissions.js` לא נגע כלל (כצפוי מהתוכנית).
+- **`src/pages/Login.jsx`** — נוצר מאפס: מסך התחברות/הרשמה מקומי (email+password דרך `supabase.auth.signInWithPassword`/`signUp`), מוצג בעברית/RTL תואם לשאר האפליקציה.
+- **`src/App.jsx`** — הוסר `isLoadingPublicSettings` ו-`navigateToLogin()` (מושגים ספציפיים ל-Base44 שאין להם מקבילה); מצב `auth_required` מרנדר עכשיו את `<Login/>` המקומי ישירות במקום להפנות לדף Base44 חיצוני.
+- **`src/components/ProtectedRoute.jsx`** — נמחק (אומת קודם עם grep שאין לו שום import חי בקוד — היה קוד מת, לא היה מחובר בפועל ל-routes). לפי החלטת §9: "אחד מהשניים" — נבחר לשמר את מנגנון השערור הקיים (inline ב-`AuthenticatedApp`) ולמחוק את הכפול.
+
+**אימות**: `npm run build` עבר בהצלחה (dist נוצר עם JS/CSS תקינים). `npm run lint` — 63 שגיאות, **כולן** בקבצים שלא נגעתי בהם בשלב הזה (pre-existing, למשל `unused-imports` ב-Dashboard.jsx/Settings.jsx/Credits.jsx וכו') — לא קשור לשינויים כאן. הרצתי שרת dev מקומי (`npm run dev`), אימתתי עם curl ש-4 הקבצים ששונו/נוצרו (`base44Client.js`, `AuthContext.jsx`, `Login.jsx`, `App.jsx`) מתקמפלים ע"י Vite ללא שגיאות (HTTP 200), ושמשתני הסביבה (`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`) נטענים נכון מ-`.env.local`. השרת נעצר בסיום הבדיקה.
+
+**לא בוצע (מחוץ להיקף שלב 2, כמתוכנן)**: העלאת קבצים (§5, שלב 4), ייבוא אקסל (§6, שלב 5), RPC-ים לתקציב (§4, שלב 6) — עדיין stub/כמו קודם. **טרם נבדק ידנית מול הפרויקט האמיתי ב-Supabase** (למשל הרשמה בפועל דרך `Login.jsx` ווידוא שנוצרת שורת `profiles`) — זה מומלץ כצעד הבדיקה הבא, ועדיין לא הועלה/נדחף ל-GitHub (ממתין לאישור המשתמשת).
