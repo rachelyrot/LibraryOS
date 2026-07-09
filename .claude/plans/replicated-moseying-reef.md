@@ -256,4 +256,27 @@ Bucket יחיד ב-Supabase Storage, למשל `library-files`, **ציבורי** 
 
 **אימות**: `npm run build` עבר בהצלחה (dist נוצר עם JS/CSS תקינים). `npm run lint` — 63 שגיאות, **כולן** בקבצים שלא נגעתי בהם בשלב הזה (pre-existing, למשל `unused-imports` ב-Dashboard.jsx/Settings.jsx/Credits.jsx וכו') — לא קשור לשינויים כאן. הרצתי שרת dev מקומי (`npm run dev`), אימתתי עם curl ש-4 הקבצים ששונו/נוצרו (`base44Client.js`, `AuthContext.jsx`, `Login.jsx`, `App.jsx`) מתקמפלים ע"י Vite ללא שגיאות (HTTP 200), ושמשתני הסביבה (`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`) נטענים נכון מ-`.env.local`. השרת נעצר בסיום הבדיקה.
 
-**לא בוצע (מחוץ להיקף שלב 2, כמתוכנן)**: העלאת קבצים (§5, שלב 4), ייבוא אקסל (§6, שלב 5), RPC-ים לתקציב (§4, שלב 6) — עדיין stub/כמו קודם. **טרם נבדק ידנית מול הפרויקט האמיתי ב-Supabase** (למשל הרשמה בפועל דרך `Login.jsx` ווידוא שנוצרת שורת `profiles`) — זה מומלץ כצעד הבדיקה הבא, ועדיין לא הועלה/נדחף ל-GitHub (ממתין לאישור המשתמשת).
+**לא בוצע (מחוץ להיקף שלב 2, כמתוכנן)**: העלאת קבצים (§5, שלב 4), ייבוא אקסל (§6, שלב 5), RPC-ים לתקציב (§4, שלב 6) — עדיין stub/כמו קודם.
+
+### 2026-07-09 — שלב 2: commit + push
+**סטטוס:** ✅ הצליח
+
+המשתמשת אישרה להעלות. `git add -A` (וידוא ידני שאין `.env`/`node_modules`/`dist` בין הקבצים), commit ("Wire up Supabase auth and data-access layer (migration step 2)"), ונדחף ל-`origin/main` (8 קבצים, כולל מחיקת `ProtectedRoute.jsx` ויצירת `Login.jsx`). זה אמור להפעיל דיפלוי אוטומטי חדש ב-Cloudflare (git-connected).
+
+**נותר לבדיקה ידנית**: לוודא שהוגדרו משתני הסביבה `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` בהגדרות פרויקט Cloudflare, לחכות שהדיפלוי החדש יסתיים, ואז לנסות להירשם בפועל דרך מסך ההתחברות באתר החי ולוודא שנוצרת שורת `profiles` תואמת ב-Supabase (Table Editor). **הבדיקה הזו נדחתה זמנית** — המשתמשת ממתינה לפתיחת גישה ב-Netfree (סינון תוכן) לאתר החי, ולכן ביקשה להמשיך לשלב הבא בינתיים.
+
+### 2026-07-09 — שלב 4: העלאת קבצים
+**סטטוס:** ⚠️ הצליח חלקית
+
+בוצע לפי §5:
+- **`supabase/migrations/0002_storage.sql`** (חדש): יצירת bucket ציבורי בשם `library-files` (`insert into storage.buckets`), + שתי מדיניות RLS על `storage.objects` (select פתוח לכולם דרך ה-bucket הציבורי, insert ל-authenticated בלבד). אומת איזון סוגריים תקין.
+- **`src/api/base44Client.js`**: `integrations.Core.UploadFile` מומש בפועל (הוחלף ה-stub) — `supabase.storage.from('library-files').upload(path, file)` + `getPublicUrl()`, מוחזר כ-`{ file_url }`.
+- **סטייה קטנה ומכוונת מהתוכנית**: §5 הציע מוסכמת נתיב `<entity>/<uuid>-<שם-קובץ>` (תת-תיקייה לפי סוג ישות), אך בפועל **אף אחת מ-6 נקודות הקריאה לא מעבירה מידע על הישות** ל-`UploadFile` (רק `{ file }`) — שינוי כל נקודות הקריאה כדי להעביר הקשר כזה היה סותר את עקרון "מינימום שינויים בנקודות קריאה" (§3). לכן המימוש בפועל הוא נתיב שטוח `<uuid>-<שם-קובץ>` (עדיין ללא התנגשויות, בזכות ה-uuid) — תועד כאן כסטייה מודעת, לא טעות.
+- אומת: כל 6 נקודות הקריאה (`Inventory.jsx`, `Quotes.jsx`, `CreateQuoteRequestDialog.jsx`, `QuoteRequestTab.jsx`, `DocumentsTab.jsx`, `ProjectDialog.jsx`) קוראות עם `{ file }` ומצפות ל-`file_url` — תואם במדויק, אין צורך בשינוי אף אחת מהן. `npm run build` עבר בהצלחה.
+
+**מה לא בוצע (הצלחה חלקית)**: קובץ המיגרציה `0002_storage.sql` **לא הורץ בפועל** על הפרויקט ב-Supabase (כמו בשלב 1 — דורש פעולה ידנית של המשתמשת ב-SQL Editor). **גם לא נבדק בפועל שהעלאת קובץ אמיתית עובדת** (דורש גישה לאתר החי, שממתינה לנטפרי). **טרם הועלה/נדחף ל-GitHub** — ממתין לאישור.
+
+### 2026-07-09 — שלב 4: מיגרציית ה-Storage הורצה
+**סטטוס:** ✅ הצליח
+
+המשתמשת הריצה את `supabase/migrations/0002_storage.sql` ב-SQL Editor — "Success. No rows returned." ה-bucket `library-files` והמדיניות RLS שלו נוצרו בפועל. שלב 4 סגור מבחינת התשתית והקוד. עדיין ממתין: בדיקת העלאת קובץ אמיתית באתר החי (חסום ע"י נטפרי, לא דחוף). קוד השלב טרם נדחף ל-GitHub.

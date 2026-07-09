@@ -112,9 +112,15 @@ export const base44 = {
   },
   integrations: {
     Core: {
-      // File uploads move to Supabase Storage in a later migration step — not yet wired up.
-      UploadFile: async () => {
-        throw new Error('File upload is not available yet (Supabase Storage wiring is a later migration step).');
+      // Supabase Storage — single public bucket (see supabase/migrations/0002_storage.sql).
+      // Path is uuid-prefixed to avoid collisions without needing a lookup; call sites
+      // only pass `{ file }` (no entity context), so there's no per-entity subfolder.
+      UploadFile: async ({ file }) => {
+        const path = `${crypto.randomUUID()}-${file.name}`;
+        const { error } = await supabase.storage.from('library-files').upload(path, file);
+        if (error) throw error;
+        const { data } = supabase.storage.from('library-files').getPublicUrl(path);
+        return { file_url: data.publicUrl };
       },
       // The Base44 AI-based Excel extraction has no Supabase equivalent; the inventory
       // importer is being replaced with a deterministic column-mapped parser in a later step.
