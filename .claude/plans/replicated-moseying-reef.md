@@ -1,4 +1,5 @@
-# מעבר LibraryOS מ-Base44 ל-Supabase + Cloudflare Pages
+# מעבר 
+ מ-Base44 ל-Supabase + Cloudflare Pages
 
 ## Context (רקע)
 
@@ -318,4 +319,24 @@ Bucket יחיד ב-Supabase Storage, למשל `library-files`, **ציבורי** 
 - ניקוי אגבי: הוסרו שני imports מתים שהיו קיימים כבר לפני השינוי (`Label`, `Textarea`) — אומת עם `git show HEAD:...` שהיו מתים גם קודם.
 - **אימות**: `npm run build` עבר בהצלחה. `npm run lint` — אפס שגיאות בכל הקבצים שנגעתי בהם.
 
-**לא בוצע**: קובץ המיגרציה `0003_budget_inventory_rpc.sql` **לא הורץ בפועל** על הפרויקט ב-Supabase (כמו בשלבים 1/4 — דורש הרצה ידנית ב-SQL Editor). בדיקה חיה של זרימת אישור/קבלת הזמנה אמיתית תלויה גם בגישה לאתר החי (עדיין ממתין לנטפרי) וגם בהרצת המיגרציה הזו. טרם הועלה/נדחף ל-GitHub.
+**לא בוצע**: קובץ המיגרציה `0003_budget_inventory_rpc.sql` **לא הורץ בפועל** על הפרויקט ב-Supabase (כמו בשלבים 1/4 — דורש הרצה ידנית ב-SQL Editor). בדיקה חיה של זרימת אישור/קבלת הזמנה אמיתית תלויה גם בגישה לאתר החי (עדיין ממתין לנטפרי) וגם בהרצת המיגרציה הזו.
+
+### 2026-07-09 — שלב 6: commit + push
+**סטטוס:** ✅ הצליח
+
+המשתמשת אישרה. `git add -A`, commit ("Make budget/credit and goods-receipt updates atomic (migration step 6)"), נדחף ל-`origin/main` (4 קבצים). **נותר**: להריץ את `0003_budget_inventory_rpc.sql` ב-SQL Editor של Supabase.
+
+### 2026-07-09 — שלב 7: הסרת הצימוד ל-Base44 בבנייה
+**סטטוס:** ✅ הצליח
+
+בוצע לפי §7:
+- **`package.json`**: הוסרו `@base44/sdk` ו-`@base44/vite-plugin`. שם החבילה שונה מ-`base44-app` ל-`libraryos` (ניקוי אגבי קטן, לא היה מוזכר במפורש בתוכנית אך תואם את הרוח).
+- **`vite.config.js`**: הוסר ה-import וההרשמה של ה-plugin `base44(...)`. **התגלתה תלות נסתרת**: ה-plugin היה אחראי (בשקט, בלי תיעוד גלוי) על הגדרת ה-alias `@/*` → `./src/*` ב-Vite — הסרתו שברה את ה-build לגמרי (`Rollup failed to resolve import "@/App.jsx"`). תוקן בהוספת `resolve.alias` מפורש ב-`vite.config.js`, תואם למיפוי הקיים כבר ב-`jsconfig.json`. זו הייתה ההפתעה המרכזית של השלב הזה.
+- **`src/lib/app-params.js`**: נמחק (אומת מראש עם grep שאין לו אף import חי בקוד).
+- **`base44/` → `docs/legacy-base44-schema/`**: הועבר (לא נמחק) כתיעוד קפוא — כולל תיקון תקלה טכנית: `git mv`/`mv` נכשלו עם "Permission denied" (כנראה קובץ נעול ע"י תהליך/עורך פתוח); נפתר ע"י `cp -r` ואז `rm -rf` על המקור, ואומת שכל 25 קבצי הישויות (24 + User) הועתקו במלואם.
+- **`CLAUDE.md`**: עודכן במלואו — סעיפי "What this is", "Commands" (משתני סביבה), "Data access", "Auth", "Budget/credit side-effects" כעת מתארים את ארכיטקטורת Supabase/Cloudflare הנוכחית במקום Base44. כל אזכור נותר של "base44" בקובץ נבדק ואומת שהוא מכוון (שם הקובץ `base44Client.js` שנשמר בכוונה, וההערה ההיסטורית על המעבר).
+- **`.env.local`**: כבר מכיל את משתני Supabase מקודם (שלב 2) — לא נדרש שינוי.
+- הורץ `npm install` מחדש — 21 חבילות הוסרו (Base44 SDK + תלויות משנה שלו). 623 חבילות נותרו.
+- **אימות**: `npm run build` נכשל בהתחלה (הבעיה עם ה-alias שתוארה למעלה), תוקן ואז עבר בהצלחה. `npm run lint` — 59 שגיאות, כולן קיימות מראש בקבצים שלא נגעתי בהם (ירד מ-63 בשלב 2 בזכות הניקויים האגביים בשלבים 5-6). הרצתי שרת dev מקומי ווידאתי עם curl ש-`@/App.jsx` ו-`@/pages/Login.jsx` נטענים תקין (HTTP 200) — כלומר ה-alias שתוקן עובד גם ב-dev וגם ב-build.
+
+**לא בוצע**: טרם הועלה/נדחף ל-GitHub — ממתין לאישור.
