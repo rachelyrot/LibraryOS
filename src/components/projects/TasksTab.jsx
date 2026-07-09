@@ -44,7 +44,7 @@ export default function TasksTab({ project, user, tasks, onLoad, projects, domai
         await base44.entities.ProjectTask.create({ ...data, project_id: project.id, project_name: project.name });
         toast.success('משימה נוספה');
       }
-      setEditing(null); onLoad();
+      setEditing(null); setDialogOpen(false); onLoad();
     } catch (e) { toast.error('שגיאה בשמירה'); }
   };
 

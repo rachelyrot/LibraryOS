@@ -20,7 +20,7 @@ export default function GoalsTab({ project, user, goals, onLoad }) {
     try {
       if (editing) { await base44.entities.ProjectGoal.update(editing.id, data); toast.success('יעד עודכן'); }
       else { await base44.entities.ProjectGoal.create({ ...data, project_id: project.id, project_name: project.name }); toast.success('יעד נוסף'); }
-      setEditing(null); onLoad();
+      setEditing(null); setDialogOpen(false); onLoad();
     } catch (e) { toast.error('שגיאה בשמירה'); }
   };
 

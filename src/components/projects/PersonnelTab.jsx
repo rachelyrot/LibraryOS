@@ -16,7 +16,7 @@ export default function PersonnelTab({ project, user, members, employees, volunt
     try {
       if (editing) { await base44.entities.ProjectMember.update(editing.id, data); toast.success('שיוך עודכן'); }
       else { await base44.entities.ProjectMember.create({ ...data, project_id: project.id, project_name: project.name }); toast.success('שיוך נוסף'); }
-      setEditing(null); onLoad();
+      setEditing(null); setDialogOpen(false); onLoad();
     } catch (e) { toast.error('שגיאה בשמירה'); }
   };
 

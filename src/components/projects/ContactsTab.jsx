@@ -19,7 +19,7 @@ export default function ContactsTab({ project, user, contacts, onLoad }) {
     try {
       if (editing) { await base44.entities.ProjectContact.update(editing.id, data); toast.success('איש קשר עודכן'); }
       else { await base44.entities.ProjectContact.create({ ...data, project_id: project.id, project_name: project.name }); toast.success('איש קשר נוסף'); }
-      setEditing(null); onLoad();
+      setEditing(null); setDialogOpen(false); onLoad();
     } catch (e) { toast.error('שגיאה בשמירה'); }
   };
 

@@ -31,7 +31,7 @@ export default function AttendanceTab({ user, branches }) {
     try {
       if (editing) { await base44.entities.Attendance.update(editing.id, data); toast.success('נוכחות עודכנה'); }
       else { await base44.entities.Attendance.create(data); toast.success('נוכחות נרשמה'); }
-      setEditing(null); load();
+      setEditing(null); setDialogOpen(false); load();
     } catch (e) { toast.error('שגיאה בשמירה'); }
   };
 

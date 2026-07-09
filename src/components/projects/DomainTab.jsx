@@ -29,7 +29,7 @@ export default function DomainTab({ project, user, domains, tasks, onLoad }) {
     try {
       if (editing) { await base44.entities.ProjectDomain.update(editing.id, data); toast.success('תחום עודכן'); }
       else { await base44.entities.ProjectDomain.create({ ...data, project_id: project.id, project_name: project.name }); toast.success('תחום נוסף'); }
-      setEditing(null); onLoad();
+      setEditing(null); setDialogOpen(false); onLoad();
     } catch (e) { toast.error('שגיאה בשמירה'); }
   };
 

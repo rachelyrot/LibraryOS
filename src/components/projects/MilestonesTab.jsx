@@ -18,7 +18,7 @@ export default function MilestonesTab({ project, user, milestones, domains, onLo
     try {
       if (editing) { await base44.entities.ProjectMilestone.update(editing.id, data); toast.success('אבן דרך עודכנה'); }
       else { await base44.entities.ProjectMilestone.create({ ...data, project_id: project.id, project_name: project.name }); toast.success('אבן דרך נוספה'); }
-      setEditing(null); onLoad();
+      setEditing(null); setDialogOpen(false); onLoad();
     } catch (e) { toast.error('שגיאה בשמירה'); }
   };
 
