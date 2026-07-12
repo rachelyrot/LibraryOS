@@ -34,39 +34,51 @@ export const AuthProvider = ({ children }) => {
     setAuthError(null);
   }, []);
 
-  const checkUserAuth = useCallback(async () => {
+  // Applies a session to auth state WITHOUT touching isLoadingAuth/authChecked —
+  // used both by the initial check and by background auth-state events (e.g.
+  // Supabase silently refreshing the token when the tab regains focus), so a
+  // background refresh never re-triggers the full-page loading spinner and
+  // unmounts the routed page tree (which was resetting in-progress UI state
+  // every time the user switched tabs and came back).
+  const applySession = useCallback(async (session) => {
     try {
-      setIsLoadingAuth(true);
-      const { data: { session } } = await supabase.auth.getSession();
-
       if (!session) {
         setUser(null);
         setIsAuthenticated(false);
         setAuthError({ type: 'auth_required', message: 'Authentication required' });
         return;
       }
-
       await loadProfileForUser(session.user);
     } catch (error) {
       console.error('Auth check failed:', error);
       setUser(null);
       setIsAuthenticated(false);
       setAuthError({ type: 'unknown', message: error.message || 'An unexpected error occurred' });
+    }
+  }, [loadProfileForUser]);
+
+  // Initial auth check only — this is the sole place that toggles isLoadingAuth,
+  // so the full-page spinner only appears once, on first load.
+  const checkUserAuth = useCallback(async () => {
+    setIsLoadingAuth(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      await applySession(session);
     } finally {
       setIsLoadingAuth(false);
       setAuthChecked(true);
     }
-  }, [loadProfileForUser]);
+  }, [applySession]);
 
   useEffect(() => {
     checkUserAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      checkUserAuth();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(session);
     });
 
     return () => subscription.unsubscribe();
-  }, [checkUserAuth]);
+  }, [checkUserAuth, applySession]);
 
   const logout = async () => {
     await supabase.auth.signOut();
