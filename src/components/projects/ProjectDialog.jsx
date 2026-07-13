@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Upload, Loader2 } from 'lucide-react';
+import { Upload, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { PROJECT_TYPE_LABELS, PROJECT_STATUS_LABELS, PRIORITY_LABELS } from '@/lib/projectUtils';
@@ -16,10 +16,10 @@ const emptyProject = {
   manager_name: '', start_date: '', target_end_date: '', status: 'draft', priority: 'medium',
   budget_planned: 0, budget_approved: 0, budget_used: 0, budget_is_approved: false,
   budget_approval_date: '', budget_approver: '', budget_approval_file_url: '',
-  budget_source_id: '', budget_source_name: '', notes: ''
+  budget_source_names: [], notes: ''
 };
 
-export default function ProjectDialog({ open, onOpenChange, initialData, branches, budgetSources, onSave }) {
+export default function ProjectDialog({ open, onOpenChange, initialData, branches, onSave }) {
   const [form, setForm] = useState(emptyProject);
   const [uploading, setUploading] = useState(false);
 
@@ -35,11 +35,13 @@ export default function ProjectDialog({ open, onOpenChange, initialData, branche
     set('branch_name', b?.name || '');
   };
 
-  const handleBudgetSource = (sourceId) => {
-    const s = budgetSources.find(x => x.id === sourceId);
-    set('budget_source_id', sourceId);
-    set('budget_source_name', s?.name || '');
-  };
+  const addBudgetSource = () => setForm(prev => ({ ...prev, budget_source_names: [...(prev.budget_source_names || []), ''] }));
+  const updateBudgetSource = (i, value) => setForm(prev => {
+    const list = [...(prev.budget_source_names || [])];
+    list[i] = value;
+    return { ...prev, budget_source_names: list };
+  });
+  const removeBudgetSource = (i) => setForm(prev => ({ ...prev, budget_source_names: (prev.budget_source_names || []).filter((_, idx) => idx !== i) }));
 
   const handleApprovalFile = async (e) => {
     const file = e.target.files?.[0];
@@ -126,15 +128,19 @@ export default function ProjectDialog({ open, onOpenChange, initialData, branche
             <Label>תקציב מנוצל (₪)</Label>
             <Input type="number" value={form.budget_used || 0} onChange={e => set('budget_used', Number(e.target.value))} />
           </div>
-          <div>
-            <Label>מקור תקציב</Label>
-            <Select value={form.budget_source_id || 'none'} onValueChange={v => v === 'none' ? handleBudgetSource('') : handleBudgetSource(v)}>
-              <SelectTrigger><SelectValue placeholder="ללא" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">ללא</SelectItem>
-                {budgetSources.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          <div className="col-span-2">
+            <Label>מקורות תקציב</Label>
+            <div className="space-y-2 mt-1.5">
+              {(form.budget_source_names || []).map((name, i) => (
+                <div key={i} className="flex gap-2">
+                  <Input value={name} onChange={e => updateBudgetSource(i, e.target.value)} placeholder="לדוגמה: עיריית תל אביב" />
+                  <Button type="button" variant="ghost" size="icon" onClick={() => removeBudgetSource(i)}><Trash2 className="w-4 h-4 text-red-400" /></Button>
+                </div>
+              ))}
+              <Button type="button" variant="outline" size="sm" onClick={addBudgetSource} className="gap-1">
+                <Plus className="w-3.5 h-3.5" /> הוסף מקור תקציב
+              </Button>
+            </div>
           </div>
           <div className="col-span-2 border-t pt-3 mt-1">
             <p className="text-sm font-medium mb-2">אישור תקציב</p>

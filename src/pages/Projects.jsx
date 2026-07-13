@@ -20,7 +20,6 @@ export default function Projects() {
   const [user, setUser] = useState(null);
   const [projects, setProjects] = useState([]);
   const [branches, setBranches] = useState([]);
-  const [budgetSources, setBudgetSources] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -32,10 +31,9 @@ export default function Projects() {
     Promise.all([
       base44.entities.Project.list('-created_date', 500).catch(() => []),
       base44.entities.Branch.list('name', 500).catch(() => []),
-      base44.entities.BudgetSource.list('-created_date', 200).catch(() => []),
       base44.entities.ProjectTask.list('-created_date', 500).catch(() => []),
-    ]).then(([p, b, bs, t]) => {
-      setProjects(p); setBranches(b); setBudgetSources(bs); setTasks(t); setLoading(false);
+    ]).then(([p, b, t]) => {
+      setProjects(p); setBranches(b); setTasks(t); setLoading(false);
     });
   };
 
@@ -171,7 +169,7 @@ export default function Projects() {
         </div>
       )}
 
-      <ProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} initialData={editing} branches={branches} budgetSources={budgetSources} onSave={handleSave} />
+      <ProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} initialData={editing} branches={branches} onSave={handleSave} />
       <ImportTasksDialog open={importOpen} onOpenChange={setImportOpen} projects={projects} onImported={load} />
     </div>
   );

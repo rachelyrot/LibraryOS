@@ -60,7 +60,9 @@ export default function BudgetTab({ project, user, purchaseOrders, credits }) {
             <Progress value={utilization} className="h-3 flex-1" />
             <span className="text-lg font-bold">{utilization}%</span>
           </div>
-          {project.budget_source_name && <p className="text-sm text-muted-foreground mt-2">מקור תקציב: {project.budget_source_name}</p>}
+          {(project.budget_source_names || []).length > 0 && (
+            <p className="text-sm text-muted-foreground mt-2">מקורות תקציב: {project.budget_source_names.join(', ')}</p>
+          )}
         </CardContent>
       </Card>
 

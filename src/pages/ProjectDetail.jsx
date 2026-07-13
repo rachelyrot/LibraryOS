@@ -32,7 +32,6 @@ export default function ProjectDetail() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [credits, setCredits] = useState([]);
   const [branches, setBranches] = useState([]);
-  const [budgetSources, setBudgetSources] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [editOpen, setEditOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -48,11 +47,10 @@ export default function ProjectDetail() {
       base44.entities.ProjectDocument.filter({ project_id: id }, '-created_date', 200).catch(() => []),
       base44.entities.PurchaseOrder.filter({ project_id: id }, '-created_date', 200).catch(() => []),
       base44.entities.Branch.list('name', 500).catch(() => []),
-      base44.entities.BudgetSource.list('-created_date', 200).catch(() => []),
       base44.entities.SupplierCredit.filter({ status: 'active' }, '-created_date', 200).catch(() => []),
-    ]).then(([p, t, m, dom, cont, docs, pos, b, bs, cr]) => {
+    ]).then(([p, t, m, dom, cont, docs, pos, b, cr]) => {
       setProject(p); setTasks(t); setMilestones(m); setDomains(dom); setContacts(cont);
-      setDocuments(docs); setPurchaseOrders(pos); setBranches(b); setBudgetSources(bs);
+      setDocuments(docs); setPurchaseOrders(pos); setBranches(b);
       setCredits(cr); setLoading(false);
     });
   }, [id]);
@@ -145,7 +143,7 @@ export default function ProjectDetail() {
         {canViewReports && <TabsContent value="reports"><ReportsTab project={project} user={user} tasks={tasks} domains={domains} contacts={contacts} purchaseOrders={purchaseOrders} milestones={milestones} /></TabsContent>}
       </Tabs>
 
-      <ProjectDialog open={editOpen} onOpenChange={setEditOpen} initialData={project} branches={branches} budgetSources={budgetSources} onSave={handleEditSave} />
+      <ProjectDialog open={editOpen} onOpenChange={setEditOpen} initialData={project} branches={branches} onSave={handleEditSave} />
     </div>
   );
 }

@@ -376,3 +376,17 @@ Bucket יחיד ב-Supabase Storage, למשל `library-files`, **ציבורי** 
 **סריקה יזומה מצאה עוד 7 מופעים זהים של אותו באג** (סוכן חקירה ברקע): `AttendanceTab.jsx`, `TasksTab.jsx`, `MilestonesTab.jsx`, `ContactsTab.jsx`, `DomainTab.jsx`, `GoalsTab.jsx`, `PersonnelTab.jsx` — כולם עם אותה תבנית מדויקת (`setEditing(null); onLoad();` בלי `setDialogOpen(false)`). **כל 7 תוקנו** באותו אופן. הסוכן אימת גם שדפים/דיאלוגים אחרים (Suppliers, Staff branches/employees/volunteers/positions/schedule, Quotes, Orders, Inventory, Categories, Credits, Settings) **לא** סובלים מהבאג הזה — הם או סוגרים במפורש מהצד ה-parent, או שהדיאלוג עצמו סוגר את עצמו (`onOpenChange(false)` בתוך רכיב הדיאלוג). אומת: `npm run build` עבר בהצלחה אחרי כל 7 התיקונים.
 
 **באג משמעותי נוסף שהתגלה בבדיקה חיה — "הכל מתרענן" בחזרה לטאב**: המשתמשת דיווחה שכל פעם שהיא עוברת לאתר/טאב אחר וחוזרת, האפליקציה "מתרעננת" ומאפסת את מה שהיא הייתה באמצע לעשות. **סיבת שורש**: `src/lib/AuthContext.jsx` קרא ל-`checkUserAuth()` (שמדליק `isLoadingAuth=true`, מציג מסך טעינה מלא-עמוד שממיר לחלוטין את עץ ה-`<Routes>`) בכל אירוע `onAuthStateChange` — וSupabase יורה אירועים כאלה (רענון טוקן וכו') **גם כשהטאב חוזר לפוקוס**, לא רק בהתחברות/התנתקות אמיתית. כל חזרה לטאב הפעילה מחדש את מסך הטעינה המלא, שמחליף את כל עץ הדפים (ולכן מאפס טפסים/מיקום גלילה/מצב רכיבים). זה באג אמיתי, לא קשור לנטפרי או לדפדפן. **תוקן**: `AuthContext.jsx` שוכתב כך שרק הבדיקה **הראשונית** (עם עליית הדף) מדליקה את `isLoadingAuth` — אירועי `onAuthStateChange` עוקבים (כולל רענון טוקן ברקע) מעדכנים את מצב המשתמש/הרשאה בשקט, בלי לגעת ב-`isLoadingAuth`/`authChecked`, ובלי להחליף את כל העץ. אומת: `npm run build` עבר בהצלחה. **אושר בפועל** — אחרי רענון קשיח (הבדיקה הראשונה הייתה על גרסה ישנה במטמון), המשתמשת אישרה שהתופעה נעלמה לגמרי.
+
+### 2026-07-13 — שינוי פיצ'ר (בקשת משתמשת): מקורות תקציב חופשיים בפרויקטים
+**סטטוס:** ✅ הצליח
+
+בקשה: בטופס פרויקט, שדה "מקור תקציב" (שהיה תפריט נפתח יחיד לבחירת `BudgetSource` קיים מהמערכת הפורמלית) יהפוך לשדה טקסט חופשי, עם אפשרות להוסיף כמה מקורות תקציב (לא רק אחד).
+
+בוצע:
+- **`supabase/migrations/0005_project_budget_source_names.sql`**: נוספה עמודה `budget_source_names jsonb not null default '[]'::jsonb` לטבלת `projects`. העמודות הישנות `budget_source_id`/`budget_source_name` **לא נמחקו** (נשארות ללא שימוש — הימנעות ממחיקת עמודה הרסנית שאינה הכרחית).
+- **`src/components/projects/ProjectDialog.jsx`**: הוסר ה-`Select` שבחר `BudgetSource` קיים; הוחלף ברשימת שדות טקסט חופשיים (הוספה/הסרה של שורות) הנשמרים כמערך ב-`budget_source_names`. הוסרה תלות ב-prop `budgetSources` שכבר לא נדרש.
+- **`src/components/projects/BudgetTab.jsx`**: תצוגת "מקור תקציב" (יחיד) הוחלפה בתצוגת "מקורות תקציב" (רשימה, מחוברת בפסיקים).
+- **ניקוי אגבי**: `src/pages/Projects.jsx` ו-`src/pages/ProjectDetail.jsx` — הוסרה טעינת `BudgetSource.list()` ו-state `budgetSources` שהיו משמשים רק להעברה ל-`ProjectDialog` (ולא לשום דבר אחר) — אומת ב-grep לפני ההסרה.
+- **אימות**: `npm run build` עבר בהצלחה. `npm run lint` — 2 שגיאות בקבצים שנגעתי בהם (`BudgetTab.jsx`: `FileText` לא בשימוש; `ProjectDetail.jsx`: `Link` לא בשימוש) — שתיהן קיימות מראש (אומת עם `git show HEAD:...`), לא נגרמו ע"י השינוי הזה.
+
+**הבהרה**: זה שינוי נפרד מהמערכת הפורמלית לניהול תקציב (BudgetSource/BudgetAllocation, המשמשת להזמנות רכש) — לא נגעתי בה. זה שדה תיעודי-חופשי ברמת הפרויקט בלבד.
