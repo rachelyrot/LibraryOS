@@ -4,17 +4,16 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { Plus, Upload, Search, FolderKanban, Calendar, Wallet, Download } from 'lucide-react';
+import { Plus, Upload, Search, Download, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 import * as XLSX from 'xlsx';
-import { PROJECT_TYPE_LABELS, PROJECT_STATUS_LABELS, PROJECT_STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS, formatDate, daysUntil, isOverdue, formatCurrency } from '@/lib/projectUtils';
+import { PROJECT_TYPE_LABELS, PROJECT_STATUS_LABELS, PROJECT_STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS } from '@/lib/projectUtils';
 import { canCreateProjects, canViewProjectReports } from '@/lib/permissions';
-import ProjectDialog from '@/components/projects/ProjectDialog';
 import ImportTasksDialog from '@/components/projects/ImportTasksDialog';
 import PageHeader from '@/components/PageHeader';
+import ProjectDataGrid from '@/components/projects/grid/ProjectDataGrid';
+import { textColumn, dateColumn, enumColumn, numberColumn, fkPickerColumn } from '@/components/projects/grid/columnHelpers';
+import { makeGridSaveHandler } from '@/components/projects/grid/gridSave';
 
 export default function Projects() {
   const [user, setUser] = useState(null);
@@ -22,9 +21,7 @@ export default function Projects() {
   const [branches, setBranches] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
   const [filters, setFilters] = useState({ status: 'all', type: 'all', search: '' });
 
   const load = () => {
@@ -42,7 +39,7 @@ export default function Projects() {
     load();
   }, []);
 
-  const canCreate = canCreateProjects(user);
+  const canManage = canCreateProjects(user);
   const canViewReports = canViewProjectReports(user);
 
   const filtered = projects.filter(p => {
@@ -52,13 +49,23 @@ export default function Projects() {
     return true;
   });
 
-  const handleSave = async (data) => {
+  const handleAdd = async () => {
     try {
-      if (editing) { await base44.entities.Project.update(editing.id, data); toast.success('פרויקט עודכן'); }
-      else { await base44.entities.Project.create(data); toast.success('פרויקט נוצר'); }
-      setEditing(null); setDialogOpen(false); load();
-    } catch (e) { toast.error('שגיאה בשמירה'); }
+      await base44.entities.Project.create({ name: 'פרויקט חדש', status: 'draft', project_type: 'other', priority: 'medium' });
+      load();
+    } catch (e) { toast.error('שגיאה בהוספה'); }
   };
+
+  const handleDelete = async (project) => {
+    if (!confirm('למחוק פרויקט זה?')) return;
+    try { await base44.entities.Project.delete(project.id); toast.success('נמחק'); load(); }
+    catch (e) { toast.error('שגיאה במחיקה'); }
+  };
+
+  const handleRowsChange = makeGridSaveHandler(base44.entities.Project, {
+    pairedFields: { branch_id: 'branch_name' },
+    onError: load,
+  });
 
   const exportProjects = () => {
     try {
@@ -83,6 +90,40 @@ export default function Projects() {
     } catch (e) { toast.error('שגיאה בייצוא'); }
   };
 
+  const columns = [
+    {
+      key: '__open', name: '', width: 40, editable: false, resizable: false,
+      renderCell({ row }) {
+        return (
+          <div className="w-full h-full flex items-center justify-center">
+            <Link to={`/projects/${row.id}`} className="text-primary hover:opacity-70">
+              <ExternalLink className="w-4 h-4" />
+            </Link>
+          </div>
+        );
+      },
+    },
+    textColumn('name', 'שם פרויקט', { editable: canManage, width: 200 }),
+    enumColumn('project_type', 'סוג', PROJECT_TYPE_LABELS, {}, { editable: canManage, width: 140 }),
+    fkPickerColumn('branch_id', 'branch_name', 'סניף', branches, (b) => b.name, { editable: canManage, width: 130 }),
+    textColumn('manager_name', 'אחראית', { editable: canManage, width: 120 }),
+    enumColumn('status', 'סטטוס', PROJECT_STATUS_LABELS, PROJECT_STATUS_COLORS, { editable: canManage, width: 110 }),
+    enumColumn('priority', 'עדיפות', PRIORITY_LABELS, PRIORITY_COLORS, { editable: canManage, width: 100 }),
+    numberColumn('progress_percentage', 'התקדמות %', { editable: canManage, width: 100 }),
+    dateColumn('start_date', 'תאריך התחלה', { editable: canManage, width: 110 }),
+    dateColumn('target_end_date', 'תאריך יעד', { editable: canManage, width: 110 }),
+    numberColumn('budget_planned', 'תקציב מתוכנן', { editable: canManage, width: 120 }),
+    numberColumn('budget_approved', 'תקציב מאושר', { editable: canManage, width: 120 }),
+    {
+      key: '__tasks', name: 'משימות', width: 90, editable: false, resizable: false,
+      renderCell({ row }) {
+        const pTasks = tasks.filter(t => t.project_id === row.id);
+        const open = pTasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled').length;
+        return <div className="w-full px-2 text-center text-xs text-muted-foreground">{open}/{pTasks.length}</div>;
+      },
+    },
+  ];
+
   return (
     <div className="p-6 max-w-7xl mx-auto animate-fade-in">
       <PageHeader
@@ -90,9 +131,9 @@ export default function Projects() {
         subtitle="ניהול פרויקטים, תוכניות עבודה, משימות, תקציבים וכוח אדם"
         actions={
           <div className="flex gap-2">
-            {canCreate && <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2"><Upload className="w-4 h-4" /> ייבוא מאקסל</Button>}
+            {canManage && <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2"><Upload className="w-4 h-4" /> ייבוא מאקסל</Button>}
             {canViewReports && <Button variant="outline" onClick={exportProjects} className="gap-2"><Download className="w-4 h-4" /> ייצא דוח</Button>}
-            {canCreate && <Button onClick={() => { setEditing(null); setDialogOpen(true); }} className="gap-2"><Plus className="w-4 h-4" /> פרויקט חדש</Button>}
+            {canManage && <Button onClick={handleAdd} className="gap-2"><Plus className="w-4 h-4" /> פרויקט חדש</Button>}
           </div>
         }
         gradient="from-cyan-500 to-blue-500"
@@ -115,61 +156,17 @@ export default function Projects() {
 
       {loading ? (
         <div className="text-center py-20"><div className="w-8 h-8 border-4 border-cyan-200 border-t-cyan-600 rounded-full animate-spin mx-auto" /></div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-20">
-          <FolderKanban className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">אין פרויקטים{canCreate ? ' — צרי פרויקט חדש כדי להתחיל' : ''}</p>
-        </div>
       ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(p => {
-            const pTasks = tasks.filter(t => t.project_id === p.id);
-            const openTasks = pTasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled');
-            const overdue = pTasks.filter(t => isOverdue(t.due_date, t.status));
-            const dDay = daysUntil(p.target_end_date);
-            const budgetRemaining = (p.budget_approved || p.budget_planned || 0) - (p.budget_used || 0);
-            return (
-              <Link key={p.id} to={`/projects/${p.id}`}>
-                <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-bold truncate">{p.name}</h3>
-                        <p className="text-xs text-muted-foreground">{PROJECT_TYPE_LABELS[p.project_type]}</p>
-                      </div>
-                      <span className={cn('text-xs px-2 py-0.5 rounded shrink-0', PROJECT_STATUS_COLORS[p.status])}>{PROJECT_STATUS_LABELS[p.status]}</span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Progress value={p.progress_percentage || 0} className="h-2 flex-1" />
-                      <span className="text-sm font-bold">{p.progress_percentage || 0}%</span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      <span className={cn('px-2 py-0.5 rounded', PRIORITY_COLORS[p.priority])}>{PRIORITY_LABELS[p.priority]}</span>
-                      {p.branch_name && <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded">{p.branch_name}</span>}
-                      {p.manager_name && <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded">{p.manager_name}</span>}
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs text-muted-foreground border-t pt-2">
-                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {formatDate(p.target_end_date)} {dDay !== null && dDay < 0 && <span className="text-red-600">({Math.abs(dDay)}י איחור)</span>}</span>
-                      <span className="flex items-center gap-1"><Wallet className="w-3 h-3" /> {formatCurrency(budgetRemaining)}</span>
-                    </div>
-
-                    <div className="flex items-center gap-3 text-xs">
-                      <span className="text-blue-600">{openTasks.length} פתוחות</span>
-                      {overdue.length > 0 && <span className="text-red-600">{overdue.length} באיחור</span>}
-                      <span className="text-green-600">{pTasks.filter(t => t.status === 'completed').length} הושלמו</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
+        <ProjectDataGrid
+          rows={filtered}
+          columns={columns}
+          onRowsChange={handleRowsChange}
+          readOnly={!canManage}
+          onDeleteRow={handleDelete}
+          emptyMessage={`אין פרויקטים${canManage ? ' — צרי פרויקט חדש כדי להתחיל' : ''}`}
+        />
       )}
 
-      <ProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} initialData={editing} branches={branches} onSave={handleSave} />
       <ImportTasksDialog open={importOpen} onOpenChange={setImportOpen} projects={projects} onImported={load} />
     </div>
   );

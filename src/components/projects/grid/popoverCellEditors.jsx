@@ -1,0 +1,163 @@
+import { useState } from 'react';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Paperclip, Plus, Trash2, Upload, Loader2, ListTodo } from 'lucide-react';
+import { base44 } from '@/api/base44Client';
+import { toast } from 'sonner';
+
+// Cell renderers for jsonb array columns. These are NOT edit-cells in react-data-grid's
+// sense (no renderEditCell/onClose dance) — they're plain renderCell buttons that open
+// a shadcn Popover (which manages its own open/close state internally via Radix), so
+// there's no rules-of-hooks concern from being invoked inside a plain renderCell
+// callback: hooks used here live inside these proper named components, not directly
+// in the column-builder function bodies.
+
+// ── file_urls (array of URL strings), e.g. project_tasks.file_urls ──────────────
+function FileUrlsCellButton({ row, column, onRowChange }) {
+  const key = column.key;
+  const urls = row[key] || [];
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const res = await base44.integrations.Core.UploadFile({ file });
+      onRowChange({ ...row, [key]: [...urls, res.file_url] });
+      toast.success('קובץ הועלה');
+    } catch (err) {
+      toast.error('שגיאה בהעלאת קובץ');
+    }
+    setUploading(false);
+    e.target.value = '';
+  };
+
+  const removeAt = (i) => onRowChange({ ...row, [key]: urls.filter((_, idx) => idx !== i) });
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className="w-full h-full flex items-center justify-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <Paperclip className="w-3.5 h-3.5" /> {urls.length > 0 ? urls.length : ''}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 font-heebo" dir="rtl">
+        <div className="space-y-2">
+          <p className="text-sm font-medium">קבצים מצורפים</p>
+          {urls.length === 0 && <p className="text-xs text-muted-foreground">אין קבצים</p>}
+          {urls.map((url, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <a href={url} target="_blank" rel="noreferrer" className="text-xs text-primary truncate flex-1 hover:underline">{url}</a>
+              <button type="button" onClick={() => removeAt(i)}><Trash2 className="w-3.5 h-3.5 text-red-400" /></button>
+            </div>
+          ))}
+          <label className={cnUpload(uploading)}>
+            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            {uploading ? 'מעלה...' : 'הוספת קובץ'}
+            <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+          </label>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function cnUpload(uploading) {
+  return `flex items-center justify-center gap-2 text-xs border border-dashed border-border rounded-lg py-2 cursor-pointer hover:border-primary transition-colors ${uploading ? 'opacity-60 pointer-events-none' : ''}`;
+}
+
+export function fileUrlsColumn(key, name, { width = 70 } = {}) {
+  return {
+    key, name, width, resizable: false, editable: false,
+    renderCell(props) { return <FileUrlsCellButton {...props} />; },
+  };
+}
+
+// ── related_task_ids (array of task ids), e.g. project_milestones.related_task_ids ──
+function TaskPickerCellButton({ row, column, onRowChange, tasks }) {
+  const key = column.key;
+  const ids = row[key] || [];
+
+  const toggle = (taskId) => {
+    const next = ids.includes(taskId) ? ids.filter((id) => id !== taskId) : [...ids, taskId];
+    onRowChange({ ...row, [key]: next });
+  };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className="w-full h-full flex items-center justify-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <ListTodo className="w-3.5 h-3.5" /> {ids.length > 0 ? ids.length : ''}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 font-heebo max-h-72 overflow-y-auto" dir="rtl">
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium mb-1">משימות קשורות</p>
+          {(tasks || []).length === 0 && <p className="text-xs text-muted-foreground">אין משימות בפרויקט</p>}
+          {(tasks || []).map((t) => (
+            <label key={t.id} className="flex items-center gap-2 text-xs cursor-pointer py-0.5">
+              <Checkbox checked={ids.includes(t.id)} onCheckedChange={() => toggle(t.id)} />
+              <span className="truncate">{t.task_description}</span>
+            </label>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function taskPickerColumn(key, name, tasks, { width = 90 } = {}) {
+  return {
+    key, name, width, resizable: false, editable: false,
+    renderCell(props) { return <TaskPickerCellButton {...props} tasks={tasks} />; },
+  };
+}
+
+// ── text-list columns (array of free-text strings), e.g. projects.budget_source_names ──
+function TextListCellButton({ row, column, onRowChange, placeholder }) {
+  const key = column.key;
+  const items = row[key] || [];
+
+  const update = (i, value) => {
+    const next = [...items];
+    next[i] = value;
+    onRowChange({ ...row, [key]: next });
+  };
+  const add = () => onRowChange({ ...row, [key]: [...items, ''] });
+  const removeAt = (i) => onRowChange({ ...row, [key]: items.filter((_, idx) => idx !== i) });
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className="w-full h-full px-2 flex items-center text-xs truncate">
+          {items.length > 0 ? items.filter(Boolean).join(', ') : <span className="text-muted-foreground">-</span>}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 font-heebo" dir="rtl">
+        <div className="space-y-2">
+          {items.map((val, i) => (
+            <div key={i} className="flex gap-2">
+              <Input value={val} onChange={(e) => update(i, e.target.value)} placeholder={placeholder} className="h-8 text-sm" />
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeAt(i)}>
+                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+              </Button>
+            </div>
+          ))}
+          <Button type="button" variant="outline" size="sm" onClick={add} className="gap-1 w-full">
+            <Plus className="w-3.5 h-3.5" /> הוסף
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function textListColumn(key, name, { width = 160, placeholder } = {}) {
+  return {
+    key, name, width, resizable: true, editable: false,
+    renderCell(props) { return <TextListCellButton {...props} placeholder={placeholder} />; },
+  };
+}

@@ -435,3 +435,17 @@ https://idktdopfvycenheizqbf.supabase.co/rest/v1/profiles?select=id&limit=1&apik
 
 ### אימות מתוכנן (ידני, אין סוויטת בדיקות בריפו)
 לכל גיליון: יצירה+רענון-דף לאימות התמדה; עריכת כל סוג תא (טקסט/מספר/תאריך/enum/בוליאני); עריכת FK-picker + אימות ששני השדות (id+name) נכתבים; פתיחת ה-popover לשדות jsonb; מחיקת שורה; בדיקת הרשאות כ-role נמוך יותר (סטטוס משימה נשאר ניתן לעריכה, שאר השדות לא); `npm run build`/`npm run lint` אחרי כל מחיקת דיאלוג.
+
+### 2026-07-14 — §11: המרת מודול הפרויקטים לגיליון — הושלמה
+**סטטוס:** ✅ הצליח
+
+כל 6 מסכי מודול הפרויקטים הומרו מדפוס דיאלוג-טופס לגיליון אינטראקטיבי (`react-data-grid@7.0.0-beta.48`, מוצמד בדיוק בגלל דרישת React 18 — הגרסה "latest" דורשת React 19):
+- **תשתית משותפת** (`src/components/projects/grid/`): `columnHelpers.jsx` (בוני עמודות `textColumn`/`numberColumn`/`dateColumn`/`enumColumn`/`booleanColumn`/`fkPickerColumn`, כולל תמיכת `noNameColumn` ל-FK בלי עמודת-שם מקבילה), `ProjectDataGrid.jsx` (עטיפה עם toolbar הוספה + עמודת מחיקה + RTL), `popoverCellEditors.jsx` (עורכי popover לשדות jsonb: `file_urls`/`related_task_ids`/רשימות טקסט), `gridSave.js` (`makeGridSaveHandler` — שומר שדה בודד לכל commit, עם `pairedFields` ל-FK ו-`computeExtra` ללוגיקה מורכבת כמו toggle של `is_completed`).
+- **`DomainTab.jsx`/`TasksTab.jsx`/`MilestonesTab.jsx`/`ContactsTab.jsx`** — הומרו לגיליון, שומרות על כל הפילטרים/ה-`ImportTasksDialog` הקיימים.
+- **`DocumentsTab.jsx`** — הומר לגיליון, עם חריגה מודעת מהדפוס הרגיל: מכיוון ש-`file_url`/`name` הם `NOT NULL` בסכמה, לא ניתן ליצור שורה ריקה עם placeholder כמו בשאר הטאבים. נבנה `AddDocumentButton` — popover קטן (לא דיאלוג גדול) שדורש בחירת קובץ (מעלה מיידית ומקבל `file_url`) לפני יצירת הרשומה.
+- **`src/pages/Projects.jsx`** — הרשימה הראשית (כרטיסים) הומרה לגיליון: עמודת "פתיחה" (קישור לעמוד הפרויקט), שם/סוג/סניף(FK)/אחראית/סטטוס/עדיפות/התקדמות/תאריכים/תקציב הן עמודות גיליון עריכות, ועמודת "משימות" מחושבת (read-only, `open/total`). ייצוא האקסל וה-`ImportTasksDialog` נשמרו ללא שינוי.
+- **`src/pages/ProjectDetail.jsx`** — הוסר כפתור "עריכה" ו-`<ProjectDialog>` לגמרי (עריכת פרויקט קיימת רק דרך הגיליון ב-`/projects` מעכשיו). נוסף `tasks={tasks}` ל-`<MilestonesTab>` ו-`<ContactsTab>` (נדרש לעמודות ה-FK-picker/task-picker החדשות שלהן). הוסר prop `tasks` שלא היה בשימוש מ-`<DomainTab>`. נוקה גם `branches`/state קשור שכבר לא נדרש אחרי הסרת `ProjectDialog`.
+- **נמחקו** (אומת עם grep שאין עוד import): `ProjectDialog.jsx`, `DomainDialog.jsx`, `TaskDialog.jsx`, `MilestoneDialog.jsx`, `ContactDialog.jsx`.
+- **אימות**: `npm run build` עבר בהצלחה. `npm run lint` — שני שגיאות `unused-imports` שנוצרו ע"י השינויים כאן (`Link` ב-`ProjectDetail.jsx`, `formatCurrency` ב-`Projects.jsx`) תוקנו; שאר ~58 השגיאות בריפו הן pre-existing בקבצים שלא נגעתי בהם (`Dashboard.jsx`, `Settings.jsx`, `CategorySelect.jsx` וכו') — מחוץ להיקף המשימה הזו, לא תוקנו.
+
+**לא בוצע (מחוץ להיקף, כמתוכנן)**: בדיקה ידנית באתר החי (דורש דיפלוי + commit/push, ממתין לאישור המשתמשת), ו-`GoalsTab`/`PersonnelTab` שנשארו מחוץ להיקף כפי שהוחלט מראש.

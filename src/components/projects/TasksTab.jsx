@@ -2,19 +2,19 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, Upload, Filter } from 'lucide-react';
+import { Upload, Filter } from 'lucide-react';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
-import { cn } from '@/lib/utils';
-import { TASK_STATUS_LABELS, TASK_STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS, formatDate, isOverdue, daysUntil } from '@/lib/projectUtils';
+import { TASK_STATUS_LABELS, TASK_STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS } from '@/lib/projectUtils';
 import { canCreateTasks, canUpdateTaskStatus } from '@/lib/permissions';
-import TaskDialog from './TaskDialog';
 import ImportTasksDialog from './ImportTasksDialog';
+import ProjectDataGrid from './grid/ProjectDataGrid';
+import { textColumn, dateColumn, enumColumn, numberColumn, fkPickerColumn } from './grid/columnHelpers';
+import { fileUrlsColumn } from './grid/popoverCellEditors';
+import { makeGridSaveHandler } from './grid/gridSave';
 
 export default function TasksTab({ project, user, tasks, onLoad, projects, domains }) {
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
   const [filters, setFilters] = useState({ domain: 'all', sub_domain: 'all', status: 'all', priority: 'all', phase: 'all', search: '' });
 
   const canCreate = canCreateTasks(user);
@@ -35,17 +35,13 @@ export default function TasksTab({ project, user, tasks, onLoad, projects, domai
     return true;
   });
 
-  const handleSave = async (data) => {
+  const handleAdd = async () => {
     try {
-      if (editing) {
-        await base44.entities.ProjectTask.update(editing.id, data);
-        toast.success('משימה עודכנה');
-      } else {
-        await base44.entities.ProjectTask.create({ ...data, project_id: project.id, project_name: project.name });
-        toast.success('משימה נוספה');
-      }
-      setEditing(null); setDialogOpen(false); onLoad();
-    } catch (e) { toast.error('שגיאה בשמירה'); }
+      await base44.entities.ProjectTask.create({
+        project_id: project.id, project_name: project.name, task_description: 'משימה חדשה', status: 'not_started', priority: 'medium',
+      });
+      onLoad();
+    } catch (e) { toast.error('שגיאה בהוספה'); }
   };
 
   const handleDelete = async (task) => {
@@ -54,14 +50,35 @@ export default function TasksTab({ project, user, tasks, onLoad, projects, domai
     catch (e) { toast.error('שגיאה במחיקה'); }
   };
 
-  const quickStatus = async (task, status) => {
-    try {
-      const updates = { status };
-      if (status === 'completed') updates.progress_percentage = 100;
-      await base44.entities.ProjectTask.update(task.id, updates);
-      onLoad();
-    } catch (e) { toast.error('שגיאה בעדכון'); }
-  };
+  const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectTask, {
+    pairedFields: { depends_on_task_id: 'depends_on_task_name' },
+    onError: onLoad,
+  });
+
+  const otherTasks = tasks.filter((t) => t.id !== undefined);
+
+  const columns = [
+    textColumn('task_description', 'משימה', { editable: canCreate, width: 220 }),
+    enumColumn('status', 'סטטוס', TASK_STATUS_LABELS, TASK_STATUS_COLORS, { editable: canUpdate, width: 140 }),
+    enumColumn('priority', 'עדיפות', PRIORITY_LABELS, PRIORITY_COLORS, { editable: canCreate, width: 100 }),
+    textColumn('phase', 'שלב', { editable: canCreate, width: 100 }),
+    textColumn('domain', 'תחום', { editable: canCreate, width: 120 }),
+    textColumn('sub_domain', 'תת-תחום', { editable: canCreate, width: 120 }),
+    textColumn('assignee', 'אחראית', { editable: canCreate, width: 120 }),
+    textColumn('partners', 'שותפים', { editable: canCreate, width: 120 }),
+    textColumn('executing_parties', 'גורמים לביצוע', { editable: canCreate, width: 150 }),
+    textColumn('contact_name', 'איש קשר', { editable: canCreate, width: 120 }),
+    textColumn('contact_role', 'תפקיד איש קשר', { editable: canCreate, width: 120 }),
+    textColumn('contact_phone', 'טלפון', { editable: canCreate, width: 110 }),
+    textColumn('contact_email', 'מייל', { editable: canCreate, width: 150 }),
+    dateColumn('start_date', 'תאריך התחלה', { editable: canCreate, width: 110 }),
+    dateColumn('due_date', 'תאריך יעד', { editable: canCreate, width: 110 }),
+    textColumn('estimated_duration', 'משך משוער', { editable: canCreate, width: 100 }),
+    numberColumn('progress_percentage', 'התקדמות %', { editable: canCreate, width: 100 }),
+    fkPickerColumn('depends_on_task_id', 'depends_on_task_name', 'תלוי במשימה', otherTasks, (t) => t.task_description, { editable: canCreate, width: 150 }),
+    fileUrlsColumn('file_urls', 'קבצים', { width: 70 }),
+    textColumn('notes', 'הערות', { editable: canCreate, width: 160 }),
+  ];
 
   return (
     <div className="space-y-4">
@@ -69,7 +86,6 @@ export default function TasksTab({ project, user, tasks, onLoad, projects, domai
         <h3 className="text-lg font-semibold">משימות ({filtered.length})</h3>
         <div className="flex gap-2">
           {canCreate && <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2"><Upload className="w-4 h-4" /> ייבוא מאקסל</Button>}
-          {canCreate && <Button onClick={() => { setEditing(null); setDialogOpen(true); }} className="gap-2"><Plus className="w-4 h-4" /> משימה חדשה</Button>}
         </div>
       </div>
 
@@ -98,69 +114,17 @@ export default function TasksTab({ project, user, tasks, onLoad, projects, domai
         </Select>
       </div>
 
-      <div className="border border-border rounded-xl overflow-auto max-h-[55vh]">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 sticky top-0">
-            <tr className="border-b border-border">
-              <th className="text-right p-2 font-medium">תחום</th>
-              <th className="text-right p-2 font-medium hidden md:table-cell">תת-תחום</th>
-              <th className="text-right p-2 font-medium">משימה</th>
-              <th className="text-right p-2 font-medium hidden md:table-cell">אחראית</th>
-              <th className="text-right p-2 font-medium hidden lg:table-cell">גורמים לביצוע</th>
-              <th className="text-center p-2 font-medium hidden lg:table-cell">יעד</th>
-              <th className="text-center p-2 font-medium">סטטוס</th>
-              <th className="text-center p-2 font-medium hidden md:table-cell">התקדמות</th>
-              {canCreate && <th className="p-2"></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(t => {
-              const overdue = isOverdue(t.due_date, t.status);
-              const dDay = daysUntil(t.due_date);
-              return (
-                <tr key={t.id} className="border-b border-border/50 hover:bg-muted/30">
-                  <td className="p-2 text-xs">{t.domain || '-'}</td>
-                  <td className="p-2 text-xs hidden md:table-cell text-muted-foreground">{t.sub_domain || '-'}</td>
-                  <td className="p-2">
-                    <p className="font-medium truncate max-w-xs">{t.task_description}</p>
-                    {t.contact_name && <p className="text-xs text-muted-foreground">קשר: {t.contact_name}{t.contact_phone && ` • ${t.contact_phone}`}</p>}
-                  </td>
-                  <td className="p-2 hidden md:table-cell text-xs">{t.assignee || '-'}</td>
-                  <td className="p-2 hidden lg:table-cell text-xs text-muted-foreground">{t.executing_parties || '-'}</td>
-                  <td className="p-2 text-center hidden lg:table-cell text-xs">
-                    {t.due_date ? <span className={cn(overdue && 'text-red-600 font-medium')}>{formatDate(t.due_date)}{overdue && ` (${Math.abs(dDay)}י)`}</span> : '-'}
-                  </td>
-                  <td className="p-2 text-center">
-                    {canUpdate ? (
-                      <Select value={t.status} onValueChange={v => quickStatus(t, v)}>
-                        <SelectTrigger className="h-7 text-xs w-36"><span className={cn('text-xs px-1.5 py-0.5 rounded', TASK_STATUS_COLORS[t.status])}>{TASK_STATUS_LABELS[t.status]}</span></SelectTrigger>
-                        <SelectContent>{Object.entries(TASK_STATUS_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
-                      </Select>
-                    ) : (
-                      <span className={cn('text-xs px-2 py-0.5 rounded', TASK_STATUS_COLORS[t.status])}>{TASK_STATUS_LABELS[t.status]}</span>
-                    )}
-                  </td>
-                  <td className="p-2 text-center hidden md:table-cell">
-                    <div className="flex items-center gap-1">
-                      <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full" style={{ width: `${t.progress_percentage || 0}%` }} /></div>
-                      <span className="text-xs">{t.progress_percentage || 0}%</span>
-                    </div>
-                  </td>
-                  {canCreate && (
-                    <td className="p-2"><div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(t); setDialogOpen(true); }}><Pencil className="w-3.5 h-3.5" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDelete(t)}><Trash2 className="w-3.5 h-3.5" /></Button>
-                    </div></td>
-                  )}
-                </tr>
-              );
-            })}
-            {filtered.length === 0 && <tr><td colSpan={canCreate ? 9 : 8} className="text-center py-12 text-muted-foreground">אין משימות</td></tr>}
-          </tbody>
-        </table>
-      </div>
+      <ProjectDataGrid
+        rows={filtered}
+        columns={columns}
+        onRowsChange={handleRowsChange}
+        readOnly={!canCreate}
+        onAddRow={canCreate ? handleAdd : undefined}
+        addLabel="משימה חדשה"
+        onDeleteRow={canCreate ? handleDelete : undefined}
+        emptyMessage="אין משימות"
+      />
 
-      <TaskDialog open={dialogOpen} onOpenChange={setDialogOpen} initialData={editing} projectTasks={tasks} domains={domains} onSave={handleSave} />
       <ImportTasksDialog open={importOpen} onOpenChange={setImportOpen} projects={projects || [project]} defaultProjectId={project.id} onImported={onLoad} />
     </div>
   );

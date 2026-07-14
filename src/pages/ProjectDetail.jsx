@@ -1,15 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowRight, Pencil, LayoutGrid, ListTodo, Flag, Wallet, FileText, BarChart3, Layers, UserCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import { ArrowRight, LayoutGrid, ListTodo, Flag, Wallet, FileText, BarChart3, Layers, UserCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
 import { PROJECT_TYPE_LABELS, PROJECT_STATUS_LABELS, PROJECT_STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS, formatDate, daysUntil } from '@/lib/projectUtils';
-import { canEditProjects, canViewProjectBudget, canViewProjectReports } from '@/lib/permissions';
-import ProjectDialog from '@/components/projects/ProjectDialog';
+import { canViewProjectBudget, canViewProjectReports } from '@/lib/permissions';
 import OverviewTab from '@/components/projects/OverviewTab';
 import TasksTab from '@/components/projects/TasksTab';
 import MilestonesTab from '@/components/projects/MilestonesTab';
@@ -31,9 +29,7 @@ export default function ProjectDetail() {
   const [documents, setDocuments] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [credits, setCredits] = useState([]);
-  const [branches, setBranches] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
-  const [editOpen, setEditOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(() => {
@@ -46,11 +42,10 @@ export default function ProjectDetail() {
       base44.entities.ProjectContact.filter({ project_id: id }, '-created_date', 200).catch(() => []),
       base44.entities.ProjectDocument.filter({ project_id: id }, '-created_date', 200).catch(() => []),
       base44.entities.PurchaseOrder.filter({ project_id: id }, '-created_date', 200).catch(() => []),
-      base44.entities.Branch.list('name', 500).catch(() => []),
       base44.entities.SupplierCredit.filter({ status: 'active' }, '-created_date', 200).catch(() => []),
-    ]).then(([p, t, m, dom, cont, docs, pos, b, cr]) => {
+    ]).then(([p, t, m, dom, cont, docs, pos, cr]) => {
       setProject(p); setTasks(t); setMilestones(m); setDomains(dom); setContacts(cont);
-      setDocuments(docs); setPurchaseOrders(pos); setBranches(b);
+      setDocuments(docs); setPurchaseOrders(pos);
       setCredits(cr); setLoading(false);
     });
   }, [id]);
@@ -59,14 +54,6 @@ export default function ProjectDetail() {
     base44.auth.me().then(setUser).catch(() => {});
     load();
   }, [load]);
-
-  const handleEditSave = async (data) => {
-    try {
-      await base44.entities.Project.update(id, data);
-      toast.success('פרויקט עודכן');
-      setEditOpen(false); load();
-    } catch (e) { toast.error('שגיאה בשמירה'); }
-  };
 
   if (loading) {
     return <div className="p-6 flex items-center justify-center h-full"><div className="w-8 h-8 border-4 border-cyan-200 border-t-cyan-600 rounded-full animate-spin" /></div>;
@@ -81,7 +68,6 @@ export default function ProjectDetail() {
     );
   }
 
-  const canEdit = canEditProjects(user);
   const canViewBudget = canViewProjectBudget(user);
   const canViewReports = canViewProjectReports(user);
   const dDay = daysUntil(project.target_end_date);
@@ -117,7 +103,6 @@ export default function ProjectDetail() {
               <span className="text-sm text-muted-foreground">{openTasks.length} משימות פתוחות</span>
             </div>
           </div>
-          {canEdit && <Button variant="outline" onClick={() => setEditOpen(true)} className="gap-2 shrink-0"><Pencil className="w-4 h-4" /> עריכה</Button>}
         </div>
       </div>
 
@@ -134,16 +119,14 @@ export default function ProjectDetail() {
         </TabsList>
 
         <TabsContent value="overview"><OverviewTab project={project} tasks={tasks} milestones={milestones} domains={domains} contacts={contacts} purchaseOrders={purchaseOrders} /></TabsContent>
-        <TabsContent value="domains"><DomainTab project={project} user={user} domains={domains} tasks={tasks} onLoad={load} /></TabsContent>
+        <TabsContent value="domains"><DomainTab project={project} user={user} domains={domains} onLoad={load} /></TabsContent>
         <TabsContent value="tasks"><TasksTab project={project} user={user} tasks={tasks} onLoad={load} projects={[project]} domains={domains} /></TabsContent>
-        <TabsContent value="milestones"><MilestonesTab project={project} user={user} milestones={milestones} domains={domains} onLoad={load} /></TabsContent>
+        <TabsContent value="milestones"><MilestonesTab project={project} user={user} milestones={milestones} tasks={tasks} onLoad={load} /></TabsContent>
         {canViewBudget && <TabsContent value="budget"><BudgetTab project={project} user={user} purchaseOrders={purchaseOrders} credits={credits} /></TabsContent>}
-        <TabsContent value="contacts"><ContactsTab project={project} user={user} contacts={contacts} onLoad={load} /></TabsContent>
+        <TabsContent value="contacts"><ContactsTab project={project} user={user} contacts={contacts} tasks={tasks} onLoad={load} /></TabsContent>
         <TabsContent value="documents"><DocumentsTab project={project} user={user} documents={documents} onLoad={load} /></TabsContent>
         {canViewReports && <TabsContent value="reports"><ReportsTab project={project} user={user} tasks={tasks} domains={domains} contacts={contacts} purchaseOrders={purchaseOrders} milestones={milestones} /></TabsContent>}
       </Tabs>
-
-      <ProjectDialog open={editOpen} onOpenChange={setEditOpen} initialData={project} branches={branches} onSave={handleEditSave} />
     </div>
   );
 }

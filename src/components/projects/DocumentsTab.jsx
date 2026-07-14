@@ -1,14 +1,16 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, FileText, Download, Upload, Loader2 } from 'lucide-react';
+import { Plus, Download, Upload, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
-import { formatDate } from '@/lib/projectUtils';
 import { canCreateTasks } from '@/lib/permissions';
+import ProjectDataGrid from './grid/ProjectDataGrid';
+import { textColumn, enumColumn } from './grid/columnHelpers';
+import { makeGridSaveHandler } from './grid/gridSave';
 
 const DOC_TYPE_LABELS = {
   approval: 'אישור',
@@ -18,14 +20,28 @@ const DOC_TYPE_LABELS = {
   image: 'תמונה',
   other: 'אחר',
 };
+const DOC_TYPE_COLORS = {
+  approval: 'bg-green-100 text-green-700',
+  quote: 'bg-blue-100 text-blue-700',
+  plan: 'bg-purple-100 text-purple-700',
+  contract: 'bg-amber-100 text-amber-700',
+  image: 'bg-pink-100 text-pink-700',
+  other: 'bg-gray-100 text-gray-700',
+};
 
-export default function DocumentsTab({ project, user, documents, onLoad }) {
+// file_url/name are NOT NULL at the DB level, so unlike the other tabs' "create an
+// empty placeholder row, edit cell-by-cell" flow, a document can't be created
+// before a file is actually chosen. This small popover (not a big modal form) is
+// the deliberate exception — see plan §11 point 7.
+function AddDocumentButton({ project, user, onLoad }) {
+  const [open, setOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', document_type: 'other', notes: '' });
-  const [pendingUrl, setPendingUrl] = useState('');
-  const fileRef = useRef(null);
-  const canManage = canCreateTasks(user);
+  const [saving, setSaving] = useState(false);
+  const [name, setName] = useState('');
+  const [docType, setDocType] = useState('other');
+  const [fileUrl, setFileUrl] = useState('');
+
+  const reset = () => { setName(''); setDocType('other'); setFileUrl(''); };
 
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -33,9 +49,8 @@ export default function DocumentsTab({ project, user, documents, onLoad }) {
     setUploading(true);
     try {
       const res = await base44.integrations.Core.UploadFile({ file });
-      setPendingUrl(res.file_url);
-      setForm(f => ({ ...f, name: f.name || file.name }));
-      toast.success('קובץ הועלה');
+      setFileUrl(res.file_url);
+      setName((n) => n || file.name);
     } catch (err) {
       toast.error('שגיאה בהעלאת קובץ');
     }
@@ -43,23 +58,57 @@ export default function DocumentsTab({ project, user, documents, onLoad }) {
   };
 
   const handleSave = async () => {
-    if (!pendingUrl || !form.name?.trim()) { toast.error('יש להעלות קובץ ולתת שם'); return; }
+    if (!fileUrl || !name.trim()) { toast.error('יש להעלות קובץ ולתת שם'); return; }
+    setSaving(true);
     try {
       await base44.entities.ProjectDocument.create({
-        ...form,
-        file_url: pendingUrl,
-        project_id: project.id,
-        project_name: project.name,
-        uploaded_by: user?.full_name || '',
+        name, document_type: docType, file_url: fileUrl,
+        project_id: project.id, project_name: project.name,
+        uploaded_by: user?.full_name || user?.email || '',
       });
       toast.success('מסמך נוסף');
-      setForm({ name: '', document_type: 'other', notes: '' });
-      setPendingUrl('');
-      setShowForm(false);
-      if (fileRef.current) fileRef.current.value = '';
+      reset();
+      setOpen(false);
       onLoad();
     } catch (e) { toast.error('שגיאה בשמירה'); }
+    setSaving(false);
   };
+
+  return (
+    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset(); }}>
+      <PopoverTrigger asChild>
+        <Button className="gap-2"><Plus className="w-4 h-4" /> העלאת מסמך</Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 font-heebo" dir="rtl">
+        <div className="space-y-3">
+          <div>
+            <Label>קובץ</Label>
+            <label className="flex items-center justify-center gap-2 text-sm border border-dashed border-border rounded-lg py-2 cursor-pointer hover:border-primary transition-colors">
+              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {fileUrl ? 'קובץ הועלה ✓' : uploading ? 'מעלה...' : 'בחר קובץ'}
+              <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+            </label>
+          </div>
+          <div>
+            <Label>שם מסמך *</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9" />
+          </div>
+          <div>
+            <Label>סוג מסמך</Label>
+            <Select value={docType} onValueChange={setDocType}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>{Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <Button onClick={handleSave} disabled={saving || uploading} className="w-full">{saving ? 'שומר...' : 'הוסף מסמך'}</Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export default function DocumentsTab({ project, user, documents, onLoad }) {
+  const canManage = canCreateTasks(user);
 
   const handleDelete = async (doc) => {
     if (!confirm('למחוק מסמך זה?')) return;
@@ -67,69 +116,42 @@ export default function DocumentsTab({ project, user, documents, onLoad }) {
     catch (e) { toast.error('שגיאה במחיקה'); }
   };
 
+  const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectDocument, { onError: onLoad });
+
+  const columns = [
+    textColumn('name', 'שם מסמך', { editable: canManage, width: 200 }),
+    enumColumn('document_type', 'סוג', DOC_TYPE_LABELS, DOC_TYPE_COLORS, { editable: canManage, width: 130 }),
+    {
+      key: 'file_url', name: 'קובץ', width: 80, editable: false, resizable: false,
+      renderCell({ row }) {
+        return (
+          <div className="w-full h-full flex items-center justify-center">
+            <a href={row.file_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:opacity-70">
+              <Download className="w-4 h-4" />
+            </a>
+          </div>
+        );
+      },
+    },
+    textColumn('uploaded_by', 'הועלה ע"י', { editable: false, width: 130 }),
+    textColumn('notes', 'הערות', { editable: canManage, width: 200 }),
+  ];
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold">מסמכים ({documents.length})</h3>
-        {canManage && <Button onClick={() => setShowForm(!showForm)} className="gap-2"><Plus className="w-4 h-4" /> העלאת מסמך</Button>}
+        {canManage && <AddDocumentButton project={project} user={user} onLoad={onLoad} />}
       </div>
 
-      {showForm && (
-        <div className="bg-card rounded-xl p-4 border border-border space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>קובץ</Label>
-              <div className="flex items-center gap-2">
-                <input ref={fileRef} type="file" onChange={handleUpload} className="hidden" id="doc-file" />
-                <Button variant="outline" onClick={() => document.getElementById('doc-file').click()} className="gap-2 w-full" disabled={uploading}>
-                  {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  {pendingUrl ? 'קובץ הועלה ✓' : 'בחר קובץ'}
-                </Button>
-              </div>
-            </div>
-            <div>
-              <Label>סוג מסמך</Label>
-              <Select value={form.document_type} onValueChange={v => setForm(f => ({ ...f, document_type: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div>
-            <Label>שם מסמך *</Label>
-            <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="לדוגמה: תוכנית עבודה 2026" />
-          </div>
-          <div>
-            <Label>הערות</Label>
-            <Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} />
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={handleSave}>שמור מסמך</Button>
-            <Button variant="outline" onClick={() => { setShowForm(false); setPendingUrl(''); }}>ביטול</Button>
-          </div>
-        </div>
-      )}
-
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {documents.map(doc => (
-          <div key={doc.id} className="bg-card rounded-xl p-4 border border-border flex items-start gap-3">
-            <FileText className="w-8 h-8 text-primary shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="font-medium truncate">{doc.name}</p>
-              <p className="text-xs text-muted-foreground">{DOC_TYPE_LABELS[doc.document_type] || doc.document_type}</p>
-              {doc.uploaded_by && <p className="text-xs text-muted-foreground">הועלה ע"י {doc.uploaded_by}</p>}
-              {doc.notes && <p className="text-xs text-muted-foreground mt-1 truncate">{doc.notes}</p>}
-              <div className="flex gap-2 mt-2">
-                <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
-                  <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"><Download className="w-3 h-3" /> הורד</Button>
-                </a>
-                {canManage && <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDelete(doc)}><Trash2 className="w-3.5 h-3.5" /></Button>}
-              </div>
-            </div>
-          </div>
-        ))}
-        {documents.length === 0 && !showForm && <div className="col-span-full text-center py-12 text-muted-foreground">אין מסמכים</div>}
-      </div>
+      <ProjectDataGrid
+        rows={documents}
+        columns={columns}
+        onRowsChange={handleRowsChange}
+        readOnly={!canManage}
+        onDeleteRow={handleDelete}
+        emptyMessage="אין מסמכים"
+      />
     </div>
   );
 }
