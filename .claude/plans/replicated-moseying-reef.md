@@ -449,3 +449,20 @@ https://idktdopfvycenheizqbf.supabase.co/rest/v1/profiles?select=id&limit=1&apik
 - **אימות**: `npm run build` עבר בהצלחה. `npm run lint` — שני שגיאות `unused-imports` שנוצרו ע"י השינויים כאן (`Link` ב-`ProjectDetail.jsx`, `formatCurrency` ב-`Projects.jsx`) תוקנו; שאר ~58 השגיאות בריפו הן pre-existing בקבצים שלא נגעתי בהם (`Dashboard.jsx`, `Settings.jsx`, `CategorySelect.jsx` וכו') — מחוץ להיקף המשימה הזו, לא תוקנו.
 
 **לא בוצע (מחוץ להיקף, כמתוכנן)**: בדיקה ידנית באתר החי (דורש דיפלוי + commit/push, ממתין לאישור המשתמשת), ו-`GoalsTab`/`PersonnelTab` שנשארו מחוץ להיקף כפי שהוחלט מראש.
+
+### 2026-07-14 — §11: תיקון קריסה חיה ב-`/projects` ("N is not a function")
+**סטטוס:** ✅ הצליח
+
+מיד לאחר הדיפלוי, המשתמשת דיווחה על קריסה מוחלטת (מסך לבן) בעמוד `/projects`, עם שגיאת קונסולה ממוזערת `TypeError: N is not a function`.
+
+**אבחון**: פוענח ה-stack trace המוצפן מהבאנדל החי ע"י בנייה מקומית עם sourcemaps (אומת שה-hash של הבאנדל המקומי זהה לזה שבפועל ב-production — `index-CoBl5_8N.js`), מה שאיפשר למפות את מיקום הקריסה בדיוק לתוך `updateContextConsumer` של React (`beginWork`, tag 9 — ContextConsumer). כדי לאשש את המקור המדויק (react-dom המינימיזי לא חשף מעבר לזה), הורצה גרסת פיתוח מקומית (`npm run dev`) עם נתיב דיבאג זמני שעוקף את שער האימות (הוסר מיד בסיום, `git diff` אימת שלא נשאר עקבות), ונשלטה כרום ללא ראש (headless) דרך `puppeteer-core` (הותקן זמנית, לא נשמר ל-`package.json`) כדי ללכוד את השגיאה המלאה (לא ממוזערת) מהקונסולה בפועל.
+
+**שורש הבעיה**: `react-data-grid@7.0.0-beta.48` (שנבחרה בזהירות רבה בשלב התכנון בגלל דרישת React 18 מול 19 ב-peerDependencies) מתבררת כמכילה, החל מגרסה זו בדיוק, שימוש פנימי בתחביר ה-Provider החדש של **React 19** — `<SomeContext value={...}>` (רינדור ישיר של אובייקט ה-Context, ללא `.Provider`) — במקום `<SomeContext.Provider value={...}>` (התחביר הנתמך גם ב-React 18). למרות ש-`peerDependencies` של beta.48 עדיין הצהירו על תמיכה ב-`^18.0 || ^19.0`, זו הצהרה שגויה בפועל לגרסה הזו — React 18 לא יודע לפרש את התחביר החדש ומנסה (בטעות) לטפל בו כ-`Context.Consumer` עם ילד שאמור להיות פונקציה, מה שגורם לקריסה "X is not a function" בכל רינדור של `<DataGrid>`.
+
+אומת ע"י "חיפוש בינארי" בין 30 הגרסאות beta האחרונות (הורדת ה-`bundle.js` בפועל מ-npm registry לכל גרסה ובדיקת התבנית `jsx(XContext, {` לעומת `jsx(XContext.Provider, {`): התבנית הבעייתית **הופיעה לראשונה ב-beta.48 בדיוק** (beta.47 ומטה — נקי).
+
+**התיקון**:
+1. `package.json`: `react-data-grid` הורד במדויק ל-**`7.0.0-beta.47`** (הגרסה האחרונה בלי הבאג, עדיין עם אותה תמיכת peer-dependency ב-React 18).
+2. `src/components/projects/grid/ProjectDataGrid.jsx`: תוקן ה-import מ-`import { DataGrid } from 'react-data-grid'` (named export — כך זה עובד ב-beta.48 ומעלה) ל-`import DataGrid from 'react-data-grid'` (**default export** — כך זה עובד ב-beta.47; אומת ישירות מול ה-`export {...}` בסוף `node_modules/react-data-grid/lib/bundle.js`). שאר ה-API (`RenderCellProps`/`RenderEditCellProps`/`DataGridProps`) זהה לחלוטין בין שתי הגרסאות — אומת מול `index.d.ts`, אין צורך בשינוי קוד נוסף.
+
+**אימות**: הורץ שרת פיתוח מקומי + כרום ללא-ראש מול נתיב הדיבאג — הגיליון נטען ללא שגיאות קונסולה, כותרות העמודות (בעברית) מוצגות נכון, מצב "אין פרויקטים" מוצג נכון (צפוי — ללא אימות אמיתי בסביבת הדיבאג). `npm run build`/`npm run lint` (על הקובץ שהשתנה) עברו נקי.

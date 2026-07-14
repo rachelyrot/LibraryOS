@@ -1,4 +1,4 @@
-import { DataGrid } from 'react-data-grid';
+import DataGrid from 'react-data-grid';
 import { Button } from '@/components/ui/button';
 import { Trash2, Plus } from 'lucide-react';
 
