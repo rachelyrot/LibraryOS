@@ -401,3 +401,37 @@ https://idktdopfvycenheizqbf.supabase.co/rest/v1/profiles?select=id&limit=1&apik
 **סטטוס:** ✅ הצליח
 
 בבדיקה חוזרת התברר שקובץ ה-workflow ב-GitHub Actions שתוכנן ב-§8 **מעולם לא נוצר בפועל** (רק תואר בתוכנית). המשתמשת שיתפה חוויה של קולגה עם בעיה דומה (Render+Supabase חינמיים) שנפתרה ב-**UptimeRobot** — כלי ניטור חיצוני חינמי. הוקם ניטור HTTP(s) ב-UptimeRobot שפונה ישירות לנקודת קצה ב-Supabase REST API (`/rest/v1/profiles?select=id&limit=1&apikey=...`) — לא לאתר החי, כי Cloudflare מגיש רק HTML/JS סטטי ובלי דפדפן שמריץ את ה-JS הפנייה בפועל ל-Supabase לא הייתה קורית. נבדק בפועל: הניטור פעיל ("Up"), נבדק כל 5 דקות, 100% uptime. זה גם פותר את בעיית ה-pause וגם נותן ניטור/התראות אמיתיים בחינם — שיפור על הרעיון המקורי. עודכן §8 ו-§10 בהתאם. אין קוד לתחזק בריפו לפתרון הזה (מוגדר כולו בממשק UptimeRobot).
+
+---
+
+## §11 — פיצ'ר חדש (בקשת משתמשת): מודול "פרויקטים" בסגנון גיליון/Smartsheet במקום טפסים
+
+### הקשר
+המשתמשת ביקשה שמודול "ניהול פרויקטים" (בלבד — לא שאר האפליקציה) יעבור מדפוס "כפתור → דיאלוג עם טופס שדות → שמירה" לדפוס גיליון: לחיצה ישירה על תא בטבלה, הקלדה, שמירה אוטומטית — בסגנון Smartsheet/ClickUp. הוחלט (Q&A ישיר):
+- **היקף**: מודול הפרויקטים בלבד.
+- **ספרייה**: `react-data-grid` (MIT, ~גרסת 7.x beta — הגרסה היציבה היחידה הפעילה נכון להיום) — נבחרה על פני בנייה עצמאית כי היא נותנת ניווט מקלדת/עריכת-תא/העתק-הדבק "בחינם", בלי לבנות הכל ידנית.
+- **תחומים (Domains)**: טבלת גיליון שטוחה (מוותרים על הקיפול ההיררכי הוויזואלי, `parent_domain_id` נשאר עמודה לעריכה).
+- **עריכת פרויקט**: כפתור "עריכה" בעמוד `/projects/:id` **מוסר** — עריכת שדות פרויקט תתבצע רק דרך טבלת הגיליון הראשית ב-`/projects`.
+- **GoalsTab/PersonnelTab** (`project_goals`/`project_members`): **נשארים מחוץ להיקף** — אומת ש**אינם מחוברים בכלל** ל-Tabs בפועל ב-`ProjectDetail.jsx` (קוד לא-נגיש, לא שווה להמיר UI שאף אחד לא רואה).
+- **DocumentsTab**: **כן מומר** לגיליון (עקביות עם שאר הטאבים), עם העלאת קובץ כ-popover קטן במקום הפאנל הנוכחי.
+
+### ארכיטקטורה (מתוכנן ע"י Plan agent, מאומת חלקית ידנית)
+- **תלות חדשה**: `react-data-grid` ב-`package.json` + import גיליון סגנון (`react-data-grid/lib/styles.css`) פעם אחת ב-`src/index.css`, **לפני** דירקטיבות ה-`@tailwind`. מיפוי משתני CSS של הספרייה (`--rdg-*`) למשתני העיצוב הקיימים של האפליקציה (`--background`, `--foreground`, `--border` וכו', כבר בפורמט HSL triple — אומת ב-`src/index.css`). אין מצב כהה חי באפליקציה כרגע (אומת) — תמיד `className="rdg-light"`, לא בונים תמיכת dark-mode לא-בשימוש.
+- **מודול משותף חדש** `src/components/projects/grid/`:
+  - `columnHelpers.js` — פונקציות בונות-עמודה גנריות: `textColumn`, `numberColumn`, `dateColumn`, `selectColumn` (enum, קורא מה-`*_LABELS`/`*_COLORS` הקיימים ב-`src/lib/projectUtils.js`), `booleanColumn`, `fkPickerColumn` (כותב זוג id+name **באותה קריאת `onRowChange`**, תומך גם ב-variant `noNameColumn` ל-`project_contacts.task_id` שאין לו עמודת-שם מקבילה בסכמה — משיג תצוגה בעזרת lookup חי).
+  - `ProjectDataGrid.jsx` — עטיפה סביב `<DataGrid>`: `readOnly` בוליאני יחיד שהופך את כל העמודות ל-non-editable ומסתיר כפתורי הוספה/מחיקה (נגזר מבדיקות ה-`can*` הקיימות ב-`src/lib/permissions.js`, לא נבנות בדיקות הרשאה חדשות).
+  - `popoverCellEditors.jsx` — לשדות ה-jsonb (`file_urls` על משימות, `related_task_ids` על אבני דרך, `budget_source_names`/`budget_approval_file_url` על פרויקט) — לא נכנסים לתא טקסט, אלא נפתחים כ-`Popover` קטן (shadcn, לא `Dialog`) — עדיין "בלי טופס מודלי גדול".
+- **שמירה**: כל commit של תא (`onRowsChange`) קורא מיידית ל-`base44.entities.X.update(row.id, { [key]: value })` (שדה בודד, לא כל השורה — נמנע דריסת עריכות מקבילות). **אין** `onLoad()`/רענון מלא אחרי כל עריכת תא (היה גורם להבהוב תוך כדי הקלדה) — רק אחרי הוספה/מחיקה של שורה. כישלון → toast.error + שחזור הערך המקומי. react-data-grid מבצע commit ב-blur/Enter, לא per-keystroke — אין צורך ב-debounce.
+- **הוספת שורה**: כפתור טולבר "+" (permission-gated, כמו הדפוס הקיים) שיוצר מיידית רשומה עם ברירת-מחדל placeholder (למשל `name: 'תחום חדש'`) דרך `.create()` — לא "שורת טיוטה" מקומית — נמנע מ-state נוסף של "האם זה נשמר כבר".
+- **מחיקת שורה**: אייקון פח לכל שורה + `confirm()` דפדפן, בדיוק כמו היום (לא bulk-select).
+- **הרשאות**: `readOnly` ברמת כל גיליון (למשל `!canCreateTasks(user)`), חוץ מעמודת הסטטוס בטבלת המשימות שנשארת ניתנת לעריכה גם ל-`user` רגיל (`canUpdateTaskStatus` רופף יותר מ-`canCreateTasks` — אומת בקוד).
+
+### קבצים שיושפעו
+- **חדשים**: `src/components/projects/grid/columnHelpers.js`, `ProjectDataGrid.jsx`, `popoverCellEditors.jsx`.
+- **מומרים לגיליון**: `src/pages/Projects.jsx`, `src/components/projects/{DomainTab,TasksTab,MilestonesTab,ContactsTab,DocumentsTab}.jsx`.
+- **מוסר כפתור עריכה** (לא מומר): `src/pages/ProjectDetail.jsx`.
+- **נמחקים בסוף** (אחרי אימות grep שאין עוד import): `ProjectDialog.jsx`, `DomainDialog.jsx`, `TaskDialog.jsx`, `MilestoneDialog.jsx`, `ContactDialog.jsx`.
+- **ללא שינוי**: `OverviewTab.jsx`, `ReportsTab.jsx` (קריאה-בלבד, אין טפסים), `BudgetTab.jsx` (שייך למערכת התקציב הפורמלית הנפרדת — לא נוגעים), `ImportTasksDialog.jsx`/ייצוא אקסל (פיצ'ר נפרד מהמרת דיאלוג→גיליון).
+
+### אימות מתוכנן (ידני, אין סוויטת בדיקות בריפו)
+לכל גיליון: יצירה+רענון-דף לאימות התמדה; עריכת כל סוג תא (טקסט/מספר/תאריך/enum/בוליאני); עריכת FK-picker + אימות ששני השדות (id+name) נכתבים; פתיחת ה-popover לשדות jsonb; מחיקת שורה; בדיקת הרשאות כ-role נמוך יותר (סטטוס משימה נשאר ניתן לעריכה, שאר השדות לא); `npm run build`/`npm run lint` אחרי כל מחיקת דיאלוג.
