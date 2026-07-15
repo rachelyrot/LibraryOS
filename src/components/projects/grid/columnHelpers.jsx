@@ -1,9 +1,14 @@
+import { textEditor } from 'react-data-grid';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/lib/projectUtils';
 
 // Shared react-data-grid column builders for the Projects module's inline-editable
-// grids. Verified against the installed react-data-grid@7.0.0-beta.48 type
-// definitions and built-in `textEditor` source directly (not assumed from docs):
+// grids. Verified against the installed react-data-grid@7.0.0-beta.47 source
+// directly (not assumed from docs):
+//   - a column is only actually editable if it has a `renderEditCell` — there is
+//     NO automatic default text editor for columns that just set `editable: true`
+//     (isCellEditable checks `column.renderEditCell != null`), so textColumn must
+//     wire the library's own exported `textEditor` explicitly.
 //   - renderEditCell's onRowChange(row) updates the in-progress edit on every
 //     keystroke with NO commit flag; onClose(true, false) commits on blur/Enter,
 //     onClose(false) cancels on Escape.
@@ -11,14 +16,25 @@ import { formatDate } from '@/lib/projectUtils';
 //     here for one-shot edits like checkboxes and <select> dropdowns.
 
 const inputBase = 'w-full h-full px-2 text-sm bg-background border-0 outline-none';
+// Native <select> edit-cells need to be wider than the (often narrow) column
+// itself, or the closed select box clips its own selected-option text — this
+// is what earlier looked like "corrupted" cell text and turned out to just be
+// a too-narrow dropdown. min-width overflows past the cell bounds while
+// editing (same pattern spreadsheets use for narrow dropdown columns).
+const selectInputBase = `${inputBase} min-w-[140px]`;
 
 export function textColumn(key, name, { editable = true, width } = {}) {
-  return { key, name, width, editable, resizable: true };
-  // No renderEditCell needed — react-data-grid uses its built-in textEditor
-  // automatically for editable columns with no renderEditCell/renderCell.
+  return { key, name, width, editable, resizable: true, renderEditCell: textEditor };
 }
 
-export function numberColumn(key, name, { editable = true, width } = {}) {
+export function numberColumn(key, name, { editable = true, width, min, max } = {}) {
+  const clamp = (n) => {
+    if (n == null) return n;
+    let v = n;
+    if (min != null) v = Math.max(min, v);
+    if (max != null) v = Math.min(max, v);
+    return v;
+  };
   return {
     key, name, width, editable, resizable: true,
     renderCell({ row }) {
@@ -29,9 +45,11 @@ export function numberColumn(key, name, { editable = true, width } = {}) {
         <input
           autoFocus
           type="number"
+          min={min}
+          max={max}
           className={inputBase}
           defaultValue={row[key] ?? 0}
-          onChange={(e) => onRowChange({ ...row, [key]: e.target.value === '' ? null : Number(e.target.value) })}
+          onChange={(e) => onRowChange({ ...row, [key]: e.target.value === '' ? null : clamp(Number(e.target.value)) })}
           onBlur={() => onClose(true, false)}
           onKeyDown={(e) => { if (e.key === 'Escape') onClose(false); }}
         />
@@ -71,8 +89,8 @@ export function enumColumn(key, name, labels, colors, { editable = true, width }
     renderCell({ row }) {
       const value = row[key];
       return (
-        <div className="w-full px-2 flex items-center h-full">
-          <span className={cn('text-xs px-2 py-0.5 rounded', colors?.[value])}>{labels[value] || '-'}</span>
+        <div className="w-full px-2 flex items-center h-full min-w-0">
+          <span className={cn('text-xs px-2 py-0.5 rounded truncate', colors?.[value])}>{labels[value] || '-'}</span>
         </div>
       );
     },
@@ -80,7 +98,7 @@ export function enumColumn(key, name, labels, colors, { editable = true, width }
       return (
         <select
           autoFocus
-          className={inputBase}
+          className={selectInputBase}
           value={row[key] || ''}
           onChange={(e) => onRowChange({ ...row, [key]: e.target.value }, true)}
         >
@@ -143,7 +161,7 @@ export function fkPickerColumn(key, nameKey, name, lookupArray, getOptionLabel, 
       return (
         <select
           autoFocus
-          className={inputBase}
+          className={selectInputBase}
           value={row[key] || ''}
           onChange={(e) => {
             const id = e.target.value || null;

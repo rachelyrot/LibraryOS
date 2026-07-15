@@ -13,6 +13,7 @@ import ImportTasksDialog from '@/components/projects/ImportTasksDialog';
 import PageHeader from '@/components/PageHeader';
 import ProjectDataGrid from '@/components/projects/grid/ProjectDataGrid';
 import { textColumn, dateColumn, enumColumn, numberColumn, fkPickerColumn } from '@/components/projects/grid/columnHelpers';
+import { budgetSourcesColumn } from '@/components/projects/grid/popoverCellEditors';
 import { makeGridSaveHandler } from '@/components/projects/grid/gridSave';
 
 export default function Projects() {
@@ -64,6 +65,16 @@ export default function Projects() {
 
   const handleRowsChange = makeGridSaveHandler(base44.entities.Project, setProjects, {
     pairedFields: { branch_id: 'branch_name' },
+    computeExtra: {
+      // budgetSourcesColumn already computes+attaches the new totals onto the row
+      // itself (see popoverCellEditors.jsx) — persist them together with the
+      // sources array so budget_planned/approved/used stay in sync automatically.
+      budget_source_names: (row) => ({
+        budget_planned: row.budget_planned,
+        budget_approved: row.budget_approved,
+        budget_used: row.budget_used,
+      }),
+    },
     onError: load,
   });
 
@@ -92,7 +103,7 @@ export default function Projects() {
 
   const columns = [
     {
-      key: '__open', name: '', width: 40, editable: false, resizable: false,
+      key: '__open', name: '', width: 36, editable: false, resizable: false, frozen: true,
       renderCell({ row }) {
         return (
           <div className="w-full h-full flex items-center justify-center">
@@ -103,19 +114,18 @@ export default function Projects() {
         );
       },
     },
-    textColumn('name', 'שם פרויקט', { editable: canManage, width: 200 }),
-    enumColumn('project_type', 'סוג', PROJECT_TYPE_LABELS, {}, { editable: canManage, width: 140 }),
-    fkPickerColumn('branch_id', 'branch_name', 'סניף', branches, (b) => b.name, { editable: canManage, width: 130 }),
-    textColumn('manager_name', 'אחראית', { editable: canManage, width: 120 }),
-    enumColumn('status', 'סטטוס', PROJECT_STATUS_LABELS, PROJECT_STATUS_COLORS, { editable: canManage, width: 110 }),
-    enumColumn('priority', 'עדיפות', PRIORITY_LABELS, PRIORITY_COLORS, { editable: canManage, width: 100 }),
-    numberColumn('progress_percentage', 'התקדמות %', { editable: canManage, width: 100 }),
-    dateColumn('start_date', 'תאריך התחלה', { editable: canManage, width: 110 }),
-    dateColumn('target_end_date', 'תאריך יעד', { editable: canManage, width: 110 }),
-    numberColumn('budget_planned', 'תקציב מתוכנן', { editable: canManage, width: 120 }),
-    numberColumn('budget_approved', 'תקציב מאושר', { editable: canManage, width: 120 }),
+    { ...textColumn('name', 'שם פרויקט', { editable: canManage, width: 190 }), frozen: true },
+    { ...fkPickerColumn('branch_id', 'branch_name', 'סניף', branches, (b) => b.name, { editable: canManage, width: 110 }), frozen: true },
+    enumColumn('project_type', 'סוג', PROJECT_TYPE_LABELS, {}, { editable: canManage, width: 155 }),
+    textColumn('manager_name', 'אחראית', { editable: canManage, width: 110 }),
+    enumColumn('status', 'סטטוס', PROJECT_STATUS_LABELS, PROJECT_STATUS_COLORS, { editable: canManage, width: 100 }),
+    enumColumn('priority', 'עדיפות', PRIORITY_LABELS, PRIORITY_COLORS, { editable: canManage, width: 95 }),
+    numberColumn('progress_percentage', 'התקדמות %', { editable: canManage, width: 85, min: 0, max: 100 }),
+    dateColumn('start_date', 'תאריך התחלה', { editable: canManage, width: 90 }),
+    dateColumn('target_end_date', 'תאריך יעד', { editable: canManage, width: 90 }),
+    budgetSourcesColumn('budget_source_names', 'מקורות תקציב', { width: 130 }),
     {
-      key: '__tasks', name: 'משימות', width: 90, editable: false, resizable: false,
+      key: '__tasks', name: 'משימות', width: 70, editable: false, resizable: false,
       renderCell({ row }) {
         const pTasks = tasks.filter(t => t.project_id === row.id);
         const open = pTasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled').length;

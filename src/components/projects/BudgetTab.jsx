@@ -1,14 +1,22 @@
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
-import { Wallet, ShoppingCart, TrendingDown, TrendingUp, CheckCircle, FileText, Download } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Wallet, ShoppingCart, TrendingDown, TrendingUp, CheckCircle, Download, Plus, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
+import { base44 } from '@/api/base44Client';
 import StatusBadge from '@/components/StatusBadge';
 import { formatCurrency, formatDate } from '@/lib/projectUtils';
 import { canViewProjectBudget, canManageProjectBudget } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 
-export default function BudgetTab({ project, user, purchaseOrders, credits }) {
+function sumSources(sources, field) {
+  return (sources || []).reduce((sum, s) => sum + (Number(s[field]) || 0), 0);
+}
+
+export default function BudgetTab({ project, user, purchaseOrders, credits, onLoad }) {
   const canViewBudget = canViewProjectBudget(user);
   const canManageBudget = canManageProjectBudget(user);
   const planned = project.budget_planned || 0;
@@ -17,6 +25,35 @@ export default function BudgetTab({ project, user, purchaseOrders, credits }) {
   const remaining = approved - used;
   const utilization = approved > 0 ? Math.round((used / approved) * 100) : 0;
   const poTotal = purchaseOrders.reduce((s, po) => s + (po.total_amount || 0), 0);
+
+  const [sources, setSources] = useState(project.budget_source_names || []);
+  useEffect(() => { setSources(project.budget_source_names || []); }, [project.budget_source_names]);
+
+  const persistSources = async (nextSources) => {
+    setSources(nextSources);
+    try {
+      await base44.entities.Project.update(project.id, {
+        budget_source_names: nextSources,
+        budget_planned: sumSources(nextSources, 'planned'),
+        budget_approved: sumSources(nextSources, 'approved'),
+        budget_used: sumSources(nextSources, 'used'),
+      });
+      onLoad?.();
+    } catch (e) {
+      toast.error('שגיאה בשמירה');
+      setSources(project.budget_source_names || []);
+    }
+  };
+
+  // Typing updates local state immediately (responsive), but only persists to
+  // the server on blur — matches the grid's onBlur-commit convention elsewhere
+  // in this module rather than firing a request per keystroke.
+  const updateSourceLocal = (i, field, value) => {
+    setSources((prev) => prev.map((s, idx) => (idx === i ? { ...s, [field]: value } : s)));
+  };
+  const commitSources = () => persistSources(sources);
+  const addSource = () => persistSources([...sources, { name: '', planned: 0, approved: 0, used: 0 }]);
+  const removeSource = (i) => persistSources(sources.filter((_, idx) => idx !== i));
 
   if (!canViewBudget) {
     return <div className="text-center py-12 text-muted-foreground">אין הרשאה לצפות בתקציב הפרויקט</div>;
@@ -60,9 +97,53 @@ export default function BudgetTab({ project, user, purchaseOrders, credits }) {
             <Progress value={utilization} className="h-3 flex-1" />
             <span className="text-lg font-bold">{utilization}%</span>
           </div>
-          {(project.budget_source_names || []).length > 0 && (
-            <p className="text-sm text-muted-foreground mt-2">מקורות תקציב: {project.budget_source_names.join(', ')}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-sm">מקורות תקציב</CardTitle>
+          {canManageBudget && (
+            <Button variant="outline" size="sm" onClick={addSource} className="gap-1.5 h-7 text-xs">
+              <Plus className="w-3.5 h-3.5" /> הוסף מקור
+            </Button>
           )}
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {sources.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">אין מקורות תקציב</p>}
+          {sources.map((s, i) => (
+            canManageBudget ? (
+              <div key={i} className="space-y-1.5 border-b border-border pb-3 last:border-0 last:pb-0">
+                <div className="flex gap-2 items-center">
+                  <Input value={s.name || ''} onChange={(e) => updateSourceLocal(i, 'name', e.target.value)} onBlur={commitSources} placeholder="שם מקור" className="h-8 text-sm flex-1" />
+                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeSource(i)}>
+                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                  </Button>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[10px] text-muted-foreground">מתוכנן</label>
+                    <Input type="number" value={s.planned ?? 0} onChange={(e) => updateSourceLocal(i, 'planned', Number(e.target.value) || 0)} onBlur={commitSources} className="h-8 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground">מאושר</label>
+                    <Input type="number" value={s.approved ?? 0} onChange={(e) => updateSourceLocal(i, 'approved', Number(e.target.value) || 0)} onBlur={commitSources} className="h-8 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground">נוצל</label>
+                    <Input type="number" value={s.used ?? 0} onChange={(e) => updateSourceLocal(i, 'used', Number(e.target.value) || 0)} onBlur={commitSources} className="h-8 text-sm" />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div key={i} className="flex justify-between text-sm border-b border-border/50 pb-1 last:border-0">
+                <span>{s.name || '(ללא שם)'}</span>
+                <span className="text-muted-foreground">
+                  מתוכנן {formatCurrency(s.planned)} · מאושר {formatCurrency(s.approved)} · נוצל {formatCurrency(s.used)}
+                </span>
+              </div>
+            )
+          ))}
         </CardContent>
       </Card>
 
@@ -84,9 +165,6 @@ export default function BudgetTab({ project, user, purchaseOrders, credits }) {
                 <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"><Download className="w-3 h-3" /> צפייה</Button>
               </a>
             </div>
-          )}
-          {canManageBudget && !project.budget_is_approved && (
-            <p className="text-xs text-amber-600 mt-2">ניתן לעדכן אישור תקציב בעריכת הפרויקט</p>
           )}
         </CardContent>
       </Card>

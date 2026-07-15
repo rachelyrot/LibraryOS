@@ -79,7 +79,11 @@ function AddDocumentButton({ project, user, onLoad }) {
       <PopoverTrigger asChild>
         <Button className="gap-2"><Plus className="w-4 h-4" /> העלאת מסמך</Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 font-heebo" dir="rtl">
+      <PopoverContent
+        className="w-80 font-heebo"
+        dir="rtl"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <div className="space-y-3">
           <div>
             <Label>קובץ</Label>

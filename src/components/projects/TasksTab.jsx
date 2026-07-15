@@ -74,7 +74,7 @@ export default function TasksTab({ project, user, tasks, setTasks, onLoad, proje
     dateColumn('start_date', 'תאריך התחלה', { editable: canCreate, width: 110 }),
     dateColumn('due_date', 'תאריך יעד', { editable: canCreate, width: 110 }),
     textColumn('estimated_duration', 'משך משוער', { editable: canCreate, width: 100 }),
-    numberColumn('progress_percentage', 'התקדמות %', { editable: canCreate, width: 100 }),
+    numberColumn('progress_percentage', 'התקדמות %', { editable: canCreate, width: 100, min: 0, max: 100 }),
     fkPickerColumn('depends_on_task_id', 'depends_on_task_name', 'תלוי במשימה', otherTasks, (t) => t.task_description, { editable: canCreate, width: 150 }),
     fileUrlsColumn('file_urls', 'קבצים', { width: 70 }),
     textColumn('notes', 'הערות', { editable: canCreate, width: 160 }),

@@ -54,7 +54,7 @@ export default function MilestonesTab({ project, user, milestones, setMilestones
     enumColumn('status', 'סטטוס', MILESTONE_STATUS_LABELS, MILESTONE_STATUS_COLORS, { editable: canManage, width: 120 }),
     dateColumn('target_date', 'תאריך יעד', { editable: canManage, width: 110 }),
     dateColumn('completed_date', 'תאריך השלמה', { editable: false, width: 110 }),
-    numberColumn('progress_percentage', 'התקדמות %', { editable: canManage, width: 100 }),
+    numberColumn('progress_percentage', 'התקדמות %', { editable: canManage, width: 100, min: 0, max: 100 }),
     textColumn('responsible', 'אחראי', { editable: canManage, width: 120 }),
     textColumn('related_domain', 'תחום קשור', { editable: canManage, width: 120 }),
     taskPickerColumn('related_task_ids', 'משימות', tasks, { width: 80 }),

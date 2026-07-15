@@ -3,9 +3,10 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Paperclip, Plus, Trash2, Upload, Loader2, ListTodo } from 'lucide-react';
+import { Paperclip, Plus, Trash2, Upload, Loader2, ListTodo, Wallet } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
+import { formatCurrency } from '@/lib/projectUtils';
 
 // Cell renderers for jsonb array columns. These are NOT edit-cells in react-data-grid's
 // sense (no renderEditCell/onClose dance) — they're plain renderCell buttons that open
@@ -116,7 +117,9 @@ export function taskPickerColumn(key, name, tasks, { width = 90 } = {}) {
   };
 }
 
-// ── text-list columns (array of free-text strings), e.g. projects.budget_source_names ──
+// ── text-list columns (array of free-text strings) — generic, currently unused
+// by any column builder call site (projects.budget_source_names moved to the
+// richer budgetSourcesColumn below once it needed per-source amounts) ──
 function TextListCellButton({ row, column, onRowChange, placeholder }) {
   const key = column.key;
   const items = row[key] || [];
@@ -159,5 +162,96 @@ export function textListColumn(key, name, { width = 160, placeholder } = {}) {
   return {
     key, name, width, resizable: true, editable: false,
     renderCell(props) { return <TextListCellButton {...props} placeholder={placeholder} />; },
+  };
+}
+
+// ── budget sources (array of {name, planned, approved, used}), e.g. projects.budget_source_names ──
+// Every edit here also recomputes and writes the project-level budget_planned/
+// budget_approved/budget_used totals in the SAME onRowChange call, so the
+// caller's gridSave.js `computeExtra` (see src/pages/Projects.jsx) can persist
+// them together with the sources array in one request — those three columns
+// must be marked read-only by the caller, since they're derived here, not
+// independently editable.
+function sumSources(sources, field) {
+  return (sources || []).reduce((sum, s) => sum + (Number(s[field]) || 0), 0);
+}
+
+function BudgetSourcesCellButton({ row, column, onRowChange }) {
+  const key = column.key;
+  const sources = row[key] || [];
+
+  const commit = (nextSources) => {
+    onRowChange({
+      ...row,
+      [key]: nextSources,
+      budget_planned: sumSources(nextSources, 'planned'),
+      budget_approved: sumSources(nextSources, 'approved'),
+      budget_used: sumSources(nextSources, 'used'),
+    });
+  };
+
+  const update = (i, field, value) => {
+    commit(sources.map((s, idx) => (idx === i ? { ...s, [field]: value } : s)));
+  };
+  const add = () => commit([...sources, { name: '', planned: 0, approved: 0, used: 0 }]);
+  const removeAt = (i) => commit(sources.filter((_, idx) => idx !== i));
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className="w-full h-full px-2 flex items-center gap-1 text-xs truncate">
+          {sources.length > 0
+            ? <><Wallet className="w-3.5 h-3.5 shrink-0" /> {sources.length} · {formatCurrency(sumSources(sources, 'planned'))}</>
+            : <span className="text-muted-foreground">-</span>}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[26rem] font-heebo" dir="rtl">
+        <div className="space-y-3">
+          <p className="text-sm font-medium">מקורות תקציב</p>
+          {sources.length === 0 && <p className="text-xs text-muted-foreground">אין מקורות תקציב</p>}
+          {sources.map((s, i) => (
+            <div key={i} className="space-y-1.5 border-b border-border pb-2 last:border-0 last:pb-0">
+              <div className="flex gap-2 items-center">
+                <Input value={s.name || ''} onChange={(e) => update(i, 'name', e.target.value)} placeholder="שם מקור" className="h-8 text-sm flex-1" />
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeAt(i)}>
+                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                </Button>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                <div>
+                  <label className="text-[10px] text-muted-foreground">מתוכנן</label>
+                  <Input type="number" value={s.planned ?? 0} onChange={(e) => update(i, 'planned', Number(e.target.value) || 0)} className="h-7 text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground">מאושר</label>
+                  <Input type="number" value={s.approved ?? 0} onChange={(e) => update(i, 'approved', Number(e.target.value) || 0)} className="h-7 text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground">נוצל</label>
+                  <Input type="number" value={s.used ?? 0} onChange={(e) => update(i, 'used', Number(e.target.value) || 0)} className="h-7 text-xs" />
+                </div>
+              </div>
+            </div>
+          ))}
+          <Button type="button" variant="outline" size="sm" onClick={add} className="gap-1 w-full">
+            <Plus className="w-3.5 h-3.5" /> הוסף מקור
+          </Button>
+          {sources.length > 0 && (
+            <div className="text-xs text-muted-foreground border-t border-border pt-2 flex flex-wrap justify-between gap-x-3">
+              <span>סה"כ מתוכנן: {formatCurrency(sumSources(sources, 'planned'))}</span>
+              <span>מאושר: {formatCurrency(sumSources(sources, 'approved'))}</span>
+              <span>נוצל: {formatCurrency(sumSources(sources, 'used'))}</span>
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function budgetSourcesColumn(key, name, { width = 130 } = {}) {
+  return {
+    key, name, width, resizable: true, editable: false,
+    renderCell(props) { return <BudgetSourcesCellButton {...props} />; },
   };
 }

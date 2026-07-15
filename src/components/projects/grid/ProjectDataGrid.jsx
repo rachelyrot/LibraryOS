@@ -67,9 +67,9 @@ export default function ProjectDataGrid({
           onRowsChange={onRowsChange}
           rowKeyGetter={rowKeyGetter}
           rowHeight={40}
-          headerRowHeight={38}
+          headerRowHeight={40}
           renderers={{ noRowsFallback: <div className="text-center py-12 text-muted-foreground w-full">{emptyMessage}</div> }}
-          style={{ blockSize: rows.length === 0 ? 200 : Math.min(600, 38 + rows.length * 40 + 2) }}
+          style={{ blockSize: rows.length === 0 ? 200 : Math.min(600, 40 + rows.length * 40 + 2) }}
         />
       </div>
     </div>
