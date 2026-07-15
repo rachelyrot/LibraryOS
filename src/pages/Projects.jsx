@@ -62,7 +62,7 @@ export default function Projects() {
     catch (e) { toast.error('שגיאה במחיקה'); }
   };
 
-  const handleRowsChange = makeGridSaveHandler(base44.entities.Project, {
+  const handleRowsChange = makeGridSaveHandler(base44.entities.Project, setProjects, {
     pairedFields: { branch_id: 'branch_name' },
     onError: load,
   });

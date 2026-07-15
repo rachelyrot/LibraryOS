@@ -107,7 +107,7 @@ function AddDocumentButton({ project, user, onLoad }) {
   );
 }
 
-export default function DocumentsTab({ project, user, documents, onLoad }) {
+export default function DocumentsTab({ project, user, documents, setDocuments, onLoad }) {
   const canManage = canCreateTasks(user);
 
   const handleDelete = async (doc) => {
@@ -116,7 +116,7 @@ export default function DocumentsTab({ project, user, documents, onLoad }) {
     catch (e) { toast.error('שגיאה במחיקה'); }
   };
 
-  const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectDocument, { onError: onLoad });
+  const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectDocument, setDocuments, { onError: onLoad });
 
   const columns = [
     textColumn('name', 'שם מסמך', { editable: canManage, width: 200 }),

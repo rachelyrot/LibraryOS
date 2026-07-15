@@ -8,7 +8,7 @@ import ProjectDataGrid from './grid/ProjectDataGrid';
 import { textColumn, enumColumn, numberColumn, fkPickerColumn } from './grid/columnHelpers';
 import { makeGridSaveHandler } from './grid/gridSave';
 
-export default function DomainTab({ project, user, domains, onLoad }) {
+export default function DomainTab({ project, user, domains, setDomains, onLoad }) {
   const canManage = canCreateTasks(user);
 
   const handleAdd = async () => {
@@ -37,7 +37,7 @@ export default function DomainTab({ project, user, domains, onLoad }) {
     } catch (e) { toast.error('שגיאה בהוספה'); }
   };
 
-  const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectDomain, {
+  const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectDomain, setDomains, {
     pairedFields: { parent_domain_id: 'parent_domain_name' },
     onError: onLoad,
   });

@@ -13,7 +13,7 @@ import { textColumn, dateColumn, enumColumn, numberColumn, fkPickerColumn } from
 import { fileUrlsColumn } from './grid/popoverCellEditors';
 import { makeGridSaveHandler } from './grid/gridSave';
 
-export default function TasksTab({ project, user, tasks, onLoad, projects, domains }) {
+export default function TasksTab({ project, user, tasks, setTasks, onLoad, projects, domains }) {
   const [importOpen, setImportOpen] = useState(false);
   const [filters, setFilters] = useState({ domain: 'all', sub_domain: 'all', status: 'all', priority: 'all', phase: 'all', search: '' });
 
@@ -50,7 +50,7 @@ export default function TasksTab({ project, user, tasks, onLoad, projects, domai
     catch (e) { toast.error('שגיאה במחיקה'); }
   };
 
-  const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectTask, {
+  const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectTask, setTasks, {
     pairedFields: { depends_on_task_id: 'depends_on_task_name' },
     onError: onLoad,
   });

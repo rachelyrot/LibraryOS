@@ -8,7 +8,7 @@ import ProjectDataGrid from './grid/ProjectDataGrid';
 import { textColumn, enumColumn, fkPickerColumn } from './grid/columnHelpers';
 import { makeGridSaveHandler } from './grid/gridSave';
 
-export default function ContactsTab({ project, user, contacts, tasks, onLoad }) {
+export default function ContactsTab({ project, user, contacts, setContacts, tasks, onLoad }) {
   const [typeFilter, setTypeFilter] = useState('all');
   const canManage = canCreateTasks(user);
 
@@ -27,7 +27,7 @@ export default function ContactsTab({ project, user, contacts, tasks, onLoad }) 
     catch (e) { toast.error('שגיאה במחיקה'); }
   };
 
-  const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectContact, { onError: onLoad });
+  const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectContact, setContacts, { onError: onLoad });
 
   const filtered = contacts.filter((c) => typeFilter === 'all' || c.contact_type === typeFilter);
 

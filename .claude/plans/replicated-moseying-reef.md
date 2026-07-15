@@ -466,3 +466,16 @@ https://idktdopfvycenheizqbf.supabase.co/rest/v1/profiles?select=id&limit=1&apik
 2. `src/components/projects/grid/ProjectDataGrid.jsx`: תוקן ה-import מ-`import { DataGrid } from 'react-data-grid'` (named export — כך זה עובד ב-beta.48 ומעלה) ל-`import DataGrid from 'react-data-grid'` (**default export** — כך זה עובד ב-beta.47; אומת ישירות מול ה-`export {...}` בסוף `node_modules/react-data-grid/lib/bundle.js`). שאר ה-API (`RenderCellProps`/`RenderEditCellProps`/`DataGridProps`) זהה לחלוטין בין שתי הגרסאות — אומת מול `index.d.ts`, אין צורך בשינוי קוד נוסף.
 
 **אימות**: הורץ שרת פיתוח מקומי + כרום ללא-ראש מול נתיב הדיבאג — הגיליון נטען ללא שגיאות קונסולה, כותרות העמודות (בעברית) מוצגות נכון, מצב "אין פרויקטים" מוצג נכון (צפוי — ללא אימות אמיתי בסביבת הדיבאג). `npm run build`/`npm run lint` (על הקובץ שהשתנה) עברו נקי.
+
+### 2026-07-14 — §11: תיקון באג שני — עריכת תא "נעלמת"/חוזרת לערך הקודם
+**סטטוס:** ✅ הצליח
+
+מיד אחרי התיקון הקודם, המשתמשת דיווחה על בעיה נפרדת: הקלדה לתוך תא (למשל שם פרויקט) "נעלמת"/חוזרת לערך הקודם. בהבהרה (נשאלה בעברית) אושר: זה קורה לכל סוגי השדות, וזה באג אמיתי — **לא** בקשה לשנות את מנגנון השמירה האוטומטית (הוחלט להשאיר את זה כמתוכנן, בלי כפתור "שמור" נפרד).
+
+**שורש הבעיה**: `react-data-grid` הוא קומפוננטת "controlled" — הוא לא מנהל state פנימי של השורות, אלא רק קורא ל-`onRowsChange(rows, ...)` ומצפה שההורה יזין את המערך המעודכן בחזרה דרך ה-prop `rows`. `makeGridSaveHandler` (ב-`gridSave.js`) עשה רק את קריאת ה-`.update()` לשרת, **ומעולם לא עדכן את ה-state המקומי** (`tasks`/`domains`/`contacts` וכו') — כך שבפריים הבא ה-grid חוזר להציג את הערך הישן מה-`rows` prop, כאילו העריכה "נעלמה", גם אם השמירה לשרת הצליחה ברקע.
+
+**התיקון**:
+1. `src/components/projects/grid/gridSave.js`: `makeGridSaveHandler` מקבל כעת ארגומנט שני `setRows` (state setter של המערך ה**מלא**, לא המסונן) — בכל קומיט של תא, השורה המשתנה ממוזגת ל-state לפי `id` (`setRows(prev => prev.map(r => r.id === row.id ? row : r))`) **לפני** קריאת השרת, כך שהעדכון מיידי (optimistic) ונשאר תקין גם כשהגיליון מציג תת-קבוצה מסוננת (למשל `TasksTab`/`ContactsTab`/`Projects.jsx` עם פילטרים פעילים).
+2. עודכנו כל 6 נקודות הקריאה כדי להעביר את ה-setter המתאים: `Projects.jsx` (`setProjects`, כבר קיים מקומית), ו-5 טאבי `ProjectDetail.jsx` (`DomainTab`/`TasksTab`/`MilestonesTab`/`ContactsTab`/`DocumentsTab`) שקיבלו כל אחד prop חדש (`setDomains`/`setTasks`/`setMilestones`/`setContacts`/`setDocuments`) המוזרם מ-`ProjectDetail.jsx` (ה-state כבר היה קיים שם מ-`useState`, רק לא הועבר למטה).
+
+**אימות**: `npm run build` ו-`npm run lint` (על כל הקבצים שהשתנו) עברו נקי. לא בוצעה בדיקת round-trip מלאה מול Chrome ללא-ראש הפעם (ידרוש התחברות אמיתית ל-Supabase כדי לבדוק שהעדכון גם נשמר בפועל בשרת, לא רק מוצג מקומית) — התיקון עצמו הוא תיקון סטנדרטי וברור של דפוס "controlled component" ב-React, מאומת בקריאת קוד ישירה מול התיאור המדויק של הבאג מהמשתמשת.

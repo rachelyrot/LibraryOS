@@ -119,12 +119,12 @@ export default function ProjectDetail() {
         </TabsList>
 
         <TabsContent value="overview"><OverviewTab project={project} tasks={tasks} milestones={milestones} domains={domains} contacts={contacts} purchaseOrders={purchaseOrders} /></TabsContent>
-        <TabsContent value="domains"><DomainTab project={project} user={user} domains={domains} onLoad={load} /></TabsContent>
-        <TabsContent value="tasks"><TasksTab project={project} user={user} tasks={tasks} onLoad={load} projects={[project]} domains={domains} /></TabsContent>
-        <TabsContent value="milestones"><MilestonesTab project={project} user={user} milestones={milestones} tasks={tasks} onLoad={load} /></TabsContent>
+        <TabsContent value="domains"><DomainTab project={project} user={user} domains={domains} setDomains={setDomains} onLoad={load} /></TabsContent>
+        <TabsContent value="tasks"><TasksTab project={project} user={user} tasks={tasks} setTasks={setTasks} onLoad={load} projects={[project]} domains={domains} /></TabsContent>
+        <TabsContent value="milestones"><MilestonesTab project={project} user={user} milestones={milestones} setMilestones={setMilestones} tasks={tasks} onLoad={load} /></TabsContent>
         {canViewBudget && <TabsContent value="budget"><BudgetTab project={project} user={user} purchaseOrders={purchaseOrders} credits={credits} /></TabsContent>}
-        <TabsContent value="contacts"><ContactsTab project={project} user={user} contacts={contacts} tasks={tasks} onLoad={load} /></TabsContent>
-        <TabsContent value="documents"><DocumentsTab project={project} user={user} documents={documents} onLoad={load} /></TabsContent>
+        <TabsContent value="contacts"><ContactsTab project={project} user={user} contacts={contacts} setContacts={setContacts} tasks={tasks} onLoad={load} /></TabsContent>
+        <TabsContent value="documents"><DocumentsTab project={project} user={user} documents={documents} setDocuments={setDocuments} onLoad={load} /></TabsContent>
         {canViewReports && <TabsContent value="reports"><ReportsTab project={project} user={user} tasks={tasks} domains={domains} contacts={contacts} purchaseOrders={purchaseOrders} milestones={milestones} /></TabsContent>}
       </Tabs>
     </div>

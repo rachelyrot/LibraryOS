@@ -7,7 +7,7 @@ import { textColumn, dateColumn, enumColumn, numberColumn, booleanColumn } from 
 import { taskPickerColumn } from './grid/popoverCellEditors';
 import { makeGridSaveHandler } from './grid/gridSave';
 
-export default function MilestonesTab({ project, user, milestones, tasks, onLoad }) {
+export default function MilestonesTab({ project, user, milestones, setMilestones, tasks, onLoad }) {
   const canManage = canCreateTasks(user);
 
   const handleAdd = async () => {
@@ -25,7 +25,7 @@ export default function MilestonesTab({ project, user, milestones, tasks, onLoad
     catch (e) { toast.error('שגיאה במחיקה'); }
   };
 
-  const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectMilestone, {
+  const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectMilestone, setMilestones, {
     computeExtra: {
       // Mirrors the old toggleComplete() logic: flipping is_completed also drives
       // status/completed_date/progress_percentage together.

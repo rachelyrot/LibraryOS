@@ -5,6 +5,13 @@ import { toast } from 'sonner';
  * single changed field per commit via `.update(id, {...})` (not the whole row,
  * to avoid clobbering concurrent edits to other fields) — see plan §11.
  *
+ * react-data-grid is a *controlled* component: it doesn't keep its own row
+ * state, it just calls back with the next array and expects the parent to
+ * feed it back in via the `rows` prop. `setRows` is the full (unfiltered)
+ * state setter for that data (e.g. `setTasks`) — the changed row is merged
+ * into it *by id*, not replaced wholesale, so this stays correct even when
+ * the grid is showing a filtered subset of the full array.
+ *
  * `pairedFields` lets an fkPicker column's id write also persist its cached
  * display-name sibling in the same request (e.g. { parent_domain_id: 'parent_domain_name' }).
  *
@@ -17,11 +24,14 @@ import { toast } from 'sonner';
  * On failure: toast + call onError() (callers pass their `onLoad` refetch to
  * revert the grid's optimistic local state back to server truth).
  */
-export function makeGridSaveHandler(entityApi, { pairedFields = {}, computeExtra = {}, onError } = {}) {
+export function makeGridSaveHandler(entityApi, setRows, { pairedFields = {}, computeExtra = {}, onError } = {}) {
   return (rows, { indexes, column }) => {
     const idx = indexes[0];
     const row = rows[idx];
     const key = column.key;
+
+    setRows((prev) => prev.map((r) => (r.id === row.id ? row : r)));
+
     const payload = { [key]: row[key] };
     const pairedKey = pairedFields[key];
     if (pairedKey) payload[pairedKey] = row[pairedKey];
