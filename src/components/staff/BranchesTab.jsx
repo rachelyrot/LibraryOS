@@ -8,8 +8,7 @@ import { BRANCH_STATUS_LABELS } from '@/lib/staffUtils';
 import { canManageBranches } from '@/lib/permissions';
 import BranchDialog from './BranchDialog';
 
-export default function BranchesTab({ user, branches, onBranchesChange }) {
-  const [employees, setEmployees] = useState([]);
+export default function BranchesTab({ user, branches, employees, onBranchesChange }) {
   const [volunteers, setVolunteers] = useState([]);
   const [positions, setPositions] = useState([]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -18,10 +17,9 @@ export default function BranchesTab({ user, branches, onBranchesChange }) {
 
   useEffect(() => {
     Promise.all([
-      base44.entities.Employee.list('-created_date', 500).catch(() => []),
       base44.entities.Volunteer.list('-created_date', 500).catch(() => []),
       base44.entities.ApprovedPosition.list('-created_date', 500).catch(() => []),
-    ]).then(([emps, vols, pos]) => { setEmployees(emps); setVolunteers(vols); setPositions(pos); });
+    ]).then(([vols, pos]) => { setVolunteers(vols); setPositions(pos); });
   }, [branches]);
 
   const getStats = (branchId) => {

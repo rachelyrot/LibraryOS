@@ -11,9 +11,8 @@ import ScheduleDialog from './ScheduleDialog';
 import ScheduleWarnings from './ScheduleWarnings';
 import WeeklyScheduleTable from './WeeklyScheduleTable';
 
-export default function ScheduleTab({ user, branches }) {
+export default function ScheduleTab({ user, branches, employees }) {
   const [schedules, setSchedules] = useState([]);
-  const [employees, setEmployees] = useState([]);
   const [volunteers, setVolunteers] = useState([]);
   const [positions, setPositions] = useState([]);
   const [weekRef, setWeekRef] = useState(new Date().toISOString().split('T')[0]);
@@ -26,10 +25,9 @@ export default function ScheduleTab({ user, branches }) {
 
   const load = () => {
     Promise.all([
-      base44.entities.Employee.list('-created_date', 500).catch(() => []),
       base44.entities.Volunteer.list('-created_date', 500).catch(() => []),
       base44.entities.ApprovedPosition.list('-created_date', 500).catch(() => []),
-    ]).then(([emps, vols, pos]) => { setEmployees(emps); setVolunteers(vols); setPositions(pos); });
+    ]).then(([vols, pos]) => { setVolunteers(vols); setPositions(pos); });
   };
   useEffect(() => { load(); }, []);
 

@@ -19,12 +19,19 @@ export default function Staff() {
   const [searchParams] = useSearchParams();
   const [user, setUser] = useState(null);
   const [branches, setBranches] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [activeTab, setActiveTab] = useState(VALID_TABS.includes(searchParams.get('tab')) ? searchParams.get('tab') : 'today');
 
   const loadBranches = () => base44.entities.Branch.list('name', 500).then(setBranches).catch(() => {});
+  // Lifted here (not fetched separately per-tab) so every tab shares one up-to-date
+  // employees list — Radix Tabs keeps inactive tab panels mounted rather than
+  // unmounting them, so a tab that fetched its own copy once would never see an
+  // employee added from a sibling tab without a full page reload.
+  const loadEmployees = () => base44.entities.Employee.list('-created_date', 500).then(setEmployees).catch(() => {});
   useEffect(() => {
     base44.auth.me().then(setUser).catch(() => {});
     loadBranches();
+    loadEmployees();
   }, []);
 
   const canViewReports = canViewStaffReports(user);
@@ -48,14 +55,14 @@ export default function Staff() {
           {canViewReports && <TabsTrigger value="reports" className="flex items-center gap-1.5 py-2.5"><FileText className="w-4 h-4" /><span className="hidden lg:inline">דוחות</span></TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="today"><TodayView branches={branches} /></TabsContent>
-        <TabsContent value="branches"><BranchesTab user={user} branches={branches} onBranchesChange={loadBranches} /></TabsContent>
-        <TabsContent value="employees"><EmployeesTab user={user} branches={branches} /></TabsContent>
+        <TabsContent value="today"><TodayView branches={branches} employees={employees} /></TabsContent>
+        <TabsContent value="branches"><BranchesTab user={user} branches={branches} employees={employees} onBranchesChange={loadBranches} /></TabsContent>
+        <TabsContent value="employees"><EmployeesTab user={user} branches={branches} employees={employees} onEmployeesChange={loadEmployees} /></TabsContent>
         <TabsContent value="volunteers"><VolunteersTab user={user} branches={branches} /></TabsContent>
-        <TabsContent value="positions"><PositionsTab user={user} branches={branches} /></TabsContent>
-        <TabsContent value="schedule"><ScheduleTab user={user} branches={branches} /></TabsContent>
-        <TabsContent value="attendance"><AttendanceTab user={user} branches={branches} /></TabsContent>
-        {canViewReports && <TabsContent value="reports"><ReportsTab user={user} branches={branches} /></TabsContent>}
+        <TabsContent value="positions"><PositionsTab user={user} branches={branches} employees={employees} /></TabsContent>
+        <TabsContent value="schedule"><ScheduleTab user={user} branches={branches} employees={employees} /></TabsContent>
+        <TabsContent value="attendance"><AttendanceTab user={user} branches={branches} employees={employees} /></TabsContent>
+        {canViewReports && <TabsContent value="reports"><ReportsTab user={user} branches={branches} employees={employees} /></TabsContent>}
       </Tabs>
     </div>
   );

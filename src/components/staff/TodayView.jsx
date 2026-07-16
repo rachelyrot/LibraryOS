@@ -6,7 +6,7 @@ import { Sunrise, Sunset, Moon, CalendarDays, AlertTriangle, Building2, UserChec
 import { cn } from '@/lib/utils';
 import { SHIFT_TYPE_LABELS, SHIFT_TYPE_COLORS, SCHEDULE_STATUS_LABELS, SCHEDULE_STATUS_COLORS, fullName, formatDate, getDayName } from '@/lib/staffUtils';
 
-export default function TodayView({ branches }) {
+export default function TodayView({ branches, employees }) {
   const [schedules, setSchedules] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [viewMode, setViewMode] = useState('branch');
@@ -21,7 +21,14 @@ export default function TodayView({ branches }) {
   const evening = activeSchedules.filter(s => s.shift_type === 'evening');
   const openShifts = activeSchedules.filter(s => s.status === 'planned');
   const activeBranches = branches.filter(b => b.status === 'active');
-  const branchesWithoutCoverage = activeBranches.filter(b => !activeSchedules.some(s => s.branch_id === b.id));
+  const activeEmployees = (employees || []).filter(e => e.status === 'active');
+  // "Coverage" = the branch has staff assigned to it at all, not whether a shift
+  // happens to be logged for the selected date — a branch with real staff but no
+  // explicit schedule entry yet isn't actually uncovered (see the per-branch card
+  // below for the date-specific shift count, which is a separate concern).
+  const branchesWithoutCoverage = activeBranches.filter(b => !activeEmployees.some(
+    e => e.primary_branch_id === b.id || (e.additional_branch_ids || []).includes(b.id)
+  ));
 
   const stats = [
     { label: 'סך שיבוצים היום', value: activeSchedules.length, icon: CalendarDays, color: 'text-blue-500' },
@@ -91,8 +98,8 @@ export default function TodayView({ branches }) {
               <CardContent className="p-3">
                 <div className="flex items-center justify-between mb-2">
                   <p className="font-medium text-sm flex items-center gap-1.5"><Building2 className="w-4 h-4 text-blue-500" /> {branch.name}</p>
-                  <span className={cn('text-xs px-2 py-0.5 rounded', shifts.length > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')}>
-                    {shifts.length > 0 ? `${shifts.length} משובצות` : 'ללא כיסוי'}
+                  <span className={cn('text-xs px-2 py-0.5 rounded', shifts.length > 0 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>
+                    {shifts.length > 0 ? `${shifts.length} משובצות` : 'אין שיבוץ היום'}
                   </span>
                 </div>
                 {shifts.length === 0 ? (

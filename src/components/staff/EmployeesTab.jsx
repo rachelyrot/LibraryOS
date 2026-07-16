@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,12 +6,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, EMPLOYEE_STATUS_COLORS, fullName } from '@/lib/staffUtils';
+import { EMPLOYMENT_TYPE_LABELS, EMPLOYER_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, EMPLOYEE_STATUS_COLORS, fullName } from '@/lib/staffUtils';
 import { canManageEmployees, canDeleteEmployee } from '@/lib/permissions';
 import EmployeeDialog from './EmployeeDialog';
 
-export default function EmployeesTab({ user, branches }) {
-  const [employees, setEmployees] = useState([]);
+export default function EmployeesTab({ user, branches, employees, onEmployeesChange }) {
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -19,9 +18,6 @@ export default function EmployeesTab({ user, branches }) {
   const [editing, setEditing] = useState(null);
   const canManage = canManageEmployees(user);
   const canDelete = canDeleteEmployee(user);
-
-  const load = () => base44.entities.Employee.list('-created_date', 500).then(setEmployees).catch(() => []);
-  useEffect(() => { load(); }, []);
 
   const filtered = employees.filter(e => {
     if (search && !fullName(e).includes(search) && !(e.position || '').includes(search)) return false;
@@ -34,13 +30,13 @@ export default function EmployeesTab({ user, branches }) {
     try {
       if (editing) { await base44.entities.Employee.update(editing.id, data); toast.success('העובדת עודכנה'); }
       else { await base44.entities.Employee.create(data); toast.success('העובדת נוספה'); }
-      setEditing(null); load();
+      setEditing(null); onEmployeesChange();
     } catch (e) { toast.error('שגיאה בשמירה'); }
   };
 
   const handleDelete = async (emp) => {
     if (!confirm(`למחוק את ${fullName(emp)}?`)) return;
-    try { await base44.entities.Employee.delete(emp.id); toast.success('נמחקה'); load(); }
+    try { await base44.entities.Employee.delete(emp.id); toast.success('נמחקה'); onEmployeesChange(); }
     catch (e) { toast.error('שגיאה במחיקה'); }
   };
 
@@ -71,7 +67,8 @@ export default function EmployeesTab({ user, branches }) {
               <th className="text-right p-3 font-medium">שם</th>
               <th className="text-right p-3 font-medium hidden md:table-cell">תפקיד</th>
               <th className="text-right p-3 font-medium hidden lg:table-cell">סניף ראשי</th>
-              <th className="text-right p-3 font-medium hidden md:table-cell">סוג העסקה</th>
+              <th className="text-right p-3 font-medium hidden lg:table-cell">מעסיק</th>
+              <th className="text-right p-3 font-medium hidden md:table-cell">סטטוס העסקה</th>
               <th className="text-center p-3 font-medium">היקף</th>
               <th className="text-center p-3 font-medium hidden md:table-cell">שעות/שבוע</th>
               <th className="text-center p-3 font-medium">סטטוס</th>
@@ -84,6 +81,7 @@ export default function EmployeesTab({ user, branches }) {
                 <td className="p-3 font-medium">{fullName(emp)}</td>
                 <td className="p-3 hidden md:table-cell text-muted-foreground">{emp.position || '-'}</td>
                 <td className="p-3 hidden lg:table-cell text-muted-foreground">{emp.primary_branch_name || '-'}</td>
+                <td className="p-3 hidden lg:table-cell text-muted-foreground">{EMPLOYER_TYPE_LABELS[emp.employer_type] || '-'}</td>
                 <td className="p-3 hidden md:table-cell">{EMPLOYMENT_TYPE_LABELS[emp.employment_type] || '-'}</td>
                 <td className="p-3 text-center">{emp.scope_percentage ? `${emp.scope_percentage}%` : '-'}</td>
                 <td className="p-3 text-center hidden md:table-cell">{emp.weekly_hours || '-'}</td>
@@ -96,7 +94,7 @@ export default function EmployeesTab({ user, branches }) {
                 )}
               </tr>
             ))}
-            {filtered.length === 0 && <tr><td colSpan={canManage ? 8 : 7} className="text-center py-12 text-muted-foreground">אין עובדות</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={canManage ? 9 : 8} className="text-center py-12 text-muted-foreground">אין עובדות</td></tr>}
           </tbody>
         </table>
       </div>
