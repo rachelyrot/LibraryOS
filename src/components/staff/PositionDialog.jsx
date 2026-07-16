@@ -5,14 +5,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { BRANCH_STATUS_LABELS, EMPLOYER_TYPE_LABELS } from '@/lib/staffUtils';
 
-const empty = { branch_id: '', position_name: '', scope_percentage: 100, weekly_hours_approved: 0, approved_count: 1, approval_date: '', category: '', notes: '', status: 'active' };
+const empty = { branch_id: '', position_name: '', scope_percentage: 100, weekly_hours_approved: 0, approved_count: 1, approval_date: '', category: [], notes: '', status: 'active' };
 
 export default function PositionDialog({ open, onOpenChange, initialData, branches, onSave }) {
   const [form, setForm] = useState(empty);
-  useEffect(() => { setForm(initialData ? { ...empty, ...initialData } : empty); }, [initialData, open]);
+  useEffect(() => { setForm(initialData ? { ...empty, ...initialData, category: initialData.category || [] } : empty); }, [initialData, open]);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const toggleCategory = (k) => setForm(f => {
+    const cats = f.category || [];
+    return { ...f, category: cats.includes(k) ? cats.filter(c => c !== k) : [...cats, k] };
+  });
 
   const handleSave = () => {
     if (!form.branch_id || !form.position_name?.trim()) return;
@@ -49,10 +54,14 @@ export default function PositionDialog({ open, onOpenChange, initialData, branch
           </div>
           <div>
             <Label>קטגוריה</Label>
-            <Select value={form.category || ''} onValueChange={v => set('category', v)}>
-              <SelectTrigger><SelectValue placeholder="בחרי קטגוריה" /></SelectTrigger>
-              <SelectContent>{Object.entries(EMPLOYER_TYPE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
-            </Select>
+            <div className="flex flex-wrap gap-3 mt-1">
+              {Object.entries(EMPLOYER_TYPE_LABELS).map(([k, label]) => (
+                <label key={k} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <Checkbox checked={(form.category || []).includes(k)} onCheckedChange={() => toggleCategory(k)} />
+                  {label}
+                </label>
+              ))}
+            </div>
           </div>
           <div><Label>הערות</Label><Textarea value={form.notes || ''} onChange={e => set('notes', e.target.value)} rows={2} /></div>
         </div>
