@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { BRANCH_STATUS_LABELS, EMPLOYER_TYPE_LABELS } from '@/lib/staffUtils';
 import { canManagePositions } from '@/lib/permissions';
 import PositionDialog from './PositionDialog';
+import PositionsCategoryChart from './PositionsCategoryChart';
 
 export default function PositionsTab({ user, branches, employees }) {
   const [positions, setPositions] = useState([]);
@@ -62,6 +63,7 @@ export default function PositionsTab({ user, branches, employees }) {
           </div>
         ))}
       </div>
+      <PositionsCategoryChart positions={positions} />
       <Select value={branchFilter} onValueChange={setBranchFilter}>
         <SelectTrigger className="w-[180px]"><SelectValue placeholder="סניף" /></SelectTrigger>
         <SelectContent><SelectItem value="all">כל הסניפים</SelectItem>{branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
