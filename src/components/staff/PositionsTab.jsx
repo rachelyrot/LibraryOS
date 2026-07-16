@@ -76,6 +76,7 @@ export default function PositionsTab({ user, branches, employees }) {
               <th className="text-center p-3 font-medium hidden md:table-cell">היקף</th>
               <th className="text-center p-3 font-medium">שעות/שבוע</th>
               <th className="text-center p-3 font-medium hidden lg:table-cell">תאריך אישור</th>
+              <th className="text-right p-3 font-medium hidden lg:table-cell">מקור אישור</th>
               <th className="text-center p-3 font-medium">סטטוס</th>
               {canManage && <th className="p-3"></th>}
             </tr>
@@ -89,6 +90,7 @@ export default function PositionsTab({ user, branches, employees }) {
                 <td className="p-3 text-center hidden md:table-cell">{pos.scope_percentage ? `${pos.scope_percentage}%` : '-'}</td>
                 <td className="p-3 text-center">{pos.weekly_hours_approved || '-'}</td>
                 <td className="p-3 text-center hidden lg:table-cell">{pos.approval_date || '-'}</td>
+                <td className="p-3 hidden lg:table-cell text-muted-foreground">{pos.approval_source || '-'}</td>
                 <td className="p-3 text-center"><span className={cn('text-xs px-2 py-0.5 rounded', pos.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700')}>{BRANCH_STATUS_LABELS[pos.status] || pos.status}</span></td>
                 {canManage && (
                   <td className="p-3"><div className="flex gap-1">
@@ -98,7 +100,7 @@ export default function PositionsTab({ user, branches, employees }) {
                 )}
               </tr>
             ))}
-            {filtered.length === 0 && <tr><td colSpan={canManage ? 8 : 7} className="text-center py-12 text-muted-foreground">אין תקנים</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={canManage ? 9 : 8} className="text-center py-12 text-muted-foreground">אין תקנים</td></tr>}
           </tbody>
         </table>
       </div>
