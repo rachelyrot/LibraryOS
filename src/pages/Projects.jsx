@@ -53,7 +53,7 @@ export default function Projects() {
 
   const handleAdd = async () => {
     try {
-      await base44.entities.Project.create({ name: 'פרויקט חדש', status: 'draft', project_type: 'other', priority: 'medium' });
+      await base44.entities.Project.create({ name: ' ', status: 'draft', project_type: 'other', priority: 'medium' });
       load();
     } catch (e) { toast.error('שגיאה בהוספה'); }
   };
