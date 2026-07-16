@@ -205,7 +205,7 @@ function BudgetSourcesCellButton({ row, column, onRowChange }) {
             : <span className="text-muted-foreground">-</span>}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[26rem] font-heebo" dir="rtl">
+      <PopoverContent className="w-[26rem] max-h-[70vh] overflow-y-auto font-heebo" dir="rtl" collisionPadding={16}>
         <div className="space-y-3">
           <p className="text-sm font-medium">מקורות תקציב</p>
           {sources.length === 0 && <p className="text-xs text-muted-foreground">אין מקורות תקציב</p>}
