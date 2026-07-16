@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import useCategories from '@/hooks/useCategories';
 import { cn } from '@/lib/utils';
 import { nylonLabel, normalizeNylon } from '@/lib/bookQuoteExcel';
-import { cleanColumnName, detectKey, readExcelRows } from '@/lib/excelImport';
+import { cleanColumnName, resolveColumnKeys, readExcelRows } from '@/lib/excelImport';
 
 // ── Column detection ────────────────────────────────────────────
 const COLUMN_MAP = {
@@ -56,9 +56,16 @@ const COLUMN_MAP = {
 // ── Header-row detection ──
 const HEADER_SIGNALS = ['שם ספר', 'שם הספר', 'כותר', 'isbn', 'מחבר', 'מחיר', 'title', 'שם כותר', 'שם המוצר', 'שם הכותר'];
 
+// Some supplier files mark per-book nylon wrapping in a column with no header at all (a blank
+// cell, not one of the COLUMN_MAP candidates) -- fall back to recognizing the column by its
+// values instead of its header in that case. See fix/book-import-missing-header.
+const VALUE_SIGNALS = {
+  nylon_required: ['ניילון', 'עם ניילון', 'בלי ניילון', 'ניילון נדרש', 'למינציה'],
+};
+
 // ── Parse a single row ──────────────────────────────────────────
-function parseRow(row) {
-  const g = (f) => { const k = detectKey(row, COLUMN_MAP, f); return k ? row[k] : undefined; };
+function parseRow(row, columnKeys) {
+  const g = (f) => { const k = columnKeys[f]; return k ? row[k] : undefined; };
   const title = g('title'); const author = g('author'); const publisher = g('publisher');
   const isbn = g('isbn'); const category = g('category');
   const supplier_price = parseFloat(g('supplier_price'));
@@ -171,17 +178,25 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
         return;
       }
 
-      setDetectedColumns(cols);
-
       // Check title column exists — show which columns were found to help debug
       if (!cols.title) {
         const foundCols = allColumns.map(k => cleanColumnName(k)).filter(Boolean).join(', ');
         toast.error(`לא נמצאה עמודת "שם ספר" בקובץ.\nעמודות שנמצאו: ${foundCols || 'לא זוהו'}\nנדרשת עמודה בשם: שם ספר / כותר / Title`, { duration: 10000 });
+        setDetectedColumns(cols);
         setParsing(false);
         return;
       }
 
-      const allParsed = dataRows.map(parseRow);
+      const columnKeys = resolveColumnKeys(dataRows, COLUMN_MAP, VALUE_SIGNALS);
+      setDetectedColumns({
+        ...cols,
+        ...Object.fromEntries(
+          Object.keys(VALUE_SIGNALS)
+            .filter((field) => !cols[field] && columnKeys[field])
+            .map((field) => [field, 'זוהה לפי תוכן העמודה (ללא כותרת)'])
+        ),
+      });
+      const allParsed = dataRows.map((row) => parseRow(row, columnKeys));
       // Drop rows without a title silently
       const parsed = allParsed.filter(b => b.title);
       setBooks(parsed);
