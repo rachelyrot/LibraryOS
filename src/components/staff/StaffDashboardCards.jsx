@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Users, HeartHandshake, Building2, Briefcase, AlertTriangle, CalendarDays, UserX, Sunrise, Sunset } from 'lucide-react';
@@ -48,22 +49,22 @@ export default function StaffDashboardCards() {
   if (!stats) return null;
 
   const cards = [
-    { label: 'סניפים פעילים', value: stats.activeBranches, icon: Building2, color: 'text-blue-500' },
-    { label: 'עובדות פעילות', value: stats.activeEmployees, icon: Users, color: 'text-green-500' },
-    { label: 'מתנדבות פעילות', value: stats.activeVolunteers, icon: HeartHandshake, color: 'text-pink-500' },
-    { label: 'תקנים מאושרים', value: stats.approvedPositions, icon: Briefcase, color: 'text-purple-500' },
-    { label: 'פערי תקן', value: stats.positionGap > 0 ? `חסר ${stats.positionGap}` : stats.positionGap < 0 ? `עודף ${Math.abs(stats.positionGap)}` : 'מאוזן', icon: AlertTriangle, color: stats.positionGap > 0 ? 'text-amber-500' : 'text-green-500' },
-    { label: 'בוקר היום', value: stats.morningToday, icon: Sunrise, color: 'text-yellow-500' },
-    { label: 'אחה״צ היום', value: stats.afternoonToday, icon: Sunset, color: 'text-orange-500' },
-    { label: 'משמרות פתוחות', value: stats.openShifts, icon: CalendarDays, color: 'text-amber-500' },
-    { label: 'ללא כיסוי', value: stats.branchesWithoutCoverage, icon: AlertTriangle, color: stats.branchesWithoutCoverage > 0 ? 'text-red-500' : 'text-green-500' },
-    { label: 'עובדות בחופשה', value: stats.onLeave, icon: UserX, color: 'text-amber-500' },
+    { label: 'סניפים פעילים', value: stats.activeBranches, icon: Building2, color: 'text-blue-500', to: '/staff?tab=branches' },
+    { label: 'עובדות פעילות', value: stats.activeEmployees, icon: Users, color: 'text-green-500', to: '/staff?tab=employees' },
+    { label: 'מתנדבות פעילות', value: stats.activeVolunteers, icon: HeartHandshake, color: 'text-pink-500', to: '/staff?tab=volunteers' },
+    { label: 'תקנים מאושרים', value: stats.approvedPositions, icon: Briefcase, color: 'text-purple-500', to: '/staff?tab=positions' },
+    { label: 'פערי תקן', value: stats.positionGap > 0 ? `חסר ${stats.positionGap}` : stats.positionGap < 0 ? `עודף ${Math.abs(stats.positionGap)}` : 'מאוזן', icon: AlertTriangle, color: stats.positionGap > 0 ? 'text-amber-500' : 'text-green-500', to: '/staff?tab=positions' },
+    { label: 'בוקר היום', value: stats.morningToday, icon: Sunrise, color: 'text-yellow-500', to: '/staff?tab=today' },
+    { label: 'אחה״צ היום', value: stats.afternoonToday, icon: Sunset, color: 'text-orange-500', to: '/staff?tab=today' },
+    { label: 'משמרות פתוחות', value: stats.openShifts, icon: CalendarDays, color: 'text-amber-500', to: '/staff?tab=schedule' },
+    { label: 'ללא כיסוי', value: stats.branchesWithoutCoverage, icon: AlertTriangle, color: stats.branchesWithoutCoverage > 0 ? 'text-red-500' : 'text-green-500', to: '/staff?tab=today' },
+    { label: 'עובדות בחופשה', value: stats.onLeave, icon: UserX, color: 'text-amber-500', to: '/staff?tab=employees' },
   ];
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 mb-6">
       {cards.map((card, i) => (
-        <div key={i} className="bg-card rounded-xl p-4 border border-border shadow-sm">
+        <Link key={i} to={card.to} className="bg-card rounded-xl p-4 border border-border shadow-sm hover:shadow-md hover:border-primary/40 transition-all">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-muted-foreground">{card.label}</p>
@@ -71,7 +72,7 @@ export default function StaffDashboardCards() {
             </div>
             <card.icon className={cn('w-5 h-5', card.color)} />
           </div>
-        </div>
+        </Link>
       ))}
     </div>
   );

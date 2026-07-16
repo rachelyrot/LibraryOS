@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,13 +17,14 @@ import { budgetSourcesColumn } from '@/components/projects/grid/popoverCellEdito
 import { makeGridSaveHandler } from '@/components/projects/grid/gridSave';
 
 export default function Projects() {
+  const [searchParams] = useSearchParams();
   const [user, setUser] = useState(null);
   const [projects, setProjects] = useState([]);
   const [branches, setBranches] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [importOpen, setImportOpen] = useState(false);
-  const [filters, setFilters] = useState({ status: 'all', type: 'all', search: '' });
+  const [filters, setFilters] = useState({ status: searchParams.get('status') || 'all', type: 'all', search: '' });
 
   const load = () => {
     Promise.all([
@@ -44,7 +45,7 @@ export default function Projects() {
   const canViewReports = canViewProjectReports(user);
 
   const filtered = projects.filter(p => {
-    if (filters.status !== 'all' && p.status !== filters.status) return false;
+    if (filters.status !== 'all' && !filters.status.split(',').includes(p.status)) return false;
     if (filters.type !== 'all' && p.project_type !== filters.type) return false;
     if (filters.search && !p.name?.includes(filters.search) && !p.manager_name?.includes(filters.search)) return false;
     return true;

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Link } from 'react-router-dom';
-import { Plus, Search, ShoppingCart, FileText } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Plus, Search, ShoppingCart, FileText, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/StatusBadge';
 import PageHeader from '@/components/PageHeader';
+import moment from 'moment';
 
 import useCategories from '@/hooks/useCategories';
 const STATUS_OPTIONS = [
@@ -20,10 +21,12 @@ const STATUS_OPTIONS = [
 ];
 
 export default function Orders() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '');
+  const receivedMonth = searchParams.get('receivedMonth') === '1';
   const { getLabel } = useCategories();
 
   useEffect(() => {
@@ -33,11 +36,20 @@ export default function Orders() {
     });
   }, []);
 
+  const statusList = statusFilter ? statusFilter.split(',') : [];
+
   const filtered = orders.filter(o => {
     const matchSearch = !search || o.title?.includes(search) || o.supplier_name?.includes(search) || getLabel(o.category)?.includes(search) || o.subcategory?.includes(search);
-    const matchStatus = !statusFilter || o.status === statusFilter;
-    return matchSearch && matchStatus;
+    const matchStatus = !statusFilter || statusList.includes(o.status);
+    const matchReceivedMonth = !receivedMonth || (['received_full', 'received_partial'].includes(o.status) && o.received_date && moment(o.received_date).isSame(moment(), 'month'));
+    return matchSearch && matchStatus && matchReceivedMonth;
   });
+
+  const clearReceivedMonth = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('receivedMonth');
+    setSearchParams(next);
+  };
 
   return (
     <div className="p-6 max-w-6xl mx-auto animate-fade-in">
@@ -53,6 +65,13 @@ export default function Orders() {
           </Link>
         }
       />
+
+      {receivedMonth && (
+        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl px-3 py-2 mb-3 text-sm w-fit">
+          <span>מציג הזמנות שהתקבלו החודש</span>
+          <button onClick={clearReceivedMonth} className="hover:text-blue-900"><X className="w-3.5 h-3.5" /></button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-5">

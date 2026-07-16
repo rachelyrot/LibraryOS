@@ -245,11 +245,11 @@ export default function Dashboard() {
 
   // Dashboard summary cards
   const summaryCards = [
-    { title: 'הזמנות פתוחות', value: orders.filter(o => ['draft', 'pending_approval', 'approved', 'ordered'].includes(o.status)).length, icon: ShoppingCart, color: 'from-blue-500 to-purple-500' },
-    { title: 'ממתינות לאישור', value: orders.filter(o => o.status === 'pending_approval').length, icon: Clock, color: 'from-amber-500 to-orange-500' },
-    { title: 'התקבלו החודש', value: orders.filter(o => ['received_full', 'received_partial'].includes(o.status) && moment(o.received_date).isSame(moment(), 'month')).length, icon: CheckCircle, color: 'from-green-500 to-emerald-500' },
-    { title: 'מלאי נמוך', value: inventoryItems.filter(i => i.current_quantity <= i.minimum_quantity).length, icon: AlertTriangle, color: 'from-red-500 to-rose-500' },
-    { title: 'רשימות לא מטופלות', value: bookLists.filter(l => l.status === 'received' || l.status === 'in_review').length, icon: BookOpen, color: 'from-pink-500 to-rose-500' },
+    { title: 'הזמנות פתוחות', value: orders.filter(o => ['draft', 'pending_approval', 'approved', 'ordered'].includes(o.status)).length, icon: ShoppingCart, color: 'from-blue-500 to-purple-500', to: '/orders?status=draft,pending_approval,approved,ordered' },
+    { title: 'ממתינות לאישור', value: orders.filter(o => o.status === 'pending_approval').length, icon: Clock, color: 'from-amber-500 to-orange-500', to: '/orders?status=pending_approval' },
+    { title: 'התקבלו החודש', value: orders.filter(o => ['received_full', 'received_partial'].includes(o.status) && moment(o.received_date).isSame(moment(), 'month')).length, icon: CheckCircle, color: 'from-green-500 to-emerald-500', to: '/orders?receivedMonth=1' },
+    { title: 'מלאי נמוך', value: inventoryItems.filter(i => i.current_quantity <= i.minimum_quantity).length, icon: AlertTriangle, color: 'from-red-500 to-rose-500', to: '/inventory?low=1' },
+    { title: 'רשימות לא מטופלות', value: bookLists.filter(l => l.status === 'received' || l.status === 'in_review').length, icon: BookOpen, color: 'from-pink-500 to-rose-500', to: '/book-procurement?status=received,in_review' },
   ];
 
   if (canViewSensitive) {
@@ -258,6 +258,7 @@ export default function Dashboard() {
       value: `₪${budgetCategories.reduce((sum, c) => sum + (c.spent_amount || 0), 0).toLocaleString('he-IL')}`,
       icon: Wallet,
       color: 'from-teal-500 to-cyan-500',
+      to: '/credits',
     });
   }
 
@@ -267,6 +268,7 @@ export default function Dashboard() {
       value: supplierCredits.filter(c => c.status === 'active').length,
       icon: CreditCard,
       color: 'from-violet-500 to-purple-500',
+      to: '/credits#credits-section',
     });
   }
 
@@ -280,15 +282,17 @@ export default function Dashboard() {
       {/* Summary Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
         {summaryCards.map((card, i) => (
-          <Card key={i} className="border-border hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
-              <card.icon className={cn("w-4 h-4", card.color.includes('blue') ? 'text-blue-500' : card.color.includes('amber') ? 'text-amber-500' : card.color.includes('green') ? 'text-green-500' : card.color.includes('red') ? 'text-red-500' : card.color.includes('pink') ? 'text-pink-500' : 'text-teal-500')} />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{card.value}</div>
-            </CardContent>
-          </Card>
+          <Link key={i} to={card.to}>
+            <Card className="border-border hover:shadow-md hover:border-primary/40 transition-all cursor-pointer h-full">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
+                <card.icon className={cn("w-4 h-4", card.color.includes('blue') ? 'text-blue-500' : card.color.includes('amber') ? 'text-amber-500' : card.color.includes('green') ? 'text-green-500' : card.color.includes('red') ? 'text-red-500' : card.color.includes('pink') ? 'text-pink-500' : 'text-teal-500')} />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{card.value}</div>
+              </CardContent>
+            </Card>
+          </Link>
         ))}
       </div>
 

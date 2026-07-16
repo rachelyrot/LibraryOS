@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, Search, AlertTriangle, Package, Upload, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,11 +61,12 @@ const CAT_COLORS = [
 const EMPTY = { name: '', category: '', subcategory: '', current_quantity: 0, minimum_quantity: 0, unit: 'יחידות', supplier_id: '', supplier_name: '', notes: '', isbn: '', author: '' };
 
 export default function Inventory() {
+  const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('');
-  const [showLow, setShowLow] = useState(false);
+  const [showLow, setShowLow] = useState(searchParams.get('low') === '1');
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);

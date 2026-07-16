@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Building2, Users, HeartHandshake, Briefcase, CalendarDays, FileText, Clock, ClipboardCheck } from 'lucide-react';
@@ -12,10 +13,13 @@ import TodayView from '@/components/staff/TodayView';
 import AttendanceTab from '@/components/staff/AttendanceTab';
 import { canViewStaffReports } from '@/lib/permissions';
 
+const VALID_TABS = ['today', 'branches', 'employees', 'volunteers', 'positions', 'schedule', 'attendance', 'reports'];
+
 export default function Staff() {
+  const [searchParams] = useSearchParams();
   const [user, setUser] = useState(null);
   const [branches, setBranches] = useState([]);
-  const [activeTab, setActiveTab] = useState('today');
+  const [activeTab, setActiveTab] = useState(VALID_TABS.includes(searchParams.get('tab')) ? searchParams.get('tab') : 'today');
 
   const loadBranches = () => base44.entities.Branch.list('name', 500).then(setBranches).catch(() => {});
   useEffect(() => {

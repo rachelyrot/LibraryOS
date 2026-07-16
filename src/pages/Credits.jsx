@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Plus, LayoutGrid, PieChart, BarChart2, TableIcon, Pencil, AlertTriangle, ChevronRight, Building2, Wallet, ArrowRight, CreditCard, ExternalLink, ShoppingCart, Layers, PencilLine, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -46,6 +47,7 @@ function computeSourceTotals(categories) {
 }
 
 export default function Credits() {
+  const location = useLocation();
   const [sources, setSources] = useState([]);
   const [allCategories, setAllCategories] = useState([]);
   const [allOrders, setAllOrders] = useState([]);
@@ -92,6 +94,11 @@ export default function Credits() {
     };
     init();
   }, []);
+
+  useEffect(() => {
+    if (loading || location.hash !== '#credits-section') return;
+    document.getElementById('credits-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [loading, location.hash]);
 
   const canEdit = canEditBudgets(user);
   const canCredit = canCreateSupplierCredits(user);
@@ -307,7 +314,7 @@ export default function Credits() {
 
             {/* Supplier Credits — hide from local_manager */}
             {canViewSensitive && (
-              <div>
+              <div id="credits-section">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-bold flex items-center gap-2"><CreditCard className="w-5 h-5 text-teal-500" /> זיכויי ספקים</h2>
                   {canCredit && <Button onClick={openNewCredit} variant="outline" className="gap-1.5 text-sm"><Plus className="w-4 h-4" /> זיכוי חדש</Button>}

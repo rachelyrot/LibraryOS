@@ -7,20 +7,22 @@ import { cn } from '@/lib/utils';
 import { PROJECT_STATUS_COLORS, PROJECT_STATUS_LABELS, isOverdue, formatCurrency } from '@/lib/projectUtils';
 import { motion } from 'framer-motion';
 
-function MiniStat({ label, value, icon: Icon, color }) {
+function MiniStat({ label, value, icon: Icon, color, to = '/projects' }) {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-      <Card>
-        <CardContent className="flex items-center gap-3 p-4">
-          <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', color)}>
-            <Icon className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold">{value}</p>
-            <p className="text-xs text-muted-foreground">{label}</p>
-          </div>
-        </CardContent>
-      </Card>
+      <Link to={to}>
+        <Card className="hover:shadow-md hover:border-primary/40 transition-all cursor-pointer">
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', color)}>
+              <Icon className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{value}</p>
+              <p className="text-xs text-muted-foreground">{label}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
     </motion.div>
   );
 }
@@ -53,7 +55,7 @@ export default function ProjectsDashboardCards() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        <MiniStat label="פרויקטים פעילים" value={activeProjects.length} icon={FolderKanban} color="bg-cyan-500" />
+        <MiniStat label="פרויקטים פעילים" value={activeProjects.length} icon={FolderKanban} color="bg-cyan-500" to="/projects?status=active,planning" />
         <MiniStat label="משימות פתוחות" value={openTasks.length} icon={Clock} color="bg-blue-500" />
         <MiniStat label="הושלמו" value={completedTasks.length} icon={CheckCircle} color="bg-green-500" />
         <MiniStat label="באיחור" value={overdueTasks.length} icon={AlertTriangle} color="bg-red-500" />
@@ -90,9 +92,9 @@ export default function ProjectsDashboardCards() {
                 const count = projects.filter(p => p.status === key).length;
                 if (count === 0) return null;
                 return (
-                  <span key={key} className={cn('text-xs px-2 py-1 rounded', PROJECT_STATUS_COLORS[key])}>
+                  <Link key={key} to={`/projects?status=${key}`} className={cn('text-xs px-2 py-1 rounded hover:opacity-75 transition-opacity', PROJECT_STATUS_COLORS[key])}>
                     {label}: {count}
-                  </span>
+                  </Link>
                 );
               })}
               {projects.length === 0 && <span className="text-sm text-muted-foreground">אין פרויקטים</span>}
