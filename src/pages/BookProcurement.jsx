@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Search, BookMarked, Trash2, Pencil } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Plus, Search, BookMarked, Trash2, Pencil, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -38,13 +39,18 @@ function FlowStage({ stage }) {
   );
 }
 
+const STATUS_FILTER_LABELS = { received: 'התקבל', in_review: 'בבדיקה' };
+
 export default function BookProcurement() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [lists, setLists] = useState([]);
   const [quoteReqs, setQuoteReqs] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStage, setFilterStage] = useState('');
+  const statusParam = searchParams.get('status');
+  const statusSet = statusParam ? statusParam.split(',') : null;
   const [detailList, setDetailList] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -88,8 +94,15 @@ export default function BookProcurement() {
       const stage = getProcessStage(getQuoteReq(l));
       if (String(stage) !== filterStage) return false;
     }
+    if (statusSet && !statusSet.includes(l.status)) return false;
     return true;
   });
+
+  const clearStatusFilter = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('status');
+    setSearchParams(next);
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto animate-fade-in">
@@ -103,6 +116,13 @@ export default function BookProcurement() {
           </Button>
         }
       />
+
+      {statusSet && (
+        <div className="flex items-center gap-2 bg-pink-50 border border-pink-200 text-pink-700 rounded-xl px-3 py-2 mb-3 text-sm w-fit">
+          <span>מציג רשימות: {statusSet.map(s => STATUS_FILTER_LABELS[s] || s).join(', ')}</span>
+          <button onClick={clearStatusFilter} className="hover:text-pink-900"><X className="w-3.5 h-3.5" /></button>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3 mb-5">
         <div className="relative flex-1 min-w-[200px]">
