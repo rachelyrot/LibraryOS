@@ -40,6 +40,54 @@ export function detectColumns(row, columnMap) {
   return mapping;
 }
 
+// Find a column by scanning its VALUES rather than its header -- for files where the header
+// cell is blank or unrecognized but the column's cells contain known marker words (e.g. a
+// "ניילון" column with no header at all, sitting next to properly-labeled columns). Requires
+// every non-empty cell in the candidate column to match one of the signals, so a column that
+// merely happens to contain one matching cell (title text, free-form notes, etc.) isn't
+// mistaken for the marker column.
+export function detectKeyByValue(rows, valueSignals, excludeKeys = []) {
+  if (!rows || rows.length === 0) return null;
+  const variants = valueSignals.map((s) => cleanColumnName(s).toLowerCase());
+  const keys = Object.keys(rows[0]).filter((k) => !excludeKeys.includes(k));
+  let best = null;
+  for (const key of keys) {
+    let nonEmpty = 0;
+    let matches = 0;
+    for (const row of rows) {
+      const raw = row[key];
+      if (raw === '' || raw == null) continue;
+      nonEmpty++;
+      const cleaned = cleanColumnName(String(raw)).toLowerCase();
+      if (variants.some((v) => cleaned === v || cleaned.includes(v))) matches++;
+    }
+    if (nonEmpty > 0 && matches === nonEmpty && (!best || nonEmpty > best.nonEmpty)) {
+      best = { key, nonEmpty };
+    }
+  }
+  return best ? best.key : null;
+}
+
+// Resolve field -> raw column key for every field in columnMap: header-name matching first,
+// falling back to detectKeyByValue (scanning cell values) for fields listed in valueSignalMap
+// when no header matched. Compute this once for the whole file rather than per row, so the
+// same column is used consistently for every data row.
+export function resolveColumnKeys(dataRows, columnMap, valueSignalMap = {}) {
+  if (!dataRows || dataRows.length === 0) return {};
+  const resolved = {};
+  const usedKeys = new Set();
+  for (const field of Object.keys(columnMap)) {
+    const key = detectKey(dataRows[0], columnMap, field);
+    if (key) { resolved[field] = key; usedKeys.add(key); }
+  }
+  for (const field of Object.keys(valueSignalMap)) {
+    if (resolved[field]) continue;
+    const key = detectKeyByValue(dataRows, valueSignalMap[field], Array.from(usedKeys));
+    if (key) { resolved[field] = key; usedKeys.add(key); }
+  }
+  return resolved;
+}
+
 export function looksLikeHeaderRow(row, headerSignals) {
   const vals = Object.values(row).map((v) => cleanColumnName(String(v || '')).toLowerCase());
   return headerSignals.some((s) => vals.includes(cleanColumnName(s).toLowerCase()));
