@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Plus, Search, AlertTriangle, Package, Upload, Clock } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Package, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,36 +14,6 @@ import { motion } from 'framer-motion';
 import { canManageInventory } from '@/lib/permissions';
 import useCategories from '@/hooks/useCategories';
 import { cn } from '@/lib/utils';
-import { readExcelRows, cleanColumnName, detectKey } from '@/lib/excelImport';
-
-// ── Deterministic column-mapped inventory import (replaces the old AI-based extractor) ──
-const INVENTORY_COLUMN_MAP = {
-  name: ['שם', 'שם פריט', 'שם הפריט', 'name', 'item name', 'item', 'תיאור'],
-  category: ['קטגוריה', 'category', 'סוג'],
-  subcategory: ['תת קטגוריה', 'תת-קטגוריה', 'subcategory'],
-  current_quantity: ['כמות', 'כמות נוכחית', 'quantity', 'current_quantity', 'מלאי'],
-  minimum_quantity: ['כמות מינימום', 'מינימום', 'minimum', 'minimum_quantity', 'סף מינימום'],
-  unit: ['יחידה', 'יחידת מידה', 'unit'],
-  isbn: ['isbn', 'מסת"ב', 'מסתב', 'ברקוד'],
-  author: ['מחבר', 'author', 'סופר'],
-};
-const INVENTORY_HEADER_SIGNALS = Object.values(INVENTORY_COLUMN_MAP).flat();
-
-function parseInventoryRow(row) {
-  const g = (f) => { const k = detectKey(row, INVENTORY_COLUMN_MAP, f); return k ? row[k] : undefined; };
-  const current_quantity = parseFloat(g('current_quantity'));
-  const minimum_quantity = parseFloat(g('minimum_quantity'));
-  return {
-    name: (g('name') || '').toString().trim(),
-    category: (g('category') || '').toString().trim(),
-    subcategory: (g('subcategory') || '').toString().trim(),
-    current_quantity: isNaN(current_quantity) ? 0 : current_quantity,
-    minimum_quantity: isNaN(minimum_quantity) ? 0 : minimum_quantity,
-    unit: (g('unit') || 'יחידות').toString().trim(),
-    isbn: (g('isbn') || '').toString().trim(),
-    author: (g('author') || '').toString().trim(),
-  };
-}
 
 const CAT_COLORS = [
   'from-blue-100 to-purple-100 text-blue-600',
@@ -71,8 +41,6 @@ export default function Inventory() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
-  const [importMode, setImportMode] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [suppliers, setSuppliers] = useState([]);
   const [user, setUser] = useState(null);
   const canEditInventory = canManageInventory(user);
@@ -92,37 +60,6 @@ export default function Inventory() {
     setSaving(false); setOpen(false); load();
   };
 
-  const handleImport = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    setImporting(true);
-    try {
-      const { dataRows, detectedColumns, allColumns } = await readExcelRows(file, {
-        columnMap: INVENTORY_COLUMN_MAP,
-        anchorField: 'name',
-        headerSignals: INVENTORY_HEADER_SIGNALS,
-      });
-
-      if (allColumns.length === 0) {
-        toast.error('לא זוהו נתונים. ודאו שהקובץ מכיל רשימת פריטים ואינו ריק.');
-      } else if (!detectedColumns.name) {
-        const foundCols = allColumns.map(k => cleanColumnName(k)).filter(Boolean).join(', ');
-        toast.error(`לא נמצאה עמודת "שם פריט" בקובץ.\nעמודות שנמצאו: ${foundCols || 'לא זוהו'}`, { duration: 8000 });
-      } else {
-        const items = dataRows.map(parseInventoryRow).filter(item => item.name);
-        if (items.length === 0) {
-          toast.error('לא נמצאו פריטים תקינים בקובץ.');
-        } else {
-          await base44.entities.InventoryItem.bulkCreate(items);
-          toast.success(`יובאו ${items.length} פריטים!`);
-          load();
-        }
-      }
-    } catch (err) {
-      toast.error('שגיאה בייבוא הקובץ');
-    }
-    setImporting(false); setImportMode(false);
-  };
-
   const filtered = items.filter(i => {
     const matchSearch = !search || i.name?.includes(search) || i.isbn?.includes(search) || i.author?.includes(search);
     const matchCat = !catFilter || i.category === catFilter;
@@ -140,7 +77,6 @@ export default function Inventory() {
         gradient="from-orange-400 to-amber-500"
         actions={
           <div className="flex gap-2">
-            {canEditInventory && <Button variant="outline" size="sm" onClick={() => setImportMode(true)} className="gap-1.5"><Upload className="w-3.5 h-3.5" /> ייבוא מאגרון</Button>}
             {canEditInventory && <Button onClick={openNew} className="gap-2 bg-gradient-to-l from-orange-400 to-amber-500 text-white border-0 hover:opacity-90"><Plus className="w-4 h-4" /> פריט חדש</Button>}
           </div>
         }
@@ -272,21 +208,6 @@ export default function Inventory() {
               <Button variant="outline" onClick={() => setOpen(false)}>ביטול</Button>
               <Button onClick={save} disabled={saving} className="bg-gradient-to-l from-orange-400 to-amber-500 text-white border-0 hover:opacity-90">{saving ? 'שומר...' : 'שמור'}</Button>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Import dialog */}
-      <Dialog open={importMode} onOpenChange={setImportMode}>
-        <DialogContent className="max-w-md font-heebo" dir="rtl">
-          <DialogHeader><DialogTitle>ייבוא מלאי מקובץ</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">העלה קובץ Excel/CSV עם רשימת פריטי מלאי — המערכת תזהה אוטומטית את העמודות (שם, קטגוריה, כמות, כמות מינימום, יחידה, ISBN, מחבר).</p>
-            <label className={cn('flex flex-col items-center gap-3 cursor-pointer border-2 border-dashed border-border rounded-2xl p-8 hover:border-orange-400 transition-colors', importing && 'opacity-60 pointer-events-none')}>
-              <Upload className="w-8 h-8 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">{importing ? 'מעבד...' : 'לחץ לבחירת קובץ Excel / CSV'}</span>
-              <input type="file" className="hidden" accept=".csv,.xlsx,.xls" onChange={handleImport} disabled={importing} />
-            </label>
           </div>
         </DialogContent>
       </Dialog>
