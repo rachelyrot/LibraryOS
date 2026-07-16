@@ -5,9 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { BRANCH_STATUS_LABELS } from '@/lib/staffUtils';
+import { BRANCH_STATUS_LABELS, EMPLOYER_TYPE_LABELS } from '@/lib/staffUtils';
 
-const empty = { branch_id: '', position_name: '', scope_percentage: 100, weekly_hours_approved: 0, approved_count: 1, approval_date: '', approval_source: '', status: 'active' };
+const empty = { branch_id: '', position_name: '', scope_percentage: 100, weekly_hours_approved: 0, approved_count: 1, approval_date: '', category: '', notes: '', status: 'active' };
 
 export default function PositionDialog({ open, onOpenChange, initialData, branches, onSave }) {
   const [form, setForm] = useState(empty);
@@ -47,7 +47,14 @@ export default function PositionDialog({ open, onOpenChange, initialData, branch
               <SelectContent>{Object.entries(BRANCH_STATUS_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div><Label>מקור אישור / הערות</Label><Textarea value={form.approval_source || ''} onChange={e => set('approval_source', e.target.value)} rows={2} /></div>
+          <div>
+            <Label>קטגוריה</Label>
+            <Select value={form.category || ''} onValueChange={v => set('category', v)}>
+              <SelectTrigger><SelectValue placeholder="בחרי קטגוריה" /></SelectTrigger>
+              <SelectContent>{Object.entries(EMPLOYER_TYPE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div><Label>הערות</Label><Textarea value={form.notes || ''} onChange={e => set('notes', e.target.value)} rows={2} /></div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>ביטול</Button>
