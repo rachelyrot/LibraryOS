@@ -9,9 +9,8 @@ import { ATTENDANCE_STATUS_LABELS, ATTENDANCE_STATUS_COLORS, formatDate, fullNam
 import { canManageSchedule } from '@/lib/permissions';
 import AttendanceDialog from './AttendanceDialog';
 
-export default function AttendanceTab({ user, branches }) {
+export default function AttendanceTab({ user, branches, employees }) {
   const [records, setRecords] = useState([]);
-  const [employees, setEmployees] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [branchFilter, setBranchFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -19,8 +18,6 @@ export default function AttendanceTab({ user, branches }) {
   const canManage = canManageSchedule(user);
 
   const load = () => {
-    base44.entities.Employee.list('-created_date', 500).then(setEmployees).catch(() => []);
-    base44.entities.Schedule.filter({}, 'date', 500).catch(() => []);
     base44.entities.Attendance.filter({ date: selectedDate }, '-created_date', 500).then(setRecords).catch(() => []);
   };
   useEffect(() => { load(); }, [selectedDate]);

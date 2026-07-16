@@ -4,11 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, FileText } from 'lucide-react';
 import { toast } from 'sonner';
-import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, VOLUNTEER_ACTIVITY_LABELS, VOLUNTEER_STATUS_LABELS, SHIFT_TYPE_LABELS, SCHEDULE_STATUS_LABELS, ATTENDANCE_STATUS_LABELS, fullName, getDayName, calcShiftHours, getWeekDates, formatDate } from '@/lib/staffUtils';
+import { EMPLOYMENT_TYPE_LABELS, EMPLOYER_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, VOLUNTEER_ACTIVITY_LABELS, VOLUNTEER_STATUS_LABELS, SHIFT_TYPE_LABELS, SCHEDULE_STATUS_LABELS, ATTENDANCE_STATUS_LABELS, fullName, getDayName, calcShiftHours, getWeekDates, formatDate } from '@/lib/staffUtils';
 
-export default function ReportsTab({ user, branches }) {
+export default function ReportsTab({ user, branches, employees }) {
   const [reportType, setReportType] = useState('employees_by_branch');
-  const [employees, setEmployees] = useState([]);
   const [volunteers, setVolunteers] = useState([]);
   const [positions, setPositions] = useState([]);
   const [schedules, setSchedules] = useState([]);
@@ -19,11 +18,10 @@ export default function ReportsTab({ user, branches }) {
 
   useEffect(() => {
     Promise.all([
-      base44.entities.Employee.list('-created_date', 500).catch(() => []),
       base44.entities.Volunteer.list('-created_date', 500).catch(() => []),
       base44.entities.ApprovedPosition.list('-created_date', 500).catch(() => []),
       base44.entities.Schedule.list('date', 500).catch(() => []),
-    ]).then(([emps, vols, pos, sched]) => { setEmployees(emps); setVolunteers(vols); setPositions(pos); setSchedules(sched); });
+    ]).then(([vols, pos, sched]) => { setVolunteers(vols); setPositions(pos); setSchedules(sched); });
   }, []);
 
   useEffect(() => {
@@ -48,7 +46,8 @@ export default function ReportsTab({ user, branches }) {
 
   const report1Data = employees.filter(e => branchFilter === 'all' || e.primary_branch_id === branchFilter).map(e => ({
     'שם': fullName(e), 'תפקיד': e.position || '', 'טלפון': e.phone || '',
-    'סוג העסקה': EMPLOYMENT_TYPE_LABELS[e.employment_type] || '',
+    'מעסיק': EMPLOYER_TYPE_LABELS[e.employer_type] || '',
+    'סטטוס העסקה': EMPLOYMENT_TYPE_LABELS[e.employment_type] || '',
     'היקף משרה': e.scope_percentage || '', 'שעות שבועיות': e.weekly_hours || '',
     'סטטוס': EMPLOYEE_STATUS_LABELS[e.status] || '', 'סניף ראשי': e.primary_branch_name || '',
   }));

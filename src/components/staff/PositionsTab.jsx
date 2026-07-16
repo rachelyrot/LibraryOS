@@ -9,20 +9,14 @@ import { BRANCH_STATUS_LABELS } from '@/lib/staffUtils';
 import { canManagePositions } from '@/lib/permissions';
 import PositionDialog from './PositionDialog';
 
-export default function PositionsTab({ user, branches }) {
+export default function PositionsTab({ user, branches, employees }) {
   const [positions, setPositions] = useState([]);
-  const [employees, setEmployees] = useState([]);
   const [branchFilter, setBranchFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const canManage = canManagePositions(user);
 
-  const load = () => {
-    Promise.all([
-      base44.entities.ApprovedPosition.list('-created_date', 500).catch(() => []),
-      base44.entities.Employee.list('-created_date', 500).catch(() => []),
-    ]).then(([pos, emps]) => { setPositions(pos); setEmployees(emps); });
-  };
+  const load = () => base44.entities.ApprovedPosition.list('-created_date', 500).then(setPositions).catch(() => []);
   useEffect(() => { load(); }, []);
 
   const filtered = positions.filter(p => branchFilter === 'all' || p.branch_id === branchFilter);

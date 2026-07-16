@@ -28,7 +28,14 @@ export default function StaffDashboardCards() {
       const morningCount = activeSchedules.filter(s => s.shift_type === 'morning' || s.shift_type === 'full_day').length;
       const afternoonCount = activeSchedules.filter(s => s.shift_type === 'afternoon' || s.shift_type === 'full_day').length;
       const activeBranches = branches.filter(b => b.status === 'active');
-      const branchesWithoutCoverage = activeBranches.filter(b => !activeSchedules.some(s => s.branch_id === b.id));
+      const activeEmployees = employees.filter(e => e.status === 'active');
+      // "Coverage" means the branch has staff assigned to it at all (primary or
+      // additional branch), not whether someone happened to create an explicit
+      // Schedule/shift record for today specifically — a branch with real staff
+      // but no shift logged for today isn't actually uncovered.
+      const branchesWithoutCoverage = activeBranches.filter(b => !activeEmployees.some(
+        e => e.primary_branch_id === b.id || (e.additional_branch_ids || []).includes(b.id)
+      ));
       setStats({
         activeBranches: activeBranches.length,
         activeEmployees: filled,

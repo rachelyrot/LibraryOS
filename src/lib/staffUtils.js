@@ -7,6 +7,14 @@ export const EMPLOYMENT_TYPE_LABELS = {
   other: 'אחר',
 };
 
+// Separate from EMPLOYMENT_TYPE_LABELS (employment *status*) — this is *who
+// employs* the person, an independent categorization.
+export const EMPLOYER_TYPE_LABELS = {
+  chakal: 'חכ"ל',
+  municipality: 'עירייה',
+  other: 'אחר',
+};
+
 export const EMPLOYEE_STATUS_LABELS = {
   active: 'פעילה',
   on_leave: 'בחופשה',

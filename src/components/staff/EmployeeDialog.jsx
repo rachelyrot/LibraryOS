@@ -6,9 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS } from '@/lib/staffUtils';
+import { EMPLOYMENT_TYPE_LABELS, EMPLOYER_TYPE_LABELS, EMPLOYEE_STATUS_LABELS } from '@/lib/staffUtils';
 
-const empty = { first_name: '', last_name: '', id_number: '', phone: '', email: '', address: '', start_date: '', position: '', primary_branch_id: '', additional_branch_ids: [], employment_type: 'permanent', scope_percentage: 100, weekly_hours: 0, status: 'active', notes: '' };
+const empty = { first_name: '', last_name: '', id_number: '', phone: '', email: '', address: '', start_date: '', position: '', primary_branch_id: '', additional_branch_ids: [], employer_type: '', employment_type: 'permanent', scope_percentage: 100, weekly_hours: 0, status: 'active', notes: '' };
 
 export default function EmployeeDialog({ open, onOpenChange, initialData, branches, onSave }) {
   const [form, setForm] = useState(empty);
@@ -53,7 +53,14 @@ export default function EmployeeDialog({ open, onOpenChange, initialData, branch
             </Select>
           </div>
           <div>
-            <Label>סוג העסקה</Label>
+            <Label>מעסיק</Label>
+            <Select value={form.employer_type || ''} onValueChange={v => set('employer_type', v)}>
+              <SelectTrigger><SelectValue placeholder="בחרי מעסיק" /></SelectTrigger>
+              <SelectContent>{Object.entries(EMPLOYER_TYPE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>סטטוס העסקה</Label>
             <Select value={form.employment_type || 'permanent'} onValueChange={v => set('employment_type', v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>{Object.entries(EMPLOYMENT_TYPE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
