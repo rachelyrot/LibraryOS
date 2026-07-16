@@ -26,7 +26,7 @@ export default function CategoryDialog({ open, onOpenChange, category, onSubmit 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm font-heebo" dir="rtl">
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto font-heebo" dir="rtl">
         <DialogHeader><DialogTitle>{category ? 'עריכת קטגוריה' : 'קטגוריה חדשה'}</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">

@@ -47,7 +47,7 @@ export default function SupplierCreditDialog({ open, onOpenChange, credit, onSub
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm font-heebo" dir="rtl">
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto font-heebo" dir="rtl">
         <DialogHeader><DialogTitle>{credit ? 'עריכת זיכוי ספק' : 'זיכוי ספק חדש'}</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">

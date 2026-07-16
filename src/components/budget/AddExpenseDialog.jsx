@@ -35,7 +35,7 @@ export default function AddExpenseDialog({ open, onOpenChange, categories, prese
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md font-heebo" dir="rtl">
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto font-heebo" dir="rtl">
         <DialogHeader><DialogTitle>הוספת הוצאה ידנית</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">

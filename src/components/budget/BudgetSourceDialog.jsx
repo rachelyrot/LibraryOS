@@ -46,7 +46,7 @@ export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmi
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm font-heebo" dir="rtl">
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto font-heebo" dir="rtl">
         <DialogHeader><DialogTitle>{source ? 'עריכת מקור תקציב' : 'מקור תקציב חדש'}</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
