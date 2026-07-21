@@ -2,7 +2,7 @@
 
 # 📚 LibraryOS
 
-### מערכת ניהול רכש · מלאי · תקציב · כוח אדם — לספריית בני ברק
+### Procurement · Inventory · Budget · HR management for a municipal library
 
 <p>
   <img alt="React" src="https://img.shields.io/badge/React-18.2-61DAFB?logo=react&logoColor=white&labelColor=20232a">
@@ -14,49 +14,50 @@
   <img alt="License" src="https://img.shields.io/badge/license-internal-lightgrey?labelColor=20232a">
 </p>
 
-**SPA עצמאית לחלוטין** — ללא שרת מותאם אישית מעבר לפונקציות Postgres.
-כל הלוגיקה העסקית הרגישה (תקציב, זיכויים, קבלת סחורה) רצה כטרנזקציה אטומית אחת בבסיס הנתונים, לא בקוד לקוח.
+**A fully self-contained SPA** — no custom backend server beyond Postgres functions.
+Every sensitive business rule (budget, credits, goods receipt) runs as a single atomic database transaction, never as sequential client-side calls.
+
+*[קרא בעברית / Read in Hebrew →](README.md)*
 
 </div>
 
 ---
 
-## 🗂️ תוכן עניינים
+## 🗂️ Table of Contents
 
-- [מה זה](#-מה-זה)
-- [יכולות עיקריות](#-יכולות-עיקריות)
-- [ארכיטקטורה במבט-על](#️-ארכיטקטורה-במבט-על)
-- [שני תהליכי רכש נפרדים](#-שני-תהליכי-רכש-נפרדים-לא-לערבב)
-- [תפקידים והרשאות](#-תפקידים-והרשאות)
-- [התחלה מהירה](#-התחלה-מהירה)
-- [פקודות זמינות](#-פקודות-זמינות)
-- [מבנה הפרויקט](#-מבנה-הפרויקט)
-- [עקרונות ליבה](#-עקרונות-ליבה-אל-תשברו-את-אלה)
-- [פריסה](#-פריסה)
+- [What is this](#-what-is-this)
+- [Core capabilities](#-core-capabilities)
+- [Architecture at a glance](#️-architecture-at-a-glance)
+- [Two parallel procurement flows](#-two-parallel-procurement-flows--dont-cross-them)
+- [Roles & permissions](#-roles--permissions)
+- [Getting started](#-getting-started)
+- [Available commands](#-available-commands)
+- [Project structure](#-project-structure)
+- [Core principles](#-core-principles-dont-break-these)
+- [Deployment](#️-deployment)
 
 ---
 
-## 🧭 מה זה
+## 🧭 What is this
 
-**LibraryOS** מנהלת את כל מחזור החיים התפעולי של ספרייה עירונית:
-הזמנות רכש, הצעות מחיר, ייבוא רשימות ספרים, ניהול מלאי, מקורות תקציב והקצאות, זיכויי ספקים, נוכחות וסידור עבודה של צוות, וניהול פרויקטים ארגוניים — הכול תחת ממשק עברי מלא (RTL), מהיר, ונטול שרת ייעודי.
+**LibraryOS** manages the full operational lifecycle of a municipal library: purchase orders, quote requests, book-list imports, inventory, budget sources and allocations, supplier credits, staff attendance and scheduling, and organizational projects — all behind a full Hebrew (RTL) interface, fast, with no dedicated backend server.
 
-הפרויקט הוגר במקור על גבי **Base44**, ועבר הגירה מלאה לסטאק עצמאי: **Supabase** (Postgres + Auth + Storage) בצד השרת, ו-**Cloudflare** (Workers עם static assets) באחסון ה-UI.
+The project originally ran on **Base44** and was fully migrated to an independent stack: **Supabase** (Postgres + Auth + Storage) on the server side, and **Cloudflare** (Workers with static assets) hosting the UI.
 
-## ✨ יכולות עיקריות
+## ✨ Core capabilities
 
-| תחום | מה זה עושה |
+| Area | What it does |
 |---|---|
-| 🛒 **רכש והזמנות** | יצירה → הגשה → אישור → קבלת סחורה, עם מעקב סטטוס מלא |
-| 💰 **תקציב** | מקורות תקציב → הקצאות לפי קטגוריה, שריון/ניצול אטומי בזמן אמת |
-| 🧾 **זיכויי ספקים** | ניהול יתרות זיכוי מול ספקים כאלטרנטיבה למקור תקציב |
-| 📦 **מלאי** | עדכון מלאי אך ורק בקבלת סחורה בפועל — לא בהזמנה ולא באישור |
-| 📖 **רכש ספרים** | רשימות ספרים מספקים → הצעות מחיר ייעודיות → הזמנת רכש |
-| 🧑‍💼 **כוח אדם** | עובדות, תקנים מאושרים, סניפים, נוכחות, סידור עבודה |
-| 🏗️ **פרויקטים** | תקציב פר-מקור, משימות, אבני דרך, אנשי קשר, מסמכים — הכול ב-grid ניתן לעריכה |
-| 📊 **דשבורדים** | כרטיסי סיכום מתחלפים, drilldown לרשימה מסוננת, גרפי עוגה קטגוריאליים |
+| 🛒 **Procurement & orders** | Create → submit → approve → receive, with full status tracking |
+| 💰 **Budget** | Budget sources → per-category allocations, atomic real-time reserve/spend |
+| 🧾 **Supplier credits** | Manage credit balances against suppliers as an alternative to a budget source |
+| 📦 **Inventory** | Stock only updates on actual goods receipt — never on order creation or approval |
+| 📖 **Book procurement** | Supplier book lists → dedicated book quote requests → purchase order |
+| 🧑‍💼 **HR / staff** | Employees, approved positions, branches, attendance, scheduling |
+| 🏗️ **Projects** | Per-source budgets, tasks, milestones, contacts, documents — all in an editable grid |
+| 📊 **Dashboards** | Clickable summary cards with drilldown to a filtered list, categorical pie charts |
 
-## 🏛️ ארכיטקטורה במבט-על
+## 🏛️ Architecture at a glance
 
 ```
 ┌─────────────────────────────┐        ┌──────────────────────────┐
@@ -68,31 +69,31 @@
 └─────────────────────────────┘        └──────────────────────────┘
 ```
 
-כל קריאה/כתיבה עוברת דרך `src/api/base44Client.js` — עטיפה דקה סביב `@supabase/supabase-js` השומרת על **אותה צורת אובייקט** שהאפליקציה נכתבה מולה במקור (`base44.entities.X.list/filter/get/create/update/delete`), כך שכ-50 נקודות קריאה בכל האפליקציה לא נדרשו לשינוי בעת מעבר הבק-אנד.
+Every read/write goes through `src/api/base44Client.js` — a thin wrapper around `@supabase/supabase-js` that keeps the **exact same object shape** the app was originally written against (`base44.entities.X.list/filter/get/create/update/delete`), so ~50 call sites across the app needed zero changes when the backend was swapped.
 
-פעולות רגישות (שינוי סטטוס הזמנה, קבלת סחורה) לא מבוצעות כרצף קריאות מהלקוח — הן קוראות לפונקציית `plpgsql` אחת (`supabase.rpc(...)`) שמבצעת **read-modify-write אטומי** עם `for update` row locking, עם דגלי guard (`budget_updated`, `inventory_updated`) הנבדקים *בתוך* הטרנזקציה — לא נסמכים על מה שהלקוח חושב שהוא יודע.
+Sensitive operations (order status changes, goods receipt) are never a sequence of client-side calls — they call a single `plpgsql` function (`supabase.rpc(...)`) that performs an **atomic read-modify-write** with `for update` row locking, with guard flags (`budget_updated`, `inventory_updated`) re-checked *inside* the transaction — never trusted from what the client already believes.
 
-## 🔀 שני תהליכי רכש נפרדים — לא לערבב
+## 🔀 Two parallel procurement flows — don't cross them
 
 ```
-ספרים:        SupplierBookList ──► BookQuoteRequest ──► PurchaseOrder
-ציוד/שירותים: QuoteRequest ─────────────────────────────► PurchaseOrder
+Books:               SupplierBookList ──► BookQuoteRequest ──► PurchaseOrder
+Equipment/services:  QuoteRequest ─────────────────────────────► PurchaseOrder
 ```
 
-ההפרדה הזו **מכוונת** — ספרים לעולם לא עוברים דרך `QuoteRequest`, וציוד/שירותים לעולם לא דרך `SupplierBookList`. דגלים כמו `order_created`/`linked_order_id` מונעים יצירת הזמנה כפולה מאותו מקור.
+This separation is **intentional** — books never go through `QuoteRequest`, and equipment/services never through `SupplierBookList`. Flags like `order_created`/`linked_order_id` prevent creating a duplicate order from the same source.
 
-## 🔐 תפקידים והרשאות
+## 🔐 Roles & permissions
 
-| תפקיד | מה מותר |
+| Role | Allowed to |
 |---|---|
-| `admin` | סופר-משתמש טכני, כולל שינוי `role` של משתמשים ב-Supabase Studio |
-| `remote_manager` | אישור/דחייה של הזמנות, נראות פיננסית מלאה |
-| `local_manager` | יצירת הזמנות, קבלת סחורה, ניהול מלאי — ללא אישור פיננסי |
-| `user` | טיוטות בלבד, ללא נתונים פיננסיים רגישים |
+| `admin` | Technical superuser, including changing a user's `role` in Supabase Studio |
+| `remote_manager` | Approve/reject orders, full financial visibility |
+| `local_manager` | Create orders, receive goods, manage inventory — no financial approval |
+| `user` | Drafts only, no sensitive financial data |
 
-כל פעולה רגישה מוגנת **בשתי שכבות**: ב-UI (הסתרה/נטרול) *וגם* בנקודת הקריאה בפועל ל-`base44.entities.X.update/create` (דרך הפונקציות ב-[`src/lib/permissions.js`](src/lib/permissions.js)) — הגנת UI לבדה לא מספיקה.
+Every sensitive action is protected **in two places**: in the UI (hide/disable controls) *and* at the actual mutation call site to `base44.entities.X.update/create` (via the helpers in [`src/lib/permissions.js`](src/lib/permissions.js)) — UI-only protection is never enough on its own.
 
-## 🚀 התחלה מהירה
+## 🚀 Getting started
 
 ```bash
 git clone <repo-url>
@@ -100,68 +101,68 @@ cd bnei-brak-library
 npm install
 ```
 
-צרו `.env.local`:
+Create `.env.local`:
 
 ```env
 VITE_SUPABASE_URL=https://xxxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=<anon/publishable key>
 ```
 
-> 🔓 מפתח ה-anon בטוח לחשיפה בצד לקוח בעיצוב — **RLS policies, לא סודיות המפתח**, הם מה שמגן בפועל על הנתונים.
+> 🔓 The anon key is safe to expose client-side by design — **Row Level Security (RLS) policies, not key secrecy**, are what actually protect the data.
 
 ```bash
 npm run dev
 ```
 
-## 🛠️ פקודות זמינות
+## 🛠️ Available commands
 
-| פקודה | מה היא עושה |
+| Command | What it does |
 |---|---|
-| `npm run dev` | שרת פיתוח (Vite) |
-| `npm run build` | בילד לפרודקשן |
-| `npm run preview` | תצוגה מקדימה של בילד הפרודקשן |
+| `npm run dev` | Start the dev server (Vite) |
+| `npm run build` | Production build |
+| `npm run preview` | Preview the production build |
 | `npm run lint` | ESLint (`--quiet`) |
-| `npm run lint:fix` | ESLint עם תיקון אוטומטי |
-| `npm run typecheck` | בדיקת טיפוסים (`tsc`, `checkJs`, לא פרויקט TS מלא) |
+| `npm run lint:fix` | ESLint with auto-fix |
+| `npm run typecheck` | Type checking (`tsc`, `checkJs`, not a full TS project) |
 
-אין כרגע test runner מוגדר בריפו — אין להניח קיום Jest/Vitest.
+There is no test runner configured in this repo — don't assume Jest/Vitest exist.
 
-## 📁 מבנה הפרויקט
+## 📁 Project structure
 
 ```
 src/
-├─ api/base44Client.js      # שכבת גישה יחידה ל-Supabase (Base44-shaped shim)
+├─ api/base44Client.js      # single data-access layer for Supabase (Base44-shaped shim)
 ├─ lib/
 │  ├─ AuthContext.jsx       # session + profiles gate
-│  ├─ permissions.js        # can*(user, ...) — כל בדיקת הרשאה עוברת כאן
-│  └─ budgetUpdater.js      # עטיפות RPC לתקציב/זיכוי
-├─ pages/                   # דפים שטוחים, נתיבים מוגדרים ב-App.jsx
+│  ├─ permissions.js        # can*(user, ...) — every permission check goes through here
+│  └─ budgetUpdater.js      # RPC wrappers for budget/credit
+├─ pages/                   # flat pages, routes defined in App.jsx
 ├─ components/
 │  ├─ budget/ staff/ projects/ bookLists/ bookProcurement/ quotes/ ...
-│  └─ ui/                   # shadcn/ui — vendored, לא לערוך ידנית
-└─ docs/SystemSpecification.md   # מקור האמת לתהליכי עבודה והרשאות (עברית)
+│  └─ ui/                   # shadcn/ui — vendored, don't hand-edit
+└─ docs/SystemSpecification.md   # source of truth for workflows & permissions (Hebrew)
 
-supabase/migrations/*.sql   # סכמת האמת החיה — DDL, RLS, RPC
-docs/legacy-base44-schema/  # סכמת Base44 המקורית, קפואה, לתיעוד היסטורי בלבד
+supabase/migrations/*.sql   # the live schema of record — DDL, RLS, RPC
+docs/legacy-base44-schema/  # original Base44 schema, frozen, historical reference only
 ```
 
-## 📐 עקרונות ליבה (אל תשברו את אלה)
+## 📐 Core principles (don't break these)
 
-- 🔒 **הרשאות בשתי שכבות** — UI וגם נקודת המוטציה בפועל.
-- ⚛️ **RPC אטומי, לא רצף קריאות** — כל שינוי סטטוס שמשפיע על תקציב/מלאי חייב לעבור דרך פונקציית Postgres יחידה עם row locking.
-- 📦 **מלאי מתעדכן רק בקבלת סחורה בפועל** — לא ביצירת הזמנה, לא באישור.
-- 🚫 **ספרים ↔ ציוד לא מתערבבים** — שני תהליכי רכש נפרדים, במתכוון.
-- 🗄️ **מיגרציה חדשה, לא עריכה** — אין לערוך ידנית מיגרציה שכבר הוחלה; מוסיפים קובץ ממוספר חדש.
-- 🌐 **הכול RTL ובעברית** — טקסט UI חדש נשאר עברי, עקבי לשאר האפליקציה.
+- 🔒 **Permissions in two layers** — UI, and the actual mutation call site.
+- ⚛️ **Atomic RPC, not sequential calls** — any status change affecting budget/inventory must go through a single Postgres function with row locking.
+- 📦 **Inventory only updates on actual goods receipt** — never on order creation, never on approval.
+- 🚫 **Books ↔ equipment never mix** — two separate procurement flows, by design.
+- 🗄️ **New migration, never an edit** — never hand-edit a migration that's already been applied; add a new numbered file instead.
+- 🌐 **Everything is RTL and Hebrew** — new UI text stays in Hebrew, consistent with the rest of the app.
 
-## ☁️ פריסה
+## ☁️ Deployment
 
-Frontend רץ על **Cloudflare** (Workers + static assets). ה-build command הוא `npm run build`, ה-output הוא `dist/`. אין תלות בשרת מותאם אישית — כל הלוגיקה השרתית היא Postgres (`plpgsql`) ב-Supabase.
+The frontend runs on **Cloudflare** (Workers + static assets). Build command is `npm run build`, output is `dist/`. There's no dependency on a custom server — all server-side logic is Postgres (`plpgsql`) in Supabase.
 
 ---
 
 <div align="center">
 
-נבנה עם ☕, RTL, ותשומת לב יתרה לאטומיות של טרנזקציות תקציב.
+Built with ☕, RTL, and an unreasonable amount of care for budget-transaction atomicity.
 
 </div>

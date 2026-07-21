@@ -7,28 +7,16 @@ import { BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Login() {
-  const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      if (mode === 'signin') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { data: { full_name: fullName } },
-        });
-        if (error) throw error;
-        toast.success('נרשמת בהצלחה! אם נדרש אימות מייל, בדקי את תיבת הדואר שלך.');
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
       // AuthContext listens to onAuthStateChange and will pick up the new session automatically.
     } catch (error) {
       toast.error(error.message || 'שגיאה בהתחברות');
@@ -45,18 +33,10 @@ export default function Login() {
             <BookOpen className="w-5 h-5 text-white" />
           </div>
           <h1 className="text-lg font-bold">LibraryOS</h1>
-          <p className="text-sm text-muted-foreground">
-            {mode === 'signin' ? 'התחברות למערכת' : 'הרשמה למערכת'}
-          </p>
+          <p className="text-sm text-muted-foreground">התחברות למערכת</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'signup' && (
-            <div className="space-y-1.5">
-              <Label>שם מלא</Label>
-              <Input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-            </div>
-          )}
           <div className="space-y-1.5">
             <Label>אימייל</Label>
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -66,17 +46,13 @@ export default function Login() {
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
           </div>
           <Button type="submit" disabled={submitting} className="w-full bg-gradient-to-l from-purple-500 to-blue-500 text-white border-0 hover:opacity-90">
-            {submitting ? 'רגע...' : mode === 'signin' ? 'התחברות' : 'הרשמה'}
+            {submitting ? 'רגע...' : 'התחברות'}
           </Button>
         </form>
 
-        <button
-          type="button"
-          onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
-          className="w-full text-center text-sm text-muted-foreground hover:text-foreground mt-4 transition-colors"
-        >
-          {mode === 'signin' ? 'אין לך חשבון? הרשמה' : 'כבר יש לך חשבון? התחברות'}
-        </button>
+        <p className="text-center text-xs text-muted-foreground mt-4">
+          אין לך חשבון? פני למנהל/ת המערכת ליצירתו.
+        </p>
       </div>
     </div>
   );
