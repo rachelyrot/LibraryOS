@@ -17,7 +17,6 @@
 **A fully self-contained SPA** — no custom backend server beyond Postgres functions.
 Every sensitive business rule (budget, credits, goods receipt) runs as a single atomic database transaction, never as sequential client-side calls.
 
-*[קרא בעברית / Read in Hebrew →](README.md)*
 
 </div>
 
