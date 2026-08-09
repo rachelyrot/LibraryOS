@@ -6,6 +6,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Login from '@/pages/Login';
+import ResetPassword from '@/pages/ResetPassword';
 import Layout from '@/components/Layout';
 import Dashboard from '@/pages/Dashboard';
 import Orders from '@/pages/Orders';
@@ -20,9 +21,18 @@ import Settings from '@/pages/Settings';
 import Staff from '@/pages/Staff';
 import Projects from '@/pages/Projects';
 import ProjectDetail from '@/pages/ProjectDetail';
+import Users from '@/pages/Users';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, authError } = useAuth();
+
+  // Invite and password-recovery links land here with tokens in the URL hash.
+  // They must be handled before every auth branch below: the visitor already
+  // has a session (so the app would otherwise just let them in without ever
+  // setting a password), and the loading spinner would hide the form.
+  if (window.location.pathname === '/reset-password') {
+    return <ResetPassword />;
+  }
 
   if (isLoadingAuth) {
     return (
@@ -56,6 +66,7 @@ const AuthenticatedApp = () => {
         <Route path="/staff" element={<Staff />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/projects/:id" element={<ProjectDetail />} />
+        <Route path="/users" element={<Users />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
