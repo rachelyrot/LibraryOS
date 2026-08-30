@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { BookOpen, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
+import { resetPasswordUrl } from '@/lib/appUrl';
 
 export default function Login() {
   // 'signin' | 'forgot' — there is deliberately no 'signup' mode; self-service
@@ -34,7 +35,7 @@ export default function Login() {
     setSubmitting(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: resetPasswordUrl(),
       });
       if (error) throw error;
       // Deliberately not revealing whether the address exists.

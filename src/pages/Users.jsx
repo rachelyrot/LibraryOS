@@ -9,13 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import PageHeader from '@/components/PageHeader';
 import { toast } from 'sonner';
 import { canManageUsers, ROLE_DISPLAY_NAMES, getRoleDisplayName } from '@/lib/permissions';
+import { resetPasswordUrl } from '@/lib/appUrl';
 
 const EMPTY = { full_name: '', email: '', password: '', role: 'user' };
-
-// Where invite / recovery links send people to choose a password. Must also be
-// listed in Dashboard → Authentication → URL Configuration, or Supabase ignores
-// it and falls back to the Site URL.
-const resetRedirect = () => `${window.location.origin}/reset-password`;
 
 // Only used by the manual fallback, for when the invite mail doesn't arrive.
 function generatePassword() {
@@ -99,7 +95,7 @@ export default function Users() {
           full_name: form.full_name,
           email: form.email,
           role: form.role,
-          redirect_to: resetRedirect(),
+          redirect_to: resetPasswordUrl(),
         });
         toast.success('ההזמנה נשלחה במייל.');
       } else {
@@ -121,7 +117,7 @@ export default function Users() {
     setResettingFor(targetUser.id);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(targetUser.email, {
-        redirectTo: resetRedirect(),
+        redirectTo: resetPasswordUrl(),
       });
       if (error) throw error;
       toast.success(`נשלח קישור לאיפוס סיסמה אל ${targetUser.email}`);
