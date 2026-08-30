@@ -26,18 +26,23 @@ export default function EmployeesTab({ user, branches, employees, onEmployeesCha
     return true;
   });
 
+  // מציגים את הסיבה האמיתית מהשרת ולא רק "שגיאה": כשעמודה חסרה במסד (מיגרציה
+  // שלא הורצה) הטוסט הגנרי הסתיר את זה לגמרי — השמירה נכשלה שוב ושוב, הרשימה
+  // נשארה ריקה, ולא הייתה שום דרך להבין מהמסך שהסכמה והמסד לא מסונכרנים.
+  const errorText = (err) => err?.message || err?.details || 'שגיאה לא ידועה';
+
   const handleSave = async (data) => {
     try {
       if (editing) { await base44.entities.Employee.update(editing.id, data); toast.success('העובדת עודכנה'); }
       else { await base44.entities.Employee.create(data); toast.success('העובדת נוספה'); }
       setEditing(null); onEmployeesChange();
-    } catch (e) { toast.error('שגיאה בשמירה'); }
+    } catch (e) { toast.error(`שגיאה בשמירה: ${errorText(e)}`); }
   };
 
   const handleDelete = async (emp) => {
     if (!confirm(`למחוק את ${fullName(emp)}?`)) return;
     try { await base44.entities.Employee.delete(emp.id); toast.success('נמחקה'); onEmployeesChange(); }
-    catch (e) { toast.error('שגיאה במחיקה'); }
+    catch (e) { toast.error(`שגיאה במחיקה: ${errorText(e)}`); }
   };
 
   return (

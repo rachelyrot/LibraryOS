@@ -2,23 +2,28 @@ import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Check, Search, Database } from 'lucide-react';
+import { Check, Search, Database, Plus, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { nylonLabel } from '@/lib/bookQuoteExcel';
-import { canMarkBooksForOrder, canCreateBookQuoteRequest } from '@/lib/permissions';
+import { importBookFiles } from '@/lib/bookListImport';
+import AddBookDialog from '@/components/bookLists/AddBookDialog';
+import { canMarkBooksForOrder, canCreateBookQuoteRequest, canEditBookList } from '@/lib/permissions';
 
 export default function BookListTab({ bookList, isTransferredToQuote, onBooksChange, onStatusChange, inventoryItems }) {
   const [books, setBooks] = useState([]);
   const [searchBook, setSearchBook] = useState('');
   const [user, setUser] = useState(null);
   const [checkingAgron, setCheckingAgron] = useState(false);
+  const [addBookOpen, setAddBookOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
   useEffect(() => { setBooks([...(bookList.books || [])]); }, [bookList]);
 
   const canMark = canMarkBooksForOrder(user, bookList);
   const canCreateQuoteReq = canCreateBookQuoteRequest(user);
+  const canEdit = canEditBookList(user, bookList);
 
   const saveBooks = async (updated) => {
     setBooks(updated);
@@ -82,6 +87,46 @@ export default function BookListTab({ bookList, isTransferredToQuote, onBooksCha
     toast.success('בדיקת אגרון הושלמה!');
   };
 
+  // ── הוספה מאוחרת: צירוף ספרים לרשימה שכבר נשמרה ──────────────────
+  // מוסיפים לסוף הרשימה הקיימת ולא מחליפים אותה, ושומרים מיד דרך onBooksChange —
+  // אותו נתיב שמירה של כל שאר השינויים בטאב הזה.
+  const appendBooks = async (newBooks) => {
+    if (newBooks.length === 0) return;
+    await saveBooks([...books, ...newBooks]);
+  };
+
+  const handleAddBook = async (book) => {
+    if (!canEdit) { toast.error('אין לך הרשאה לערוך רשימה זו'); return; }
+    await appendBooks([book]);
+    toast.success('הספר נוסף לרשימה');
+  };
+
+  const handleImportFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+    if (!canEdit) { toast.error('אין לך הרשאה לערוך רשימה זו'); return; }
+
+    setImporting(true);
+    try {
+      const { books: imported, names, failures } = await importBookFiles(files);
+      if (imported.length > 0) {
+        await appendBooks(imported);
+        toast.success(
+          names.length > 1
+            ? `נוספו ${imported.length} ספרים מ-${names.length} קבצים`
+            : `נוספו ${imported.length} ספרים מהקובץ`
+        );
+      } else if (failures.length === 0) {
+        toast.error('לא נמצאו ספרים בקבצים שנבחרו');
+      }
+      failures.forEach(msg => toast.error(msg, { duration: 10000 }));
+    } catch (err) {
+      toast.error(`שגיאה בייבוא: ${err?.message || 'שגיאה לא ידועה'}`);
+    }
+    setImporting(false);
+  };
+
   const filteredBooks = books.filter(b => !searchBook || b.title?.includes(searchBook) || b.author?.includes(searchBook) || b.isbn?.includes(searchBook));
   const interestedCount = books.filter(b => b.marked_for_order).length;
   const selectedForQuoteCount = books.filter(b => b.selected_for_quote).length;
@@ -93,10 +138,29 @@ export default function BookListTab({ bookList, isTransferredToQuote, onBooksCha
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="חיפוש ספרים..." className="pr-9" value={searchBook} onChange={e => setSearchBook(e.target.value)} />
         </div>
+        {canEdit && !isTransferredToQuote && (
+          <>
+            <label className={cn(
+              'inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-input bg-background text-sm font-medium cursor-pointer hover:bg-accent transition-colors whitespace-nowrap shrink-0',
+              importing && 'opacity-60 pointer-events-none',
+            )} title="צירוף קובץ Excel/CSV לרשימה הקיימת">
+              {importing
+                ? <div className="w-3.5 h-3.5 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+                : <FileSpreadsheet className="w-3.5 h-3.5 text-green-600" />}
+              {importing ? 'מייבא...' : 'צרף קובץ'}
+              <input type="file" multiple className="hidden" onChange={handleImportFiles} disabled={importing} accept=".csv,.xlsx,.xls" />
+            </label>
+            <Button variant="outline" size="sm" className="h-9 gap-1.5 whitespace-nowrap shrink-0" onClick={() => setAddBookOpen(true)}>
+              <Plus className="w-3.5 h-3.5" /> הוסף ספר
+            </Button>
+          </>
+        )}
         <Button variant="outline" size="sm" onClick={checkAgainstAgron} disabled={checkingAgron || interestedCount === 0} className="gap-1.5 shrink-0">
           <Database className="w-3.5 h-3.5" /> {checkingAgron ? 'בודק...' : 'בדוק מול אגרון'}
         </Button>
       </div>
+
+      <AddBookDialog open={addBookOpen} onOpenChange={setAddBookOpen} onAdd={handleAddBook} />
       <div className="border border-border rounded-xl overflow-auto max-h-[55vh]">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/50 z-10">

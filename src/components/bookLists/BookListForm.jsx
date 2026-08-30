@@ -9,130 +9,9 @@ import { Plus, Trash2, AlertTriangle, Check, FileSpreadsheet, Edit3, Info, Chevr
 import { toast } from 'sonner';
 import useCategories from '@/hooks/useCategories';
 import { cn } from '@/lib/utils';
-import { nylonLabel, normalizeNylon } from '@/lib/bookQuoteExcel';
-import { cleanColumnName, resolveColumnKeys, readExcelRows } from '@/lib/excelImport';
-
-// ── Column detection ────────────────────────────────────────────
-const COLUMN_MAP = {
-  title: [
-    'שם ספר', 'שם הספר', 'כותר', 'כותרת', 'שם הכותר', 'שם כותר', 'שם המוצר', 'book name', 'title', 'name', 'שם',
-  ],
-  author: [
-    'מחבר', 'שם מחבר', 'author', 'מחבר/ת', 'סופר',
-  ],
-  publisher: [
-    'הוצאה', 'הוצאה לאור', 'הוצאת ספרים', 'publisher', 'הוצאת', 'מו"ל', 'הו"ל',
-  ],
-  isbn: [
-    'isbn', 'מסת"ב', 'מסתב', 'ברקוד', 'מסת״ב', 'מק"ט', 'מקט',
-  ],
-  category: [
-    'קטגוריה', 'category', 'סוג', "ז'אנר", "ז׳אנר",
-  ],
-  supplier_price: [
-    'מחיר ספק', 'מחיר', 'מחיר מחירון', 'מחיר יחידה', 'supplier price', 'price', 'supplier_price', 'מחיר רכישה',
-    'מחיר למינציה',
-  ],
-  discount_percent: [
-    'אחוז הנחה', 'הנחה', 'discount', 'discount percent', 'discount_percent', '% הנחה',
-  ],
-  discounted_price: [
-    'מחיר לאחר הנחה', 'מחיר סופי', 'מחיר נטו', 'final price', 'discounted_price', 'final_price',
-  ],
-  recommended_quantity: [
-    'כמות', 'כמות מומלצת', 'quantity', 'recommended_quantity',
-  ],
-  requested_quantity: [
-    'כמות מבוקשת', 'requested quantity', 'requested_quantity',
-  ],
-  nylon_required: [
-    'ניילון', 'עם ניילון', 'ניילון נדרש', 'nylon', 'ניילון/למינציה', 'למינציה',
-  ],
-  notes: [
-    'הערות', 'notes', 'comments', 'הערה',
-  ],
-};
-
-// ── Header-row detection ──
-const HEADER_SIGNALS = ['שם ספר', 'שם הספר', 'כותר', 'isbn', 'מחבר', 'מחיר', 'title', 'שם כותר', 'שם המוצר', 'שם הכותר'];
-
-// Some supplier files mark per-book nylon wrapping in a column with no header at all (a blank
-// cell, not one of the COLUMN_MAP candidates) -- fall back to recognizing the column by its
-// values instead of its header in that case. See fix/book-import-missing-header.
-const VALUE_SIGNALS = {
-  nylon_required: ['ניילון', 'עם ניילון', 'בלי ניילון', 'ניילון נדרש', 'למינציה'],
-};
-
-// ── Parse a single row ──────────────────────────────────────────
-function parseRow(row, columnKeys) {
-  const g = (f) => { const k = columnKeys[f]; return k ? row[k] : undefined; };
-  const title = g('title'); const author = g('author'); const publisher = g('publisher');
-  const isbn = g('isbn'); const category = g('category');
-  const supplier_price = parseFloat(g('supplier_price'));
-  const discount_percent = parseFloat(g('discount_percent'));
-  let discounted_price = parseFloat(g('discounted_price'));
-  const recommended_quantity = parseInt(g('recommended_quantity'), 10);
-  const requested_quantity_raw = g('requested_quantity');
-  const requested_quantity = requested_quantity_raw != null ? parseInt(requested_quantity_raw, 10) : NaN;
-  const nylon_required = normalizeNylon(g('nylon_required'));
-  const notes = g('notes');
-
-  if (isNaN(discounted_price) && !isNaN(supplier_price) && !isNaN(discount_percent))
-    discounted_price = Math.round(supplier_price * (1 - discount_percent / 100) * 100) / 100;
-
-  return {
-    title: (title || '').toString().trim(),
-    author: (author || '').toString().trim(),
-    publisher: (publisher || '').toString().trim(),
-    isbn: (isbn || '').toString().trim(),
-    category: (category || '').toString().trim(),
-    supplier_price: isNaN(supplier_price) ? 0 : supplier_price,
-    discounted_price: isNaN(discounted_price) ? 0 : discounted_price,
-    recommended_quantity: isNaN(recommended_quantity) ? 0 : recommended_quantity,
-    requested_quantity: isNaN(requested_quantity) ? (isNaN(recommended_quantity) ? 0 : recommended_quantity) : requested_quantity,
-    nylon_required,
-    notes: (notes || '').toString().trim(),
-    existing_in_agron: false,
-    existing_copies: 0,
-    system_recommendation: 'לבדיקה',
-    recommendation_reason: '',
-    marked_for_order: false,
-    status: 'חדש',
-  };
-}
-
-// ── Validation ──────────────────────────────────────────────────
-function validateBooks(books) {
-  const errors = [];
-  const seen = {};
-  books.forEach((b, i) => {
-    if (!b.title) errors.push({ row: i + 1, field: 'title', msg: 'חסר שם ספר' });
-    if (b.supplier_price < 0) errors.push({ row: i + 1, field: 'supplier_price', msg: 'מחיר לא תקין' });
-    if (b.isbn) {
-      const clean = b.isbn.replace(/[^0-9Xx]/g, '').toUpperCase();
-      if (seen[clean]) errors.push({ row: i + 1, field: 'isbn', msg: `ISBN כפול – מופיע גם בשורה ${seen[clean]}` });
-      else seen[clean] = i + 1;
-    }
-  });
-  return errors;
-}
-
-// ── Constants ───────────────────────────────────────────────────
-const EMPTY_BOOK = {
-  title: '', author: '', publisher: '', isbn: '', category: '',
-  supplier_price: 0, discounted_price: 0, recommended_quantity: 0, requested_quantity: 0, nylon_required: 'any', notes: '',
-  existing_in_agron: false, existing_copies: 0, system_recommendation: 'לבדיקה', recommendation_reason: '',
-  marked_for_order: false, status: 'חדש',
-};
+import { EMPTY_BOOK, FIELD_LABELS, validateBooks, importBookFiles } from '@/lib/bookListImport';
 
 const EMPTY = { title: '', supplier_id: '', supplier_name: '', received_date: '', category: 'ספרים', notes: '' };
-
-const FIELD_LABELS = {
-  title: 'שם ספר', author: 'מחבר', publisher: 'הוצאה', isbn: 'ISBN',
-  category: 'קטגוריה', supplier_price: 'מחיר ספק', discount_percent: 'אחוז הנחה',
-  discounted_price: 'מחיר לאחר הנחה', recommended_quantity: 'כמות',
-  requested_quantity: 'כמות מבוקשת', nylon_required: 'ניילון', notes: 'הערות',
-};
 
 // ── Component ───────────────────────────────────────────────────
 export default function BookListForm({ open, onOpenChange, editing, suppliers, onSave }) {
@@ -144,8 +23,9 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
   const [errors, setErrors] = useState([]);
   const [saving, setSaving] = useState(false);
   const [parsing, setParsing] = useState(false);
-  const [fileName, setFileName] = useState('');
-  const [importMethod, setImportMethod] = useState(null);
+  // רשימת הקבצים שיובאו (ולא קובץ בודד): אפשר להעלות כמה קבצים בבת אחת, וגם
+  // להוסיף עוד קובץ אחרי שכבר יובא אחד — כולם מתאחדים לרשימת ספרים אחת.
+  const [importedFiles, setImportedFiles] = useState([]);
   const [detectedColumns, setDetectedColumns] = useState({});
   const [showDebug, setShowDebug] = useState(false);
 
@@ -153,61 +33,43 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
     if (open) {
       if (editing) { setForm(editing); setBooks(editing.books || []); }
       else { setForm(EMPTY); setBooks([]); }
-      setStep(1); setErrors([]); setFileName(''); setImportMethod(null);
+      setStep(1); setErrors([]); setImportedFiles([]);
       setDetectedColumns({}); setShowDebug(false);
     }
   }, [open, editing]);
 
+  const hasImported = importedFiles.length > 0;
+
   const canNextStep1 = form.title;
 
   const handleFileSelect = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setFileName(file.name);
-    setParsing(true);
-    try {
-      const { dataRows, detectedColumns: cols, allColumns } = await readExcelRows(file, {
-        columnMap: COLUMN_MAP,
-        anchorField: 'title',
-        headerSignals: HEADER_SIGNALS,
-      });
-
-      if (allColumns.length === 0) {
-        toast.error('לא זוהו נתונים. ודאו שהקובץ מכיל רשימת ספרים ואינו ריק.');
-        setParsing(false);
-        return;
-      }
-
-      // Check title column exists — show which columns were found to help debug
-      if (!cols.title) {
-        const foundCols = allColumns.map(k => cleanColumnName(k)).filter(Boolean).join(', ');
-        toast.error(`לא נמצאה עמודת "שם ספר" בקובץ.\nעמודות שנמצאו: ${foundCols || 'לא זוהו'}\nנדרשת עמודה בשם: שם ספר / כותר / Title`, { duration: 10000 });
-        setDetectedColumns(cols);
-        setParsing(false);
-        return;
-      }
-
-      const columnKeys = resolveColumnKeys(dataRows, COLUMN_MAP, VALUE_SIGNALS);
-      setDetectedColumns({
-        ...cols,
-        ...Object.fromEntries(
-          Object.keys(VALUE_SIGNALS)
-            .filter((field) => !cols[field] && columnKeys[field])
-            .map((field) => [field, 'זוהה לפי תוכן העמודה (ללא כותרת)'])
-        ),
-      });
-      const allParsed = dataRows.map((row) => parseRow(row, columnKeys));
-      // Drop rows without a title silently
-      const parsed = allParsed.filter(b => b.title);
-      setBooks(parsed);
-      setErrors(validateBooks(parsed));
-      toast.success(`זוהו ${parsed.length} ספרים`);
-      setStep(3);
-    } catch (e) {
-      toast.error('שגיאה בקריאת הקובץ');
-    }
-    setParsing(false);
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
+    if (files.length === 0) return;
+    setParsing(true);
+
+    const { books: imported, names, failures, cols } = await importBookFiles(files);
+
+    if (Object.keys(cols).length > 0) setDetectedColumns(c => ({ ...c, ...cols }));
+
+    if (imported.length > 0) {
+      // מצרפים לספרים הקיימים ולא מחליפים אותם — כך שני קבצים (או קובץ שנוסף
+      // אחרי הזנה ידנית) מתאחדים לרשימה אחת. כפילויות ISBN בין הקבצים ייתפסו
+      // ממילא ב-validateBooks ויוצגו כאזהרה.
+      const merged = [...books, ...imported];
+      setBooks(merged);
+      setErrors(validateBooks(merged));
+      setImportedFiles(f => [...f, ...names]);
+      toast.success(
+        names.length > 1
+          ? `יובאו ${imported.length} ספרים מ-${names.length} קבצים`
+          : `זוהו ${imported.length} ספרים`
+      );
+      setStep(3);
+    }
+
+    failures.forEach(msg => toast.error(msg, { duration: 10000 }));
+    setParsing(false);
   };
 
   const addManualBook = () => setBooks(b => [...b, { ...EMPTY_BOOK }]);
@@ -232,7 +94,7 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
         ...form,
         books: valid,
         status: 'received',
-        notes: form.notes || (importMethod === 'excel' ? `יובא מקובץ: ${fileName}` : ''),
+        notes: form.notes || (hasImported ? `יובא מקבצים: ${importedFiles.map(f => f.name).join(', ')}` : ''),
       });
     } catch (e) { toast.error('שגיאה בשמירה'); }
     setSaving(false);
@@ -275,14 +137,14 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
         {/* ── STEP 2 – Choose method ── */}
         {step === 2 && (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">בחרי איך להוסיף ספרים לרשימה:</p>
+            <p className="text-sm text-muted-foreground">איך להתחיל? אפשר גם לשלב — לצרף קבצים ולהוסיף ספרים ידנית באותה רשימה.</p>
             <div className="grid grid-cols-1 gap-3">
-              <button onClick={() => { setImportMethod('excel'); setStep('excelUpload'); }}
+              <button onClick={() => setStep('excelUpload')}
                 className="flex items-center gap-4 border-2 border-dashed border-border rounded-xl p-5 hover:border-green-400 hover:bg-green-50/30 transition-colors text-right">
                 <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center shrink-0"><FileSpreadsheet className="w-6 h-6 text-green-600" /></div>
                 <div><p className="font-semibold text-foreground">העלאת קובץ Excel/CSV</p><p className="text-sm text-muted-foreground">רשימת ספרים – זיהוי אוטומטי של העמודות</p></div>
               </button>
-              <button onClick={() => { setImportMethod('manual'); setStep(3); }}
+              <button onClick={() => setStep(3)}
                 className="flex items-center gap-4 border-2 border-dashed border-border rounded-xl p-5 hover:border-pink-400 hover:bg-pink-50/30 transition-colors text-right">
                 <div className="w-12 h-12 rounded-lg bg-pink-100 flex items-center justify-center shrink-0"><Edit3 className="w-6 h-6 text-pink-600" /></div>
                 <div><p className="font-semibold text-foreground">הזנה ידנית</p><p className="text-sm text-muted-foreground">הקלדת ספרים אחד-אחד בטבלה</p></div>
@@ -295,42 +157,52 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
         {/* ── STEP Excel Upload ── */}
         {step === 'excelUpload' && (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">העלי קובץ Excel או CSV עם רשימת הספרים. המערכת תזהה את העמודות אוטומטית.</p>
+            <p className="text-sm text-muted-foreground">העלי קובץ Excel או CSV עם רשימת הספרים. אפשר לבחור <strong>כמה קבצים יחד</strong> — הם יתאחדו לרשימה אחת. המערכת תזהה את העמודות אוטומטית בכל קובץ בנפרד.</p>
             <label className={cn('flex flex-col items-center gap-3 cursor-pointer border-2 border-dashed border-border rounded-xl px-6 py-8 hover:border-green-400 hover:bg-green-50/30 transition-colors', parsing && 'opacity-60 pointer-events-none')}>
               <div className="w-14 h-14 rounded-xl bg-green-100 flex items-center justify-center">
                 {parsing ? <div className="w-6 h-6 border-2 border-green-400 border-t-transparent rounded-full animate-spin" /> : <FileSpreadsheet className="w-7 h-7 text-green-600" />}
               </div>
               <div className="text-center">
-                <p className="font-semibold text-foreground">{fileName ? `✓ ${fileName}` : parsing ? 'קורא קובץ...' : 'לחצי לבחירת קובץ'}</p>
-                <p className="text-xs text-muted-foreground mt-1">xlsx, xls, csv · עמודות: שם ספר, מחבר, הוצאה, ISBN, ניילון, הערות</p>
+                <p className="font-semibold text-foreground">{parsing ? 'קורא קבצים...' : 'לחצי לבחירת קבצים'}</p>
+                <p className="text-xs text-muted-foreground mt-1">xlsx, xls, csv · אפשר לסמן כמה קבצים יחד · עמודות: שם ספר, מחבר, הוצאה, ISBN, ניילון, הערות</p>
               </div>
-              <input type="file" className="hidden" onChange={handleFileSelect} disabled={parsing} accept=".csv,.xlsx,.xls" />
+              <input type="file" multiple className="hidden" onChange={handleFileSelect} disabled={parsing} accept=".csv,.xlsx,.xls" />
             </label>
-            {fileName && !parsing && (
-              <button onClick={() => { setFileName(''); setBooks([]); }} className="text-xs text-red-400 hover:text-red-500">הסר קובץ</button>
-            )}
             <div className="flex justify-end">
               <Button variant="outline" onClick={() => setStep(2)}>חזרה</Button>
             </div>
           </div>
         )}
 
-        {/* ── STEP 3 – Books preview / manual table ── */}
-        {step === 3 && (books.length > 0 || importMethod === 'manual') && (
+        {/* ── STEP 3 – Books table (imported and/or manual, always editable) ── */}
+        {step === 3 && (
           <div className="space-y-3">
             {/* Errors */}
-            {importMethod === 'excel' && errors.length > 0 && (
+            {errors.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
                 <div className="flex items-center gap-2 text-amber-700 font-medium text-sm"><AlertTriangle className="w-4 h-4" /> {errors.length} בעיות נמצאו</div>
                 {errors.map((e, i) => <p key={i} className="text-xs text-amber-600 pr-6">שורה {e.row}: {e.msg}</p>)}
               </div>
             )}
-            {importMethod === 'excel' && errors.length === 0 && (
+            {hasImported && errors.length === 0 && books.length > 0 && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2 text-green-700 text-sm"><Check className="w-4 h-4" /> כל {books.length} הספרים תקינים</div>
             )}
 
+            {/* Imported files */}
+            {hasImported && (
+              <div className="bg-muted/40 border border-border rounded-lg p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">קבצים שיובאו ({importedFiles.length})</p>
+                {importedFiles.map((f, i) => (
+                  <p key={i} className="text-xs text-foreground flex items-center gap-1.5">
+                    <FileSpreadsheet className="w-3 h-3 text-green-600 shrink-0" />
+                    {f.name} <span className="text-muted-foreground">· {f.count} ספרים</span>
+                  </p>
+                ))}
+              </div>
+            )}
+
             {/* Debug: detected columns */}
-            {importMethod === 'excel' && Object.keys(detectedColumns).length > 0 && (
+            {hasImported && Object.keys(detectedColumns).length > 0 && (
               <div className="border border-blue-200 rounded-lg overflow-hidden bg-blue-50/50">
                 <button onClick={() => setShowDebug(!showDebug)}
                   className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100/50 transition-colors">
@@ -354,29 +226,36 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
               </div>
             )}
 
-            {/* Manual add button */}
-            {importMethod === 'manual' && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">{books.length} ספרים</span>
+            {/* Toolbar — הוספה ידנית וצירוף קובץ נוסף זמינים תמיד, גם אחרי ייבוא */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-sm text-muted-foreground">{books.length} ספרים ברשימה</span>
+              <div className="flex items-center gap-2">
+                <label className={cn('inline-flex items-center gap-1 h-8 px-3 rounded-md border border-input bg-background text-xs font-medium cursor-pointer hover:bg-accent transition-colors', parsing && 'opacity-60 pointer-events-none')}>
+                  {parsing
+                    ? <div className="w-3.5 h-3.5 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+                    : <FileSpreadsheet className="w-3.5 h-3.5 text-green-600" />}
+                  צרף קובץ
+                  <input type="file" multiple className="hidden" onChange={handleFileSelect} disabled={parsing} accept=".csv,.xlsx,.xls" />
+                </label>
                 <Button variant="outline" size="sm" onClick={addManualBook} className="gap-1">
                   <Plus className="w-3.5 h-3.5" /> הוסף ספר
                 </Button>
               </div>
-            )}
+            </div>
 
             {/* Books table */}
             <div className="border border-border rounded-xl overflow-auto max-h-[40vh]">
               <table className="w-full text-xs" dir="rtl">
                 <thead className="sticky top-0 bg-muted/50 z-10">
                   <tr className="border-b border-border">
-                    {importMethod === 'manual' && <th className="p-1.5 w-8"></th>}
+                    <th className="p-1.5 w-8"></th>
                     <th className="text-right p-1.5 font-medium text-muted-foreground">שם ספר</th>
                     <th className="text-right p-1.5 font-medium text-muted-foreground">מחבר</th>
                     <th className="text-right p-1.5 font-medium text-muted-foreground">הוצאה</th>
                     <th className="text-right p-1.5 font-medium text-muted-foreground">ISBN</th>
                     <th className="text-center p-1.5 font-medium text-muted-foreground w-32">ניילון</th>
                     <th className="text-right p-1.5 font-medium text-muted-foreground">הערות</th>
-                    {importMethod === 'excel' && <th className="text-center p-1.5 font-medium text-muted-foreground">סטטוס</th>}
+                    {hasImported && <th className="text-center p-1.5 font-medium text-muted-foreground">סטטוס</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -384,47 +263,37 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
                     const hasErr = errors.some(e => e.row === i + 1);
                     return (
                       <tr key={i} className={cn('border-b border-border/40', hasErr && 'bg-red-50/40')}>
-                        {importMethod === 'manual' && (
-                          <td className="p-1">
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeManualBook(i)}>
-                              <Trash2 className="w-3 h-3 text-red-400" />
-                            </Button>
-                          </td>
-                        )}
+                        <td className="p-1">
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeManualBook(i)}>
+                            <Trash2 className="w-3 h-3 text-red-400" />
+                          </Button>
+                        </td>
                         <td className="p-1.5">
-                          {importMethod === 'manual' ? (
-                            <Input className="h-7 text-xs" value={b.title} onChange={e => { updateManualBook(i, 'title', e.target.value); }} onBlur={recalcErrors} placeholder="שם ספר *" />
-                          ) : (
-                            <span className={!b.title ? 'text-red-500' : ''}>{b.title || <em className="text-red-400">חסר</em>}</span>
-                          )}
+                          <Input className="h-7 text-xs" value={b.title} onChange={e => updateManualBook(i, 'title', e.target.value)} onBlur={recalcErrors} placeholder="שם ספר *" />
                         </td>
-                        <td className="p-1.5 text-muted-foreground">
-                          {importMethod === 'manual' ? <Input className="h-7 text-xs" value={b.author} onChange={e => updateManualBook(i, 'author', e.target.value)} /> : (b.author || '-')}
+                        <td className="p-1.5">
+                          <Input className="h-7 text-xs" value={b.author} onChange={e => updateManualBook(i, 'author', e.target.value)} />
                         </td>
-                        <td className="p-1.5 text-muted-foreground">
-                          {importMethod === 'manual' ? <Input className="h-7 text-xs" value={b.publisher} onChange={e => updateManualBook(i, 'publisher', e.target.value)} /> : (b.publisher || '-')}
+                        <td className="p-1.5">
+                          <Input className="h-7 text-xs" value={b.publisher} onChange={e => updateManualBook(i, 'publisher', e.target.value)} />
                         </td>
-                        <td className="p-1.5 font-mono text-muted-foreground">
-                          {importMethod === 'manual' ? <Input className="h-7 text-xs" value={b.isbn} onChange={e => { updateManualBook(i, 'isbn', e.target.value); }} onBlur={recalcErrors} /> : (b.isbn || '-')}
+                        <td className="p-1.5">
+                          <Input className="h-7 text-xs font-mono" value={b.isbn} onChange={e => updateManualBook(i, 'isbn', e.target.value)} onBlur={recalcErrors} />
                         </td>
                         <td className="p-1.5 text-center">
-                          {importMethod === 'manual' ? (
-                            <Select value={b.nylon_required || 'any'} onValueChange={v => updateManualBook(i, 'nylon_required', v)}>
-                              <SelectTrigger className="h-7 text-xs w-28"><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="with_nylon">עם ניילון</SelectItem>
-                                <SelectItem value="without_nylon">בלי ניילון</SelectItem>
-                                <SelectItem value="any">לא משנה / לפי הזול</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <span className="text-xs">{nylonLabel(b.nylon_required)}</span>
-                          )}
+                          <Select value={b.nylon_required === 'unknown' ? 'any' : (b.nylon_required || 'any')} onValueChange={v => updateManualBook(i, 'nylon_required', v)}>
+                            <SelectTrigger className="h-7 text-xs w-28"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="with_nylon">עם ניילון</SelectItem>
+                              <SelectItem value="without_nylon">בלי ניילון</SelectItem>
+                              <SelectItem value="any">לא משנה / לפי הזול</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </td>
-                        <td className="p-1.5 text-muted-foreground">
-                          {importMethod === 'manual' ? <Input className="h-7 text-xs" value={b.notes} onChange={e => updateManualBook(i, 'notes', e.target.value)} /> : (b.notes || '-')}
+                        <td className="p-1.5">
+                          <Input className="h-7 text-xs" value={b.notes} onChange={e => updateManualBook(i, 'notes', e.target.value)} />
                         </td>
-                        {importMethod === 'excel' && (
+                        {hasImported && (
                           <td className="p-1.5 text-center">
                             {!b.title ? (
                               <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">חסר שם ספר</span>
@@ -438,16 +307,15 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
                       </tr>
                     );
                   })}
-                  {books.length === 0 && importMethod === 'manual' && (
-                    <tr><td colSpan={7} className="text-center py-8 text-muted-foreground text-sm">לחצי "הוסף ספר" כדי להתחיל</td></tr>
+                  {books.length === 0 && (
+                    <tr><td colSpan={hasImported ? 8 : 7} className="text-center py-8 text-muted-foreground text-sm">לחצי "הוסף ספר" או "צרף קובץ" כדי להתחיל</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
 
             <DialogFooter className="gap-2">
-              {importMethod === 'excel' && <Button variant="outline" onClick={() => setStep(2)}>חזרה</Button>}
-              {importMethod === 'manual' && <Button variant="outline" onClick={() => setStep(2)}>חזרה</Button>}
+              <Button variant="outline" onClick={() => setStep(2)}>חזרה</Button>
               <Button onClick={handleSave} disabled={saving || books.filter(b => b.title).length === 0}
                 className="gap-2 bg-gradient-to-l from-pink-400 to-rose-500 text-white border-0 hover:opacity-90">
                 {saving ? 'שומר...' : `שמור רשימה (${books.filter(b => b.title).length} ספרים)`}
