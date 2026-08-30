@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
-import { Plus, LayoutGrid, PieChart, BarChart2, TableIcon, Pencil, AlertTriangle, ChevronRight, Building2, Wallet, ArrowRight, CreditCard, ExternalLink, ShoppingCart, Layers, PencilLine, DollarSign } from 'lucide-react';
+import { Plus, LayoutGrid, PieChart, BarChart2, TableIcon, Pencil, AlertTriangle, ChevronRight, Building2, Wallet, ArrowRight, CreditCard, ExternalLink, ShoppingCart, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -129,34 +129,57 @@ export default function Credits() {
     return pct >= 0.8;
   });
 
+  // כל ה-handlers זורקים בחזרה במקרה של כשל, כדי שהדיאלוג יישאר פתוח עם מה
+  // שהמשתמשת הקלידה במקום להיסגר ולאבד את הנתונים.
   const handleSaveSource = async (form) => {
-    if (editingSource) {
-      await base44.entities.BudgetSource.update(editingSource.id, form);
-      toast.success('מקור תקציב עודכן!');
-    } else {
-      await base44.entities.BudgetSource.create(form);
-      toast.success('מקור תקציב נוסף!');
+    if (!canEditBudgets(user)) {
+      toast.error('אין לך הרשאה לערוך מקורות תקציב.');
+      throw new Error('forbidden');
+    }
+    try {
+      if (editingSource) {
+        await base44.entities.BudgetSource.update(editingSource.id, form);
+        toast.success('מקור תקציב עודכן!');
+      } else {
+        await base44.entities.BudgetSource.create(form);
+        toast.success('מקור תקציב נוסף!');
+      }
+    } catch (err) {
+      toast.error('שמירת מקור התקציב נכשלה. הנתונים לא נשמרו.');
+      throw err;
     }
     load();
   };
 
   const handleSaveCategory = async (form) => {
+    if (!canEditBudgets(user)) {
+      toast.error('אין לך הרשאה לערוך קטגוריות תקציב.');
+      throw new Error('forbidden');
+    }
     const remaining = Math.max(0, (Number(form.allocated_amount) || 0) - (editingCat?.reserved_amount || 0) - (editingCat?.spent_amount || 0));
     const data = { ...form, budget_source_id: activeSourceId, remaining_amount: remaining };
 
-    if (editingCat) {
-      await base44.entities.BudgetAllocation.update(editingCat.id, data);
-      toast.success('קטגוריה עודכנה!');
-    } else {
-      await base44.entities.BudgetAllocation.create(data);
-      toast.success('קטגוריה נוספה!');
+    try {
+      if (editingCat) {
+        await base44.entities.BudgetAllocation.update(editingCat.id, data);
+        toast.success('קטגוריה עודכנה!');
+      } else {
+        await base44.entities.BudgetAllocation.create(data);
+        toast.success('קטגוריה נוספה!');
+      }
+      await recalcBudgetSource(activeSourceId);
+    } catch (err) {
+      toast.error('שמירת הקטגוריה נכשלה. הנתונים לא נשמרו.');
+      throw err;
     }
-
-    await recalcBudgetSource(activeSourceId);
     load();
   };
 
   const handleAddExpense = async (form) => {
+    if (!canAddManualExpense(user)) {
+      toast.error('אין לך הרשאה לרשום הוצאה ידנית.');
+      throw new Error('forbidden');
+    }
     const cat = allCategories.find(c => c.id === form.category_id);
     if (!cat) return;
     const amount = Number(form.amount);
@@ -172,14 +195,18 @@ export default function Credits() {
       order_id: null,
     };
 
-    await base44.entities.BudgetAllocation.update(cat.id, {
-      spent_amount: newSpent,
-      remaining_amount: newRemaining,
-      transactions: [...(cat.transactions || []), transaction],
-    });
-
-    if (cat.budget_source_id) await recalcBudgetSource(cat.budget_source_id);
-    toast.success('הוצאה נרשמה!');
+    try {
+      await base44.entities.BudgetAllocation.update(cat.id, {
+        spent_amount: newSpent,
+        remaining_amount: newRemaining,
+        transactions: [...(cat.transactions || []), transaction],
+      });
+      if (cat.budget_source_id) await recalcBudgetSource(cat.budget_source_id);
+      toast.success('הוצאה נרשמה!');
+    } catch (err) {
+      toast.error('רישום ההוצאה נכשל. ההוצאה לא נשמרה.');
+      throw err;
+    }
     load();
   };
 
@@ -192,16 +219,36 @@ export default function Credits() {
   const openNewSource = () => { setEditingSource(null); setSourceDialogOpen(true); };
   const openEditSource = (src) => { setEditingSource(src); setSourceDialogOpen(true); };
   const openNewCredit = () => { setEditingCredit(null); setCreditDialogOpen(true); };
+  const openEditCredit = (credit) => { setEditingCredit(credit); setCreditDialogOpen(true); };
 
   const handleSaveCredit = async (form) => {
-    const remaining = Math.max(0, (Number(form.total_amount) || 0) - (editingCredit?.reserved_amount || 0) - (editingCredit?.used_amount || 0));
-    const data = { ...form, total_amount: Number(form.total_amount), remaining_amount: remaining };
-    if (editingCredit) {
-      await base44.entities.SupplierCredit.update(editingCredit.id, data);
-      toast.success('הזיכוי עודכן!');
-    } else {
-      await base44.entities.SupplierCredit.create(data);
-      toast.success('זיכוי ספק נוסף!');
+    if (!canCreateSupplierCredits(user)) {
+      toast.error('אין לך הרשאה לערוך זיכויי ספקים.');
+      throw new Error('forbidden');
+    }
+    const total = Number(form.total_amount) || 0;
+    const reserved = editingCredit?.reserved_amount || 0;
+    const used = editingCredit?.used_amount || 0;
+
+    // לא מאפשרים להוריד את הזיכוי מתחת למה שכבר שוריין/נוצל מולו בהזמנות —
+    // אחרת היתרה נחתכת לאפס בשקט ומספרי ההזמנות המקושרות מפסיקים להסתדר.
+    if (editingCredit && total < reserved + used) {
+      toast.error(`לא ניתן להקטין את הזיכוי מתחת ל-₪${(reserved + used).toLocaleString('he-IL')} שכבר שוריינו/נוצלו.`);
+      throw new Error('amount below committed');
+    }
+
+    const data = { ...form, total_amount: total, remaining_amount: Math.max(0, total - reserved - used) };
+    try {
+      if (editingCredit) {
+        await base44.entities.SupplierCredit.update(editingCredit.id, data);
+        toast.success('הזיכוי עודכן!');
+      } else {
+        await base44.entities.SupplierCredit.create(data);
+        toast.success('זיכוי ספק נוסף!');
+      }
+    } catch (err) {
+      toast.error('שמירת הזיכוי נכשלה. הנתונים לא נשמרו.');
+      throw err;
     }
     load();
   };
@@ -332,7 +379,7 @@ export default function Credits() {
                     const rem = credit.remaining_amount !== undefined ? credit.remaining_amount : Math.max(0, (credit.total_amount || 0) - reserved - used);
                     const linkedOrders = getCreditOrders(credit.id);
                     return (
-                      <motion.div key={credit.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-2xl p-5 hover:shadow-md hover:border-teal-300 transition-all">
+                      <motion.div key={credit.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-2xl p-5 hover:shadow-md hover:border-teal-300 transition-all group">
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 rounded-xl bg-teal-100 flex items-center justify-center shrink-0"><CreditCard className="w-4 h-4 text-teal-600" /></div>
@@ -341,7 +388,15 @@ export default function Credits() {
                               {credit.reason && <p className="text-xs text-muted-foreground">{credit.reason}</p>}
                             </div>
                           </div>
-                          <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', CREDIT_STATUS_COLORS[credit.status || 'active'])}>{CREDIT_STATUS_LABELS[credit.status || 'active']}</span>
+                          <div className="flex items-center gap-1">
+                            <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', CREDIT_STATUS_COLORS[credit.status || 'active'])}>{CREDIT_STATUS_LABELS[credit.status || 'active']}</span>
+                            {canCredit && (
+                              <button onClick={() => openEditCredit(credit)} title="עריכת זיכוי"
+                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted rounded-lg transition-all">
+                                <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <div className="mb-3">
                           <p className="text-2xl font-bold">₪{(credit.total_amount || 0).toLocaleString('he-IL')}</p>
@@ -465,6 +520,11 @@ export default function Credits() {
                       <div className="flex items-center gap-2">
                         <span className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color || '#14b8a6' }} />
                         <span className="font-bold">{cat.name}</span>
+                        {cat.supplier_name && (
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground bg-muted/60 rounded-full px-2 py-0.5">
+                            <Truck className="w-3 h-3" />{cat.supplier_name}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         {canAddExpense && <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => openAddExpense(cat)}><Plus className="w-3 h-3" /> הוצאה ידנית</Button>}

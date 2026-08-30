@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import MoneyInput from '@/components/budget/MoneyInput';
 import { base44 } from '@/api/base44Client';
 
 const CREDIT_TYPES = [
@@ -28,7 +29,7 @@ export default function SupplierCreditDialog({ open, onOpenChange, credit, onSub
       supplier_id: credit.supplier_id || '',
       supplier_name: credit.supplier_name || '',
       credit_type: credit.credit_type || 'supplier_credit',
-      total_amount: credit.total_amount || '',
+      total_amount: credit.total_amount != null ? String(credit.total_amount) : '',
       reason: credit.reason || '',
       start_date: credit.start_date || '',
       valid_until: credit.valid_until || '',
@@ -37,12 +38,19 @@ export default function SupplierCreditDialog({ open, onOpenChange, credit, onSub
     } : EMPTY);
   }, [open, credit]);
 
+  // total_amount מוחזק כמחרוזת גולמית בטופס (ראה MoneyInput) — ההמרה למספר כאן
+  const amount = Number(form.total_amount);
+  const amountValid = form.total_amount !== '' && Number.isFinite(amount) && amount > 0;
+
   const handleSubmit = async () => {
-    if (!form.supplier_id || !form.total_amount) return;
+    if (!form.supplier_id || !amountValid) return;
     setSaving(true);
-    await onSubmit(form);
-    setSaving(false);
-    onOpenChange(false);
+    try {
+      await onSubmit({ ...form, total_amount: amount });
+      onOpenChange(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -73,7 +81,7 @@ export default function SupplierCreditDialog({ open, onOpenChange, credit, onSub
             </div>
             <div className="space-y-1.5">
               <Label>סכום זיכוי *</Label>
-              <Input type="number" value={form.total_amount || ''} onChange={e => setForm(f => ({ ...f, total_amount: Number(e.target.value) }))} placeholder="₪" />
+              <MoneyInput value={form.total_amount} onChange={v => setForm(f => ({ ...f, total_amount: v }))} placeholder="₪" />
             </div>
           </div>
 
@@ -100,7 +108,7 @@ export default function SupplierCreditDialog({ open, onOpenChange, credit, onSub
 
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="outline" onClick={() => onOpenChange(false)}>ביטול</Button>
-            <Button onClick={handleSubmit} disabled={saving || !form.supplier_id || !form.total_amount}
+            <Button onClick={handleSubmit} disabled={saving || !form.supplier_id || !amountValid}
               className="bg-gradient-to-l from-teal-400 to-green-500 text-white border-0 hover:opacity-90">
               {saving ? 'שומר...' : 'שמור'}
             </Button>

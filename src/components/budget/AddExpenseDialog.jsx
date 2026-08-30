@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import MoneyInput from '@/components/budget/MoneyInput';
 
 export default function AddExpenseDialog({ open, onOpenChange, categories, preselected, onSubmit }) {
   const [form, setForm] = useState({ category_id: '', amount: '', supplier_name: '', description: '', date: new Date().toISOString().split('T')[0] });
@@ -19,13 +20,20 @@ export default function AddExpenseDialog({ open, onOpenChange, categories, prese
     }
   }, [open, preselected]);
 
+  // amount מוחזק כמחרוזת גולמית בטופס — ראה MoneyInput
+  const amount = Number(form.amount);
+  const amountValid = form.amount !== '' && Number.isFinite(amount) && amount > 0;
+
   const handleSubmit = async () => {
-    if (!form.category_id || !form.amount) return;
+    if (!form.category_id || !amountValid) return;
     setSaving(true);
-    await onSubmit(form);
-    setSaving(false);
-    onOpenChange(false);
-    setForm({ category_id: '', amount: '', supplier_name: '', description: '', date: new Date().toISOString().split('T')[0] });
+    try {
+      await onSubmit({ ...form, amount });
+      onOpenChange(false);
+      setForm({ category_id: '', amount: '', supplier_name: '', description: '', date: new Date().toISOString().split('T')[0] });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const selected = categories.find(c => c.id === form.category_id);
@@ -65,7 +73,7 @@ export default function AddExpenseDialog({ open, onOpenChange, categories, prese
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>סכום ₪ *</Label>
-              <Input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" />
+              <MoneyInput value={form.amount} onChange={v => setForm(f => ({ ...f, amount: v }))} placeholder="0" />
             </div>
             <div className="space-y-1.5">
               <Label>תאריך</Label>
@@ -87,7 +95,7 @@ export default function AddExpenseDialog({ open, onOpenChange, categories, prese
           </div>
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="outline" onClick={() => onOpenChange(false)}>ביטול</Button>
-            <Button onClick={handleSubmit} disabled={saving || !form.category_id || !form.amount}
+            <Button onClick={handleSubmit} disabled={saving || !form.category_id || !amountValid}
               className="bg-gradient-to-l from-teal-400 to-green-500 text-white border-0 hover:opacity-90">
               {saving ? 'שומר...' : 'שמור הוצאה'}
             </Button>

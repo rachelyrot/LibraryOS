@@ -42,7 +42,10 @@ export default function BudgetTable({ categories, onEdit, onAddExpense, canEdit 
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: cat.color || '#14b8a6' }} />
-                      <span className="font-medium">{cat.name}</span>
+                      <div>
+                        <span className="font-medium">{cat.name}</span>
+                        {cat.supplier_name && <p className="text-xs text-muted-foreground">{cat.supplier_name}</p>}
+                      </div>
                     </div>
                   </td>
                   <td className="px-4 py-3 font-medium">₪{allocated.toLocaleString('he-IL')}</td>

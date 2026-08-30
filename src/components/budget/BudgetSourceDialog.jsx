@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import MoneyInput from '@/components/budget/MoneyInput';
 
 const PRESET_COLORS = ['#8b5cf6', '#14b8a6', '#f97316', '#ec4899', '#3b82f6', '#22c55e', '#f43f5e', '#f59e0b', '#6366f1', '#0ea5e9'];
 const EMPTY = { name: '', funding_source_type: '', color: '#8b5cf6', total_amount: '', year: new Date().getFullYear().toString(), notes: '', status: 'active', start_date: '', end_date: '' };
@@ -27,7 +28,8 @@ export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmi
       name: source.name,
       funding_source_type: source.funding_source_type || '',
       color: source.color || '#8b5cf6',
-      total_amount: source.total_amount,
+      // total_amount מוחזק כמחרוזת גולמית בטופס — ראה MoneyInput
+      total_amount: source.total_amount != null ? String(source.total_amount) : '',
       year: source.year || '',
       start_date: source.start_date || '',
       end_date: source.end_date || '',
@@ -39,9 +41,12 @@ export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmi
   const handleSubmit = async () => {
     if (!form.name) return;
     setSaving(true);
-    await onSubmit(form);
-    setSaving(false);
-    onOpenChange(false);
+    try {
+      await onSubmit({ ...form, total_amount: form.total_amount === '' ? '' : Number(form.total_amount) });
+      onOpenChange(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -73,7 +78,7 @@ export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmi
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>סכום התחלתי ₪</Label>
-              <Input type="number" value={form.total_amount || ''} onChange={e => setForm(f => ({ ...f, total_amount: Number(e.target.value) }))} />
+              <MoneyInput value={form.total_amount} onChange={v => setForm(f => ({ ...f, total_amount: v }))} />
               <p className="text-xs text-muted-foreground">לעיון בלבד – הסכום מחושב מהקטגוריות</p>
             </div>
             <div className="space-y-1.5">
