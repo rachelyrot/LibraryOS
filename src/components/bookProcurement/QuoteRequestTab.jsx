@@ -5,31 +5,42 @@ import { Label } from '@/components/ui/label';
 import { FileSpreadsheet, Loader2, AlertCircle } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
-import { generateSupplierExcel, downloadBlob, nylonLabel } from '@/lib/bookQuoteExcel';
+import { generateSupplierExcel, downloadBlob, nylonLabel, bindingLabel, isBindingChecked, bookKey } from '@/lib/bookQuoteExcel';
 import { canCreateBookQuoteRequest } from '@/lib/permissions';
 import { OverviewTab } from '@/components/bookQuoteRequests/BookQuoteRequestDetail';
 
-export default function QuoteRequestTab({ bookList, quoteRequest, suppliers, onQuoteRequestCreated }) {
+/**
+ * טאב "בקשת מחיר".
+ *
+ * רשימת ספרים אינה מוגבלת לבקשה אחת: אחרי שנשלח מחזור ראשון אפשר להוסיף ספרים
+ * לרשימה, לסמן אותם "לשליחה" ולפתוח מהם מחזור נוסף. לכן הטאב מציג *גם* את סקירת
+ * הבקשה הפעילה (אם יש) *וגם* את טופס היצירה — במקום להחליף את הטופס בסקירה ברגע
+ * שנוצרה הבקשה הראשונה, מה שנעל את הרשימה לצמיתות.
+ */
+export default function QuoteRequestTab({ bookList, sentBookKeys, quoteRequests = [], suppliers, onQuoteRequestCreated }) {
+  const cycleCount = quoteRequests.length;
   const [user, setUser] = useState(null);
   const [selectedSupplierIds, setSelectedSupplierIds] = useState([]);
   const [excelUrl, setExcelUrl] = useState('');
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!quoteRequest) {
-      base44.auth.me().then(setUser).catch(() => {});
-      setSelectedSupplierIds([]);
-      setExcelUrl('');
-    }
-  }, [quoteRequest]);
+  useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
 
-  if (quoteRequest) {
-    return <OverviewTab req={quoteRequest} suppliers={suppliers} />;
-  }
+  // איפוס הטופס אחרי שמחזור נשלח, כדי שהמחזור הבא יתחיל נקי.
+  useEffect(() => {
+    setSelectedSupplierIds([]);
+    setExcelUrl('');
+  }, [cycleCount]);
 
   const canCreate = canCreateBookQuoteRequest(user);
-  const selectedBooks = (bookList.books || []).filter(b => b.selected_for_quote);
+
+  // רק ספרים חדשים: ספר שכבר יצא במחזור קודם לא נכנס לבקשה שוב, גם אם נשאר
+  // עליו סימון "לשליחה" מנתונים ישנים. BookListTab כבר נועל אותו בממשק — זו
+  // רשת הביטחון בנקודה שבה הבקשה באמת נוצרת.
+  const selectedBooks = (bookList.books || []).filter(b => (
+    b.selected_for_quote && !(b.sent_count > 0) && !sentBookKeys?.has(bookKey(b))
+  ));
   const bookSuppliers = suppliers.filter(s => s.type === 'ספרים' || s.type === 'books');
 
   const toggleSupplier = (id) => setSelectedSupplierIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -57,7 +68,8 @@ export default function QuoteRequestTab({ bookList, quoteRequest, suppliers, onQ
       const books = selectedBooks.map(b => ({
         title: b.title || '', author: b.author || '', publisher: b.publisher || '', isbn: b.isbn || '',
         category: b.category || bookList.category || '', requested_quantity: b.requested_quantity || b.recommended_quantity || 1,
-        nylon_required: b.nylon_required || 'any', existing_in_agron: b.existing_in_agron || false, existing_copies: b.existing_copies || 0,
+        nylon_required: b.nylon_required || 'any', binding_required: isBindingChecked(b.binding_required),
+        existing_in_agron: b.existing_in_agron || false, existing_copies: b.existing_copies || 0,
         system_recommendation: b.system_recommendation || '', selected_for_quote: true, book_status: 'נבחר לבקשה',
         supplier_quotes: [], selected_for_order: false,
       }));
@@ -69,9 +81,23 @@ export default function QuoteRequestTab({ bookList, quoteRequest, suppliers, onQ
         books, linked_order_ids: [],
       };
       const created = await base44.entities.BookQuoteRequest.create(data);
-      await base44.entities.SupplierBookList.update(bookList.id, { linked_quote_request_id: created.id, status: 'transferred_to_quote' });
+
+      // מנקים את סימון "לשליחה" מהספרים שנשלחו ומסמנים אותם כנשלחו — מכאן הם
+      // נעולים לשליחה חוזרת, כך שהמחזור הבא יכיל רק ספרים חדשים.
+      const justSent = new Set(selectedBooks.map(bookKey));
+      const updatedBooks = (bookList.books || []).map(b => (
+        justSent.has(bookKey(b))
+          ? { ...b, selected_for_quote: false, sent_count: (b.sent_count || 0) + 1 }
+          : b
+      ));
+
+      await base44.entities.SupplierBookList.update(bookList.id, {
+        linked_quote_request_id: created.id,
+        status: 'transferred_to_quote',
+        books: updatedBooks,
+      });
       toast.success('בקשת הצעת מחיר נוצרה!');
-      onQuoteRequestCreated(created);
+      onQuoteRequestCreated(created, updatedBooks);
     } catch (e) { toast.error('שגיאה בשמירת הבקשה'); }
     setSaving(false);
   };
@@ -87,11 +113,31 @@ export default function QuoteRequestTab({ bookList, quoteRequest, suppliers, onQ
 
   return (
     <div className="space-y-4 p-2">
+      {/* כל המחזורים שכבר נשלחו, זה אחרי זה — בלי לבחור ביניהם. */}
+      {quoteRequests.map((req, i) => (
+        <div key={req.id} className="border border-border rounded-xl overflow-hidden">
+          <div className="px-3 py-2 bg-muted/40 border-b border-border text-sm font-bold">
+            מחזור {i + 1} · {(req.books || []).length} ספרים
+          </div>
+          <div className="p-1">
+            <OverviewTab req={req} suppliers={suppliers} />
+          </div>
+        </div>
+      ))}
+
+      {cycleCount > 0 && (
+        <div className="text-sm font-bold pt-1">מחזור חדש מאותה רשימה</div>
+      )}
+
       {selectedBooks.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <FileSpreadsheet className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p>לא נבחרו ספרים לשליחה</p>
-          <p className="text-sm mt-1">סמני ספרים בטאב "רשימת ספרים" (עמודת "לשליחה") וחזרי לכאן</p>
+          <p className="text-sm mt-1">
+            {cycleCount > 0
+              ? 'אפשר להוסיף ספרים בטאב "רשימת ספרים", לסמן אותם ב"לשליחה" ולפתוח מכאן מחזור נוסף.'
+              : 'סמני ספרים בטאב "רשימת ספרים" (עמודת "לשליחה") וחזרי לכאן'}
+          </p>
         </div>
       ) : (
         <>
@@ -101,7 +147,7 @@ export default function QuoteRequestTab({ bookList, quoteRequest, suppliers, onQ
               {selectedBooks.map((b, i) => (
                 <div key={i} className="text-xs flex justify-between">
                   <span className="font-medium">{b.title || 'ספר ללא שם'}</span>
-                  <span className="text-muted-foreground">כמות: {b.requested_quantity || b.recommended_quantity || 1} · {nylonLabel(b.nylon_required)}</span>
+                  <span className="text-muted-foreground">כמות: {b.requested_quantity || b.recommended_quantity || 1} · {nylonLabel(b.nylon_required)} · {bindingLabel(b.binding_required)}</span>
                 </div>
               ))}
             </div>

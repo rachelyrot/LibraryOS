@@ -7,7 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { FileSpreadsheet, Loader2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
-import { generateSupplierExcel, downloadBlob, nylonLabel } from '@/lib/bookQuoteExcel';
+import { generateSupplierExcel, downloadBlob, nylonLabel, bindingLabel, isBindingChecked } from '@/lib/bookQuoteExcel';
 
 export default function CreateQuoteRequestDialog({ open, onOpenChange, bookList, suppliers, onCreated }) {
   const [user, setUser] = useState(null);
@@ -74,6 +74,7 @@ export default function CreateQuoteRequestDialog({ open, onOpenChange, bookList,
         category: b.category || bookList.category || '',
         requested_quantity: quantities[i] ?? b.requested_quantity ?? 1,
         nylon_required: b.nylon_required || 'any',
+        binding_required: isBindingChecked(b.binding_required),
         existing_in_agron: b.existing_in_agron || false,
         existing_copies: b.existing_copies || 0,
         system_recommendation: b.system_recommendation || '',
@@ -121,7 +122,7 @@ export default function CreateQuoteRequestDialog({ open, onOpenChange, bookList,
               {selectedBooks.map((b, i) => (
                 <div key={i} className="text-xs flex items-center justify-between gap-2">
                   <span className="font-medium flex-1 truncate">{b.title || 'ספר ללא שם'}</span>
-                  <span className="text-muted-foreground shrink-0">{nylonLabel(b.nylon_required)}</span>
+                  <span className="text-muted-foreground shrink-0">{nylonLabel(b.nylon_required)} · {bindingLabel(b.binding_required)}</span>
                   <div className="flex items-center gap-1 shrink-0">
                     <span className="text-muted-foreground">כמות:</span>
                     <Input

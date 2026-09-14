@@ -4,12 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2, AlertTriangle, Check, FileSpreadsheet, Edit3, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import useCategories from '@/hooks/useCategories';
 import { cn } from '@/lib/utils';
 import { EMPTY_BOOK, FIELD_LABELS, validateBooks, importBookFiles } from '@/lib/bookListImport';
+import { isNylonChecked, nylonFromChecked, isBindingChecked } from '@/lib/bookQuoteExcel';
 
 const EMPTY = { title: '', supplier_id: '', supplier_name: '', received_date: '', category: 'ספרים', notes: '' };
 
@@ -86,6 +88,7 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
     const valid = books.filter(b => b.title).map(b => ({
       ...b,
       nylon_required: b.nylon_required === 'unknown' ? 'any' : (b.nylon_required || 'any'),
+      binding_required: isBindingChecked(b.binding_required),
     }));
     if (valid.length === 0) { toast.error('אין ספרים תקינים לשמירה'); return; }
     setSaving(true);
@@ -164,7 +167,7 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
               </div>
               <div className="text-center">
                 <p className="font-semibold text-foreground">{parsing ? 'קורא קבצים...' : 'לחצי לבחירת קבצים'}</p>
-                <p className="text-xs text-muted-foreground mt-1">xlsx, xls, csv · אפשר לסמן כמה קבצים יחד · עמודות: שם ספר, מחבר, הוצאה, ISBN, ניילון, הערות</p>
+                <p className="text-xs text-muted-foreground mt-1">xlsx, xls, csv · אפשר לסמן כמה קבצים יחד · עמודות: שם ספר, מחבר, הוצאה, ISBN, ניילון, כריכה, הערות</p>
               </div>
               <input type="file" multiple className="hidden" onChange={handleFileSelect} disabled={parsing} accept=".csv,.xlsx,.xls" />
             </label>
@@ -211,7 +214,7 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
                 </button>
                 {showDebug && (
                   <div className="px-3 pb-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                    {['title','author','publisher','isbn','category','supplier_price','discount_percent','discounted_price','recommended_quantity','requested_quantity','nylon_required','notes'].map(field => (
+                    {['title','author','publisher','isbn','category','supplier_price','discount_percent','discounted_price','recommended_quantity','requested_quantity','nylon_required','binding_required','notes'].map(field => (
                       <div key={field} className="flex items-center gap-1.5 py-0.5">
                         <span className="text-muted-foreground w-24 shrink-0">{FIELD_LABELS[field]}:</span>
                         {detectedColumns[field] ? (
@@ -253,7 +256,8 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
                     <th className="text-right p-1.5 font-medium text-muted-foreground">מחבר</th>
                     <th className="text-right p-1.5 font-medium text-muted-foreground">הוצאה</th>
                     <th className="text-right p-1.5 font-medium text-muted-foreground">ISBN</th>
-                    <th className="text-center p-1.5 font-medium text-muted-foreground w-32">ניילון</th>
+                    <th className="text-center p-1.5 font-medium text-muted-foreground w-14">ניילון</th>
+                    <th className="text-center p-1.5 font-medium text-muted-foreground w-14">כריכה</th>
                     <th className="text-right p-1.5 font-medium text-muted-foreground">הערות</th>
                     {hasImported && <th className="text-center p-1.5 font-medium text-muted-foreground">סטטוס</th>}
                   </tr>
@@ -281,14 +285,18 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
                           <Input className="h-7 text-xs font-mono" value={b.isbn} onChange={e => updateManualBook(i, 'isbn', e.target.value)} onBlur={recalcErrors} />
                         </td>
                         <td className="p-1.5 text-center">
-                          <Select value={b.nylon_required === 'unknown' ? 'any' : (b.nylon_required || 'any')} onValueChange={v => updateManualBook(i, 'nylon_required', v)}>
-                            <SelectTrigger className="h-7 text-xs w-28"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="with_nylon">עם ניילון</SelectItem>
-                              <SelectItem value="without_nylon">בלי ניילון</SelectItem>
-                              <SelectItem value="any">לא משנה / לפי הזול</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <Checkbox
+                            checked={isNylonChecked(b.nylon_required)}
+                            onCheckedChange={c => updateManualBook(i, 'nylon_required', nylonFromChecked(c === true))}
+                            aria-label="ניילון"
+                          />
+                        </td>
+                        <td className="p-1.5 text-center">
+                          <Checkbox
+                            checked={isBindingChecked(b.binding_required)}
+                            onCheckedChange={c => updateManualBook(i, 'binding_required', c === true)}
+                            aria-label="כריכה"
+                          />
                         </td>
                         <td className="p-1.5">
                           <Input className="h-7 text-xs" value={b.notes} onChange={e => updateManualBook(i, 'notes', e.target.value)} />
@@ -308,7 +316,7 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
                     );
                   })}
                   {books.length === 0 && (
-                    <tr><td colSpan={hasImported ? 8 : 7} className="text-center py-8 text-muted-foreground text-sm">לחצי "הוסף ספר" או "צרף קובץ" כדי להתחיל</td></tr>
+                    <tr><td colSpan={hasImported ? 9 : 8} className="text-center py-8 text-muted-foreground text-sm">לחצי "הוסף ספר" או "צרף קובץ" כדי להתחיל</td></tr>
                   )}
                 </tbody>
               </table>

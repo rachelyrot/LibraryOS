@@ -29,6 +29,48 @@ export function normalizeNylon(val) {
   return 'with_nylon';
 }
 
+// ── ניילון as a checkbox ──────────────────────────────────────
+//
+// The stored field stays the four-value string it has always been, because the
+// supplier price comparison genuinely needs three states: price_with_nylon,
+// price_without_nylon, and 'any' meaning "whichever is cheaper" (see
+// getEffectivePrice). The *editor* is a checkbox, so these two helpers are the
+// bridge between the two shapes.
+//
+// A legacy 'any'/'unknown' row shows unchecked, and stays 'any' in storage until
+// someone actually toggles the box — flipping it on load would silently rewrite
+// "לפי הזול" rows into "בלי ניילון" and change which supplier wins.
+
+/** Should the ניילון checkbox be checked for this stored value? */
+export function isNylonChecked(val) {
+  return normalizeNylon(val) === 'with_nylon';
+}
+
+/** Stored value for a ניילון checkbox state. */
+export function nylonFromChecked(checked) {
+  return checked ? 'with_nylon' : 'without_nylon';
+}
+
+// ── כריכה ─────────────────────────────────────────────────────
+//
+// Plain boolean, unlike ניילון: it's a yes/no requirement passed on to the
+// supplier, not something the quote is priced two ways for. Lives inside the
+// `books` jsonb array, so it needed no migration.
+
+export function isBindingChecked(val) {
+  if (typeof val === 'boolean') return val;
+  if (val == null || val === '') return false;
+  if (typeof val === 'number') return val !== 0;
+  const s = String(val).trim().toLowerCase();
+  if (!s || s === '0' || s === 'לא' || s === 'no' || s === 'false') return false;
+  if (s.includes('בלי') || s.includes('ללא') || s.includes('without')) return false;
+  return true;
+}
+
+export function bindingLabel(val) {
+  return isBindingChecked(val) ? 'עם כריכה' : 'בלי כריכה';
+}
+
 /**
  * Get the effective price for a book from a supplier quote, based on nylon preference.
  * - with_nylon → price_with_nylon
@@ -56,6 +98,7 @@ export function generateSupplierExcel(books) {
     'הוצאה לאור': b.publisher || '',
     'ISBN': b.isbn || '',
     'ניילון נדרש': nylonLabel(b.nylon_required),
+    'כריכה נדרשת': bindingLabel(b.binding_required),
     'הערות': b.notes || '',
     'מחיר עם ניילון': '',
     'מחיר בלי ניילון': '',
@@ -162,6 +205,24 @@ export function parseSupplierQuote(rows) {
     console.log('[parseSupplierQuote] Parsed row:', { title: result.title, price_with_nylon: result.price_with_nylon, price_without_nylon: result.price_without_nylon });
     return result;
   }).filter(r => r.title || r.isbn);
+}
+
+/**
+ * Stable identity for a book inside a list's `books` jsonb array.
+ *
+ * The entries have no id of their own, so a book is identified by ISBN when it
+ * has one and by title otherwise. Used to tell whether a book on the list has
+ * already gone out in a quote-request cycle — see BookListTab's send lock.
+ *
+ * Deliberately stricter than matchQuoteToBook's fuzzy matching: that one tries
+ * to pair a supplier's spreadsheet row with our book despite typos, while this
+ * one compares our own data with itself, where an exact match is expected and a
+ * false positive would silently block a legitimate order.
+ */
+export function bookKey(book) {
+  const isbn = String(book?.isbn || '').replace(/[^0-9Xx]/g, '').toUpperCase();
+  if (isbn) return `isbn:${isbn}`;
+  return `title:${String(book?.title || '').trim().toLowerCase()}`;
 }
 
 /**
@@ -286,7 +347,10 @@ export function buildQuoteEmailBody(books, excelUrl) {
     if (b.publisher) line += `, ${b.publisher}`;
     if (b.isbn) line += ` (ISBN: ${b.isbn})`;
     const nylon = normalizeNylon(b.nylon_required);
-    if (nylon !== 'any') line += ` [${nylonLabel(nylon)}]`;
+    const flags = [];
+    if (nylon !== 'any') flags.push(nylonLabel(nylon));
+    if (isBindingChecked(b.binding_required)) flags.push('עם כריכה');
+    if (flags.length) line += ` [${flags.join(', ')}]`;
     return line;
   }).join('\n');
 

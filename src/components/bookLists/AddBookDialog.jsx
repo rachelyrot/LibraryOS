@@ -4,8 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { EMPTY_BOOK } from '@/lib/bookListImport';
+import { isNylonChecked, nylonFromChecked, isBindingChecked } from '@/lib/bookQuoteExcel';
 
 /**
  * הוספת ספר בודד לרשימה *קיימת* (שכבר נשמרה).
@@ -57,24 +58,27 @@ export default function AddBookDialog({ open, onOpenChange, onAdd }) {
               <Input value={form.category} onChange={e => set('category', e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>ניילון</Label>
-              <Select value={form.nylon_required || 'any'} onValueChange={v => set('nylon_required', v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="with_nylon">עם ניילון</SelectItem>
-                  <SelectItem value="without_nylon">בלי ניילון</SelectItem>
-                  <SelectItem value="any">לא משנה / לפי הזול</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>כמות מבוקשת</Label>
-              <Input type="number" min="0" dir="ltr" className="text-right"
-                value={form.requested_quantity}
-                onChange={e => set('requested_quantity', parseInt(e.target.value, 10) || 0)} />
-            </div>
+          <div className="space-y-1.5">
+            <Label>כמות מבוקשת</Label>
+            <Input type="number" min="0" dir="ltr" className="text-right"
+              value={form.requested_quantity}
+              onChange={e => set('requested_quantity', parseInt(e.target.value, 10) || 0)} />
+          </div>
+          <div className="flex items-center gap-6 rounded-xl border border-border bg-muted/30 px-3 py-2.5">
+            <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <Checkbox
+                checked={isNylonChecked(form.nylon_required)}
+                onCheckedChange={c => set('nylon_required', nylonFromChecked(c === true))}
+              />
+              <span>ניילון</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <Checkbox
+                checked={isBindingChecked(form.binding_required)}
+                onCheckedChange={c => set('binding_required', c === true)}
+              />
+              <span>כריכה</span>
+            </label>
           </div>
           <div className="space-y-1.5">
             <Label>הערות</Label>

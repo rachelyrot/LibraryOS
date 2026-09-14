@@ -1,5 +1,5 @@
 import { cleanColumnName, resolveColumnKeys, readExcelRows } from '@/lib/excelImport';
-import { normalizeNylon } from '@/lib/bookQuoteExcel';
+import { normalizeNylon, isBindingChecked } from '@/lib/bookQuoteExcel';
 
 /**
  * ייבוא רשימות ספרים מקבצי Excel/CSV.
@@ -46,6 +46,9 @@ export const COLUMN_MAP = {
   nylon_required: [
     'ניילון', 'עם ניילון', 'ניילון נדרש', 'nylon', 'ניילון/למינציה', 'למינציה',
   ],
+  binding_required: [
+    'כריכה', 'עם כריכה', 'כריכה נדרשת', 'כריכה קשה', 'binding', 'hardcover',
+  ],
   notes: [
     'הערות', 'notes', 'comments', 'הערה',
   ],
@@ -65,12 +68,13 @@ export const FIELD_LABELS = {
   title: 'שם ספר', author: 'מחבר', publisher: 'הוצאה', isbn: 'ISBN',
   category: 'קטגוריה', supplier_price: 'מחיר ספק', discount_percent: 'אחוז הנחה',
   discounted_price: 'מחיר לאחר הנחה', recommended_quantity: 'כמות',
-  requested_quantity: 'כמות מבוקשת', nylon_required: 'ניילון', notes: 'הערות',
+  requested_quantity: 'כמות מבוקשת', nylon_required: 'ניילון', binding_required: 'כריכה', notes: 'הערות',
 };
 
 export const EMPTY_BOOK = {
   title: '', author: '', publisher: '', isbn: '', category: '',
-  supplier_price: 0, discounted_price: 0, recommended_quantity: 0, requested_quantity: 0, nylon_required: 'any', notes: '',
+  supplier_price: 0, discounted_price: 0, recommended_quantity: 0, requested_quantity: 0,
+  nylon_required: 'any', binding_required: false, notes: '',
   existing_in_agron: false, existing_copies: 0, system_recommendation: 'לבדיקה', recommendation_reason: '',
   marked_for_order: false, status: 'חדש',
 };
@@ -87,6 +91,7 @@ export function parseRow(row, columnKeys) {
   const requested_quantity_raw = g('requested_quantity');
   const requested_quantity = requested_quantity_raw != null ? parseInt(requested_quantity_raw, 10) : NaN;
   const nylon_required = normalizeNylon(g('nylon_required'));
+  const binding_required = isBindingChecked(g('binding_required'));
   const notes = g('notes');
 
   if (isNaN(discounted_price) && !isNaN(supplier_price) && !isNaN(discount_percent))
@@ -103,6 +108,7 @@ export function parseRow(row, columnKeys) {
     recommended_quantity: isNaN(recommended_quantity) ? 0 : recommended_quantity,
     requested_quantity: isNaN(requested_quantity) ? (isNaN(recommended_quantity) ? 0 : recommended_quantity) : requested_quantity,
     nylon_required,
+    binding_required,
     notes: (notes || '').toString().trim(),
     existing_in_agron: false,
     existing_copies: 0,

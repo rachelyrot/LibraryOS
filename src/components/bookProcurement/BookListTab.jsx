@@ -2,15 +2,16 @@ import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Check, Search, Database, Plus, FileSpreadsheet } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Check, Search, Database, Plus, FileSpreadsheet, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { nylonLabel } from '@/lib/bookQuoteExcel';
+import { isNylonChecked, nylonFromChecked, isBindingChecked, bookKey } from '@/lib/bookQuoteExcel';
 import { importBookFiles } from '@/lib/bookListImport';
 import AddBookDialog from '@/components/bookLists/AddBookDialog';
 import { canMarkBooksForOrder, canCreateBookQuoteRequest, canEditBookList } from '@/lib/permissions';
 
-export default function BookListTab({ bookList, isTransferredToQuote, onBooksChange, onStatusChange, inventoryItems }) {
+export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onStatusChange, inventoryItems }) {
   const [books, setBooks] = useState([]);
   const [searchBook, setSearchBook] = useState('');
   const [user, setUser] = useState(null);
@@ -43,9 +44,17 @@ export default function BookListTab({ bookList, isTransferredToQuote, onBooksCha
     else if (!hasMarked && bookList.status === 'books_selected') onStatusChange('in_review');
   };
 
+  /**
+   * ספר שכבר יצא במחזור קודם — נעול לשליחה חוזרת, כדי שלא יוזמן פעמיים.
+   * הזיהוי נגזר מהבקשות שנוצרו בפועל (sentBookKeys) ולא רק מהמונה השמור, כך
+   * שגם ספרים שנשלחו לפני שהמונה נוסף מזוהים.
+   */
+  const isSent = (book) => (book?.sent_count > 0) || !!sentBookKeys?.has(bookKey(book));
+
   const toggleSelectedForQuote = (idx) => {
     if (!canCreateQuoteReq) { toast.error('אין לך הרשאה לבחור ספרים לשליחה לספקים'); return; }
     const book = books[idx];
+    if (isSent(book)) { toast.error('הספר כבר נשלח בבקשת הצעת מחיר ולא ניתן לשלוח אותו שוב'); return; }
     if (!book.marked_for_order) { toast.error('יש לסמן את הספר כ"מעניין אותי" תחילה'); return; }
     const updated = books.map((b, i) => i === idx ? { ...b, selected_for_quote: !b.selected_for_quote } : b);
     saveBooks(updated);
@@ -138,7 +147,7 @@ export default function BookListTab({ bookList, isTransferredToQuote, onBooksCha
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="חיפוש ספרים..." className="pr-9" value={searchBook} onChange={e => setSearchBook(e.target.value)} />
         </div>
-        {canEdit && !isTransferredToQuote && (
+        {canEdit && (
           <>
             <label className={cn(
               'inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-input bg-background text-sm font-medium cursor-pointer hover:bg-accent transition-colors whitespace-nowrap shrink-0',
@@ -171,7 +180,8 @@ export default function BookListTab({ bookList, isTransferredToQuote, onBooksCha
               <th className="text-right p-2 font-medium text-muted-foreground hidden md:table-cell">מחבר</th>
               <th className="text-right p-2 font-medium text-muted-foreground hidden lg:table-cell">הוצאה</th>
               <th className="text-right p-2 font-medium text-muted-foreground hidden xl:table-cell">ISBN</th>
-              <th className="text-center p-2 font-medium text-muted-foreground hidden md:table-cell">ניילון</th>
+              <th className="text-center p-2 font-medium text-muted-foreground hidden md:table-cell w-14">ניילון</th>
+              <th className="text-center p-2 font-medium text-muted-foreground hidden md:table-cell w-14">כריכה</th>
               <th className="text-center p-2 font-medium text-muted-foreground w-16">כמות</th>
               <th className="text-center p-2 font-medium text-muted-foreground w-16">אגרון</th>
               <th className="text-center p-2 font-medium text-muted-foreground hidden md:table-cell min-w-[150px]">המלצה</th>
@@ -179,27 +189,66 @@ export default function BookListTab({ bookList, isTransferredToQuote, onBooksCha
           </thead>
           <tbody>
             {filteredBooks.length === 0 ? (
-              <tr><td colSpan={10} className="text-center py-12 text-muted-foreground">אין ספרים ברשימה</td></tr>
+              <tr><td colSpan={11} className="text-center py-12 text-muted-foreground">אין ספרים ברשימה</td></tr>
             ) : (
               filteredBooks.map((book) => {
                 const idx = books.indexOf(book);
+                const sent = isSent(book);
                 return (
-                  <tr key={idx} className={cn('border-b border-border/50 hover:bg-muted/30 transition-colors', book.selected_for_quote && 'bg-indigo-50/50', book.marked_for_order && !book.selected_for_quote && 'bg-green-50/30')}>
+                  <tr key={idx} className={cn('border-b border-border/50 hover:bg-muted/30 transition-colors', sent && 'bg-muted/20', !sent && book.selected_for_quote && 'bg-indigo-50/50', !sent && book.marked_for_order && !book.selected_for_quote && 'bg-green-50/30')}>
+                    {/* אין יותר מצב "קפוא" אחרי העברה לבקשה — הרשימה היא מאגר
+                        שאפשר לחזור אליו ולשלוח ממנו מחזור נוסף. */}
                     <td className="p-2 text-center">
-                      {isTransferredToQuote ? (book.marked_for_order ? <Check className="w-5 h-5 text-green-400 mx-auto" /> : <span className="text-xs text-muted-foreground">-</span>) : canMark ? (
+                      {canMark ? (
                         <button onClick={() => toggleInterested(idx)} className={cn('w-5 h-5 rounded border-2 flex items-center justify-center transition-all mx-auto', book.marked_for_order ? 'bg-green-500 border-green-500' : 'border-border hover:border-green-400')}>{book.marked_for_order && <Check className="w-3 h-3 text-white" />}</button>
                       ) : <span className="text-xs text-muted-foreground">-</span>}
                     </td>
                     <td className="p-2 text-center hidden md:table-cell">
-                      {isTransferredToQuote ? (book.selected_for_quote ? <Check className="w-5 h-5 text-indigo-400 mx-auto" /> : <span className="text-xs text-muted-foreground">-</span>) : canCreateQuoteReq ? (
+                      {!canCreateQuoteReq ? (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      ) : sent ? (
+                        // נעול: הספר כבר יצא במחזור קודם ואי אפשר לשלוח אותו שוב.
+                        <span title="כבר נשלח — לא ניתן לשלוח שוב" className="inline-flex mx-auto text-muted-foreground/60">
+                          <Lock className="w-3.5 h-3.5" />
+                        </span>
+                      ) : (
                         <button onClick={() => toggleSelectedForQuote(idx)} disabled={!book.marked_for_order} className={cn('w-5 h-5 rounded border-2 flex items-center justify-center transition-all mx-auto', book.selected_for_quote ? 'bg-indigo-500 border-indigo-500' : 'border-border hover:border-indigo-400', !book.marked_for_order && 'opacity-30 cursor-not-allowed')}>{book.selected_for_quote && <Check className="w-3 h-3 text-white" />}</button>
-                      ) : <span className="text-xs text-muted-foreground">-</span>}
+                      )}
                     </td>
-                    <td className="p-2"><span className={cn('font-medium', book.selected_for_quote && 'text-indigo-700', book.marked_for_order && !book.selected_for_quote && 'text-green-700')}>{book.title || '-'}</span></td>
+                    <td className="p-2">
+                      <span className={cn('font-medium', sent && 'text-muted-foreground', book.selected_for_quote && 'text-indigo-700', !sent && book.marked_for_order && !book.selected_for_quote && 'text-green-700')}>{book.title || '-'}</span>
+                      {sent && (
+                        <span className="mr-1.5 text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full align-middle" title="הספר כבר נשלח בבקשת הצעת מחיר">
+                          נשלח{book.sent_count > 1 ? ` ×${book.sent_count}` : ''}
+                        </span>
+                      )}
+                    </td>
                     <td className="p-2 hidden md:table-cell text-muted-foreground">{book.author || '-'}</td>
                     <td className="p-2 hidden lg:table-cell text-muted-foreground">{book.publisher || '-'}</td>
                     <td className="p-2 hidden xl:table-cell text-muted-foreground text-xs font-mono">{book.isbn || '-'}</td>
-                    <td className="p-2 hidden md:table-cell text-center"><span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">{nylonLabel(book.nylon_required)}</span></td>
+                    {/* ניילון וכריכה נשארים ניתנים לעריכה לאורך כל התהליך, גם
+                        אחרי שהרשימה הועברה לבקשת הצעת מחיר — אלה דרישות שמתקנים
+                        תוך כדי, ולא החלטות שננעלות עם השליחה. */}
+                    <td className="p-2 hidden md:table-cell text-center">
+                      <Checkbox
+                        checked={isNylonChecked(book.nylon_required)}
+                        disabled={!canEdit}
+                        aria-label={`ניילון — ${book.title || ''}`}
+                        onCheckedChange={c => saveBooks(books.map((b, i) => (
+                          i === idx ? { ...b, nylon_required: nylonFromChecked(c === true) } : b
+                        )))}
+                      />
+                    </td>
+                    <td className="p-2 hidden md:table-cell text-center">
+                      <Checkbox
+                        checked={isBindingChecked(book.binding_required)}
+                        disabled={!canEdit}
+                        aria-label={`כריכה — ${book.title || ''}`}
+                        onCheckedChange={c => saveBooks(books.map((b, i) => (
+                          i === idx ? { ...b, binding_required: c === true } : b
+                        )))}
+                      />
+                    </td>
                     <td className="p-2 text-center">
                       <Input
                         type="number" min="0"

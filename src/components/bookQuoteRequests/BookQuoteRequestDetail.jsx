@@ -11,7 +11,7 @@ import { Upload, Send, ShoppingCart, ExternalLink, Mail, FileSpreadsheet, Loader
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
 import StatusBadge from '@/components/StatusBadge';
-import { parseSupplierQuote, matchQuoteToBook, computeCheapestSuppliers, getEffectivePrice, nylonLabel, normalizeNylon } from '@/lib/bookQuoteExcel';
+import { parseSupplierQuote, matchQuoteToBook, computeCheapestSuppliers, getEffectivePrice, nylonLabel, normalizeNylon, bindingLabel, isBindingChecked } from '@/lib/bookQuoteExcel';
 import * as XLSX from 'xlsx';
 import { canReceiveQuotePrices, canComparePrices, canSelectSuppliers, canCreateOrdersFromQuoteRequest, isAdmin } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
@@ -363,6 +363,7 @@ export function ComparisonTab({ req, canSelect, updateBooks, updateReq }) {
               <th className="text-right p-2 font-medium text-muted-foreground hidden md:table-cell">מחבר</th>
               <th className="text-center p-2 font-medium text-muted-foreground">כמות</th>
               <th className="text-center p-2 font-medium text-muted-foreground hidden md:table-cell">ניילון</th>
+              <th className="text-center p-2 font-medium text-muted-foreground hidden md:table-cell">כריכה</th>
               <th className="text-center p-2 font-medium text-muted-foreground hidden lg:table-cell">אגרון</th>
               {supplierIds.map(sid => {
                 const sup = getSupplierName(req, sid);
@@ -377,6 +378,7 @@ export function ComparisonTab({ req, canSelect, updateBooks, updateReq }) {
               <th className="p-1 sticky right-0 bg-muted/30"></th>
               <th className="p-1 hidden md:table-cell"></th>
               <th className="p-1"></th>
+              <th className="p-1 hidden md:table-cell"></th>
               <th className="p-1 hidden md:table-cell"></th>
               <th className="p-1 hidden lg:table-cell"></th>
               {supplierIds.map(sid => (
@@ -401,6 +403,11 @@ export function ComparisonTab({ req, canSelect, updateBooks, updateReq }) {
                   <td className="p-2 text-center">{b.requested_quantity || 1}</td>
                   <td className="p-2 text-center hidden md:table-cell">
                     <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">{nylonLabel(b.nylon_required)}</span>
+                  </td>
+                  <td className="p-2 text-center hidden md:table-cell">
+                    {isBindingChecked(b.binding_required)
+                      ? <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">כריכה</span>
+                      : <span className="text-xs text-muted-foreground">-</span>}
                   </td>
                   <td className="p-2 text-center hidden lg:table-cell">
                     {b.existing_in_agron ? <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">{b.existing_copies || 0}</span> : <span className="text-xs text-muted-foreground">-</span>}
@@ -514,7 +521,7 @@ export function OrdersTab({ req, canCreateOrders, admin, updateReq, onRefresh })
             unit_price: unitPrice,
             total: unitPrice * qty,
             isbn: b.isbn || '',
-            notes: nylonLabel(b.nylon_required),
+            notes: `${nylonLabel(b.nylon_required)} · ${bindingLabel(b.binding_required)}`,
           };
         });
         const total = items.reduce((s, i) => s + i.total, 0);
