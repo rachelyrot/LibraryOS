@@ -29,7 +29,17 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    setUser({ id: authUser.id, email: authUser.email, full_name: profile.full_name, role: profile.role });
+    setUser({
+      id: authUser.id,
+      email: authUser.email,
+      full_name: profile.full_name,
+      role: profile.role,
+      // Kept in sync with base44Client.me() — the staff screens scope a
+      // local_manager to her own branch (migration 0010). `undefined` (column
+      // absent) is deliberately distinct from `null` (unassigned).
+      branch_id: 'branch_id' in profile ? (profile.branch_id ?? null) : undefined,
+      branch_name: profile.branch_name || '',
+    });
     setIsAuthenticated(true);
     setAuthError(null);
   }, []);

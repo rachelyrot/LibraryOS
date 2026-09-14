@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -11,7 +11,7 @@ import ScheduleTab from '@/components/staff/ScheduleTab';
 import ReportsTab from '@/components/staff/ReportsTab';
 import TodayView from '@/components/staff/TodayView';
 import AttendanceTab from '@/components/staff/AttendanceTab';
-import { canViewStaffReports } from '@/lib/permissions';
+import { canViewStaffReports, visibleBranchIds, canViewEmployee } from '@/lib/permissions';
 
 const VALID_TABS = ['today', 'branches', 'employees', 'volunteers', 'positions', 'schedule', 'attendance', 'reports'];
 
@@ -36,12 +36,44 @@ export default function Staff() {
 
   const canViewReports = canViewStaffReports(user);
 
+  // Branch scoping (migration 0010): מנהלת במקום sees her own branch only.
+  // Applied once here rather than in each tab — every tab takes `branches` and
+  // `employees` as props and builds its filters, dropdowns and per-branch cards
+  // from them, so narrowing the two lists narrows all eight tabs consistently.
+  // `null` from visibleBranchIds means "all branches" (admin, מזכירה).
+  const allowedBranchIds = visibleBranchIds(user);
+  const scoped = allowedBranchIds === null;
+
+  const visibleBranches = useMemo(
+    () => (scoped ? branches : branches.filter(b => allowedBranchIds.includes(b.id))),
+    [branches, scoped, allowedBranchIds],
+  );
+  const visibleEmployees = useMemo(
+    () => (scoped ? employees : employees.filter(e => canViewEmployee(user, e))),
+    [employees, scoped, user],
+  );
+
+  // A local_manager with no branch assigned yet sees nothing — visibleBranchIds
+  // fails closed on purpose. Say so, rather than showing an empty screen that
+  // looks like missing data.
+  const missingBranch = !scoped && allowedBranchIds.length === 0;
+
   return (
     <div className="p-6 max-w-7xl mx-auto animate-fade-in">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-foreground">כוח אדם</h1>
-        <p className="text-muted-foreground mt-1">ניהול סניפים, עובדות, מתנדבות, תקנים, מערכת שעות, נוכחות ודוחות</p>
+        <p className="text-muted-foreground mt-1">
+          {scoped
+            ? 'ניהול סניפים, עובדות, מתנדבות, תקנים, מערכת שעות, נוכחות ודוחות'
+            : `הנתונים מוצגים עבור הסניף שלך${user?.branch_name ? ` — ${user.branch_name}` : ''}`}
+        </p>
       </div>
+
+      {missingBranch && (
+        <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
+          לא שויך לך סניף עדיין, ולכן אין נתוני כוח אדם להצגה. פני למנהלת המערכת כדי לשייך אותך לסניף.
+        </div>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid grid-cols-4 lg:grid-cols-8 gap-1 h-auto">
@@ -55,14 +87,14 @@ export default function Staff() {
           {canViewReports && <TabsTrigger value="reports" className="flex items-center gap-1.5 py-2.5"><FileText className="w-4 h-4" /><span className="hidden lg:inline">דוחות</span></TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="today"><TodayView branches={branches} employees={employees} /></TabsContent>
-        <TabsContent value="branches"><BranchesTab user={user} branches={branches} employees={employees} onBranchesChange={loadBranches} /></TabsContent>
-        <TabsContent value="employees"><EmployeesTab user={user} branches={branches} employees={employees} onEmployeesChange={loadEmployees} /></TabsContent>
-        <TabsContent value="volunteers"><VolunteersTab user={user} branches={branches} /></TabsContent>
-        <TabsContent value="positions"><PositionsTab user={user} branches={branches} employees={employees} /></TabsContent>
-        <TabsContent value="schedule"><ScheduleTab user={user} branches={branches} employees={employees} /></TabsContent>
-        <TabsContent value="attendance"><AttendanceTab user={user} branches={branches} employees={employees} /></TabsContent>
-        {canViewReports && <TabsContent value="reports"><ReportsTab user={user} branches={branches} employees={employees} /></TabsContent>}
+        <TabsContent value="today"><TodayView branches={visibleBranches} employees={visibleEmployees} /></TabsContent>
+        <TabsContent value="branches"><BranchesTab user={user} branches={visibleBranches} employees={visibleEmployees} onBranchesChange={loadBranches} /></TabsContent>
+        <TabsContent value="employees"><EmployeesTab user={user} branches={visibleBranches} employees={visibleEmployees} onEmployeesChange={loadEmployees} /></TabsContent>
+        <TabsContent value="volunteers"><VolunteersTab user={user} branches={visibleBranches} /></TabsContent>
+        <TabsContent value="positions"><PositionsTab user={user} branches={visibleBranches} employees={visibleEmployees} /></TabsContent>
+        <TabsContent value="schedule"><ScheduleTab user={user} branches={visibleBranches} employees={visibleEmployees} /></TabsContent>
+        <TabsContent value="attendance"><AttendanceTab user={user} branches={visibleBranches} employees={visibleEmployees} /></TabsContent>
+        {canViewReports && <TabsContent value="reports"><ReportsTab user={user} branches={visibleBranches} employees={visibleEmployees} /></TabsContent>}
       </Tabs>
     </div>
   );

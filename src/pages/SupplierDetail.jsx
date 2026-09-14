@@ -11,8 +11,9 @@ import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import StatusBadge from '@/components/StatusBadge';
+import SharingFields from '@/components/suppliers/SharingFields';
 import useCategories from '@/hooks/useCategories';
-import { canDeleteMasterData } from '@/lib/permissions';
+import { canDeleteMasterData, canManageSupplierSharing, SHAREABLE_ROLES } from '@/lib/permissions';
 import { toast } from 'sonner';
 
 export default function SupplierDetail() {
@@ -27,6 +28,7 @@ export default function SupplierDetail() {
   const [credits, setCredits] = useState([]);
   const [user, setUser] = useState(null);
   const canManageSupplier = canDeleteMasterData(user);
+  const canShare = canManageSupplierSharing(user);
   const { mains: supplierTypes, getLabel: getTypeLabel } = useCategories();
 
   useEffect(() => { loadSupplier(); loadRelated(); base44.auth.me().then(setUser).catch(() => {}); }, [id]);
@@ -50,7 +52,21 @@ export default function SupplierDetail() {
     setCredits(creditsData);
   };
 
-  const openEdit = () => { setForm({ ...supplier }); setEditOpen(true); };
+  const openEdit = () => {
+    // Rows saved before migration 0010 carry no sharing list — default them to
+    // "shared with everyone", matching the column default, so opening the dialog
+    // never silently narrows an existing supplier on the next save.
+    setForm({
+      ...supplier,
+      shared_with_roles: Array.isArray(supplier?.shared_with_roles) ? supplier.shared_with_roles : [...SHAREABLE_ROLES],
+    });
+    setEditOpen(true);
+  };
+
+  const toggleShare = (role, checked) => setForm(f => {
+    const current = Array.isArray(f.shared_with_roles) ? f.shared_with_roles : [];
+    return { ...f, shared_with_roles: checked ? [...new Set([...current, role])] : current.filter(r => r !== role) };
+  });
 
   const save = async () => {
     setSaving(true);
@@ -270,6 +286,7 @@ export default function SupplierDetail() {
                 <Switch checked={form.is_fixed || false} onCheckedChange={v => setForm(f => ({ ...f, is_fixed: v }))} />
                 <Label>ספק קבוע</Label>
               </div>
+              {canShare && <SharingFields value={form.shared_with_roles} onToggle={toggleShare} />}
               <div className="space-y-1.5"><Label>הערות</Label><Textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></div>
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setEditOpen(false)}>ביטול</Button>

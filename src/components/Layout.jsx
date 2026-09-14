@@ -5,10 +5,11 @@ import {
   LayoutDashboard, ShoppingCart, FileText, Package, BookOpen, CreditCard, Menu, X, LogOut, BookMarked, ChevronLeft, Building2, Settings as SettingsIcon, Users, FolderKanban, UserCog
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { canManageUsers } from '@/lib/permissions';
+import { canAccessPage, ROLE_DISPLAY_NAMES } from '@/lib/permissions';
 
-// `adminOnly` items are filtered out below for anyone who can't use them — the
-// page itself re-checks, and the Edge Function behind it is the real gate.
+// Visibility comes from PAGE_ACCESS in permissions.js, the same table App.jsx
+// guards the routes with — so a hidden item is genuinely unreachable rather
+// than just missing from the menu.
 const navItems = [
   { to: '/', label: 'דשבורד', icon: LayoutDashboard, color: 'text-purple-400' },
   { to: '/orders', label: 'הזמנות רכש', icon: ShoppingCart, color: 'text-blue-400' },
@@ -19,7 +20,7 @@ const navItems = [
   { to: '/suppliers', label: 'ספקים', icon: Building2, color: 'text-emerald-400' },
   { to: '/staff', label: 'כוח אדם', icon: Users, color: 'text-indigo-400' },
   { to: '/projects', label: 'ניהול פרויקטים', icon: FolderKanban, color: 'text-cyan-400' },
-  { to: '/users', label: 'משתמשים', icon: UserCog, color: 'text-rose-400', adminOnly: true },
+  { to: '/users', label: 'משתמשים', icon: UserCog, color: 'text-rose-400' },
   { to: '/settings', label: 'הגדרות', icon: SettingsIcon, color: 'text-purple-400' },
 ];
 
@@ -31,13 +32,6 @@ export default function Layout() {
   useEffect(() => {
     base44.auth.me().then(setUser).catch(() => {});
   }, []);
-
-  const roleLabel = {
-    admin: 'מנהל/ת',
-    remote_manager: 'מנהלת רחוקה',
-    local_manager: 'מנהל/ת מקום',
-    user: 'עובד/ת ספרייה',
-  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-background font-heebo" dir="rtl">
@@ -63,7 +57,7 @@ export default function Layout() {
 
         {/* Nav */}
         <nav className="flex-1 py-4 px-2 space-y-1">
-          {navItems.filter(item => !item.adminOnly || canManageUsers(user)).map(({ to, label, icon: Icon, color }) => {
+          {navItems.filter(item => canAccessPage(user, item.to)).map(({ to, label, icon: Icon, color }) => {
             const active = location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
             return (
               <Link
@@ -94,7 +88,7 @@ export default function Layout() {
               {open && (
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold text-white truncate">{user.full_name}</div>
-                  <div className="text-xs text-sidebar-foreground/50">{roleLabel[user.role] || 'משתמש'}</div>
+                  <div className="text-xs text-sidebar-foreground/50">{ROLE_DISPLAY_NAMES[user.role] || 'משתמשת'}</div>
                 </div>
               )}
               {open && (

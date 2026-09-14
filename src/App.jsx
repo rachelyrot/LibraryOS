@@ -8,6 +8,7 @@ import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Login from '@/pages/Login';
 import ResetPassword from '@/pages/ResetPassword';
 import Layout from '@/components/Layout';
+import RequirePage from '@/components/RequirePage';
 import Dashboard from '@/pages/Dashboard';
 import Orders from '@/pages/Orders';
 import OrderDetail from '@/pages/OrderDetail';
@@ -50,24 +51,27 @@ const AuthenticatedApp = () => {
     }
   }
 
+  // Every route is wrapped in <RequirePage>, which checks the same PAGE_ACCESS
+  // table that Layout.jsx filters the sidebar with. Hiding a nav item alone
+  // would leave the URL reachable by hand.
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/orders" element={<Orders />} />
-        <Route path="/orders/new" element={<OrderDetail />} />
-        <Route path="/orders/:id" element={<OrderDetail />} />
-        <Route path="/quotes" element={<Quotes />} />
-        <Route path="/inventory" element={<Inventory />} />
-        <Route path="/book-procurement" element={<BookProcurement />} />
-        <Route path="/credits" element={<Credits />} />
-        <Route path="/suppliers" element={<Suppliers />} />
-        <Route path="/suppliers/:id" element={<SupplierDetail />} />
-        <Route path="/staff" element={<Staff />} />
-        <Route path="/projects" element={<Projects />} />
-        <Route path="/projects/:id" element={<ProjectDetail />} />
-        <Route path="/users" element={<Users />} />
-        <Route path="/settings" element={<Settings />} />
+        <Route path="/" element={<RequirePage><Dashboard /></RequirePage>} />
+        <Route path="/orders" element={<RequirePage><Orders /></RequirePage>} />
+        <Route path="/orders/new" element={<RequirePage><OrderDetail /></RequirePage>} />
+        <Route path="/orders/:id" element={<RequirePage><OrderDetail /></RequirePage>} />
+        <Route path="/quotes" element={<RequirePage><Quotes /></RequirePage>} />
+        <Route path="/inventory" element={<RequirePage><Inventory /></RequirePage>} />
+        <Route path="/book-procurement" element={<RequirePage><BookProcurement /></RequirePage>} />
+        <Route path="/credits" element={<RequirePage><Credits /></RequirePage>} />
+        <Route path="/suppliers" element={<RequirePage><Suppliers /></RequirePage>} />
+        <Route path="/suppliers/:id" element={<RequirePage><SupplierDetail /></RequirePage>} />
+        <Route path="/staff" element={<RequirePage><Staff /></RequirePage>} />
+        <Route path="/projects" element={<RequirePage><Projects /></RequirePage>} />
+        <Route path="/projects/:id" element={<RequirePage><ProjectDetail /></RequirePage>} />
+        <Route path="/users" element={<RequirePage><Users /></RequirePage>} />
+        <Route path="/settings" element={<RequirePage><Settings /></RequirePage>} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

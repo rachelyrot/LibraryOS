@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
-import { Plus, Search, Building2, Phone, Mail, ChevronRight } from 'lucide-react';
+import { Plus, Search, Building2, Phone, Mail, ChevronRight, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,15 +11,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Switch } from '@/components/ui/switch';
 import StatusBadge from '@/components/StatusBadge';
 import PageHeader from '@/components/PageHeader';
+import SharingFields from '@/components/suppliers/SharingFields';
 import useCategories from '@/hooks/useCategories';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { canDeleteMasterData } from '@/lib/permissions';
+import {
+  canDeleteMasterData, canManageSupplierSharing, visibleSuppliers,
+  seesAllSuppliers, SHAREABLE_ROLES,
+} from '@/lib/permissions';
 
 const EMPTY = {
   name: '', type: '', contact_name: '', phone: '', email: '', address: '',
   status: 'active', payment_terms: '', avg_delivery_time: '',
-  is_fixed: false, notes: ''
+  // A new supplier is shared with everyone by default — restricting is the
+  // deliberate act, not the accident.
+  is_fixed: false, notes: '', shared_with_roles: [...SHAREABLE_ROLES],
 };
 
 export default function Suppliers() {
@@ -34,6 +40,7 @@ export default function Suppliers() {
   const [saving, setSaving] = useState(false);
   const [user, setUser] = useState(null);
   const canManageSuppliers = canDeleteMasterData(user);
+  const canShare = canManageSupplierSharing(user);
   const { mains: supplierTypes, getLabel: getTypeLabel } = useCategories();
 
   const load = async () => {
@@ -46,6 +53,11 @@ export default function Suppliers() {
   const openNew = () => { setEditing(null); setForm(EMPTY); setOpen(true); };
   const openEdit = (s) => { setEditing(s); setForm(s); setOpen(true); };
 
+  const toggleShare = (role, checked) => setForm(f => {
+    const current = Array.isArray(f.shared_with_roles) ? f.shared_with_roles : [];
+    return { ...f, shared_with_roles: checked ? [...new Set([...current, role])] : current.filter(r => r !== role) };
+  });
+
   const save = async () => {
     setSaving(true);
     const data = { ...form };
@@ -54,17 +66,28 @@ export default function Suppliers() {
     setSaving(false); setOpen(false); load();
   };
 
-  const filtered = suppliers.filter(s =>
+  // RLS (migration 0010) already withholds suppliers this role may not see, so
+  // `suppliers` normally arrives pre-filtered. Re-filtering here keeps the count
+  // in the header honest if the policy is ever loosened, and costs nothing.
+  const permitted = visibleSuppliers(user, suppliers);
+
+  const filtered = permitted.filter(s =>
     (!search || s.name?.includes(search) || s.contact_name?.includes(search) || s.phone?.includes(search) || s.email?.includes(search)) &&
     (typeFilter === 'all' || s.type === typeFilter) &&
     (statusFilter === 'all' || s.status === statusFilter)
   );
 
+  // Only meaningful for the roles that see everything — for the others, every
+  // visible supplier is by definition shared with them.
+  const isRestricted = (s) => seesAllSuppliers(user)
+    && Array.isArray(s.shared_with_roles)
+    && s.shared_with_roles.length < SHAREABLE_ROLES.length;
+
   return (
     <div className="p-6 max-w-7xl mx-auto animate-fade-in">
       <PageHeader
         title="ספקים"
-        subtitle={`${suppliers.length} ספקים`}
+        subtitle={`${permitted.length} ספקים`}
         gradient="from-emerald-500 to-teal-500"
         actions={canManageSuppliers && <Button onClick={openNew} className="gap-2 bg-gradient-to-l from-emerald-500 to-teal-500 text-white border-0 hover:opacity-90"><Plus className="w-4 h-4" /> ספק חדש</Button>}
       />
@@ -109,6 +132,11 @@ export default function Suppliers() {
                     <span className="font-semibold text-foreground group-hover:text-emerald-600 transition-colors">{s.name}</span>
                     {s.type && <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">{getTypeLabel(s.type)}</span>}
                     {s.is_fixed && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">ספק קבוע</span>}
+                    {isRestricted(s) && (
+                      <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full flex items-center gap-1" title="שיתוף מוגבל — לא כל התפקידים רואים ספק זה">
+                        <Lock className="w-3 h-3" /> שיתוף מוגבל
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
                     {s.contact_name && <span>{s.contact_name}</span>}
@@ -158,6 +186,7 @@ export default function Suppliers() {
               <Switch checked={form.is_fixed || false} onCheckedChange={v => setForm(f => ({ ...f, is_fixed: v }))} />
               <Label>ספק קבוע</Label>
             </div>
+            {canShare && <SharingFields value={form.shared_with_roles} onToggle={toggleShare} />}
             <div className="space-y-1.5"><Label>הערות</Label><Textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setOpen(false)}>ביטול</Button>

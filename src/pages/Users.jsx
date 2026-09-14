@@ -8,10 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import PageHeader from '@/components/PageHeader';
 import { toast } from 'sonner';
-import { canManageUsers, ROLE_DISPLAY_NAMES, getRoleDisplayName } from '@/lib/permissions';
+import { canManageUsers, ROLE_DISPLAY_NAMES, getRoleDisplayName, seesAllBranches } from '@/lib/permissions';
 import { resetPasswordUrl } from '@/lib/appUrl';
 
-const EMPTY = { full_name: '', email: '', password: '', role: 'user' };
+const EMPTY = { full_name: '', email: '', password: '', role: 'user', branch_id: '' };
+
+// A branch is only meaningful for the roles that get scoped by it — admin and
+// מזכירה see every branch regardless (see visibleBranchIds in permissions.js).
+const NO_BRANCH = '__none__';
 
 // Only used by the manual fallback, for when the invite mail doesn't arrive.
 function generatePassword() {
@@ -48,7 +52,9 @@ export default function Users() {
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
   const [savingRoleFor, setSavingRoleFor] = useState(null);
+  const [savingBranchFor, setSavingBranchFor] = useState(null);
   const [resettingFor, setResettingFor] = useState(null);
+  const [branches, setBranches] = useState([]);
   // Email invite is the default; the manual-password path stays available for
   // when mail delivery fails.
   const [byEmail, setByEmail] = useState(true);
@@ -59,13 +65,28 @@ export default function Users() {
     setLoading(true);
     try {
       const data = await callAdminUsers({ action: 'list' });
-      setUsers(data.users || []);
+      const listed = data.users || [];
+
+      // The Edge Function's `list` doesn't select branch_id, and changing it
+      // would mean redeploying the function by hand. profiles is readable by any
+      // authenticated user, so read the branch straight from the table instead
+      // and merge it in — this works whether or not the function is redeployed.
+      const { data: profileBranches } = await supabase
+        .from('profiles')
+        .select('id, branch_id, branch_name');
+      const byId = Object.fromEntries((profileBranches || []).map(p => [p.id, p]));
+
+      setUsers(listed.map(u => ({ ...u, ...(byId[u.id] || {}) })));
     } catch (error) {
       toast.error(error.message || 'שגיאה בטעינת המשתמשים');
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    base44.entities.Branch.list('name', 200).then(setBranches).catch(() => {});
+  }, []);
 
   useEffect(() => {
     base44.auth.me()
@@ -81,6 +102,39 @@ export default function Users() {
 
   const openNew = () => { setForm({ ...EMPTY, password: generatePassword() }); setByEmail(true); setOpen(true); };
 
+  // Written straight to profiles rather than through the Edge Function: the
+  // "update_admin" RLS policy (migration 0010) lets an admin do this with her
+  // own session, and assigning a branch grants no access — it only narrows what
+  // the user sees — so it doesn't need service_role.
+  const writeBranch = async (userId, branchId) => {
+    const branch = branches.find(b => b.id === branchId);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ branch_id: branchId || null, branch_name: branch?.name || null })
+      .eq('id', userId);
+    if (error) throw error;
+    return branch;
+  };
+
+  const changeBranch = async (targetUser, value) => {
+    if (!canManageUsers(user)) return;
+    const branchId = value === NO_BRANCH ? '' : value;
+    setSavingBranchFor(targetUser.id);
+    try {
+      const branch = await writeBranch(targetUser.id, branchId);
+      setUsers(list => list.map(u => (
+        u.id === targetUser.id ? { ...u, branch_id: branchId || null, branch_name: branch?.name || '' } : u
+      )));
+      toast.success(branchId
+        ? `${targetUser.full_name || targetUser.email} שויכה לסניף ${branch?.name || ''}`
+        : `שיוך הסניף של ${targetUser.full_name || targetUser.email} הוסר`);
+    } catch (error) {
+      toast.error(error.message || 'שגיאה בעדכון הסניף');
+    } finally {
+      setSavingBranchFor(null);
+    }
+  };
+
   const save = async () => {
     if (!canManageUsers(user)) return;
     if (!form.full_name.trim()) { toast.error('יש להזין שם מלא'); return; }
@@ -89,8 +143,9 @@ export default function Users() {
 
     setSaving(true);
     try {
+      let created;
       if (byEmail) {
-        await callAdminUsers({
+        created = await callAdminUsers({
           action: 'invite',
           full_name: form.full_name,
           email: form.email,
@@ -99,9 +154,21 @@ export default function Users() {
         });
         toast.success('ההזמנה נשלחה במייל.');
       } else {
-        await callAdminUsers({ action: 'create', ...form });
+        created = await callAdminUsers({ action: 'create', ...form });
         toast.success('המשתמש/ת נוצר/ה. יש למסור את הסיסמה באופן אישי.');
       }
+
+      // The branch is a second write, after the account exists. If it fails the
+      // account is still fine — say so rather than making it look like the whole
+      // creation failed, since the branch can be set from the row afterwards.
+      if (form.branch_id && created?.user?.id) {
+        try {
+          await writeBranch(created.user.id, form.branch_id);
+        } catch {
+          toast.warning('המשתמש/ת נוצר/ה, אך שיוך הסניף נכשל. אפשר לשייך מהטבלה.');
+        }
+      }
+
       setOpen(false);
       load();
     } catch (error) {
@@ -175,10 +242,11 @@ export default function Users() {
       />
 
       <div className="border border-border rounded-xl overflow-hidden bg-card">
-        <div className="grid grid-cols-[1.3fr_1.5fr_1fr_auto] gap-3 px-4 py-2.5 bg-muted/50 border-b border-border text-xs font-semibold text-muted-foreground">
+        <div className="grid grid-cols-[1.2fr_1.4fr_1fr_1fr_auto] gap-3 px-4 py-2.5 bg-muted/50 border-b border-border text-xs font-semibold text-muted-foreground">
           <span>שם מלא</span>
           <span>אימייל</span>
           <span>תפקיד</span>
+          <span>סניף</span>
           <span className="w-9" />
         </div>
 
@@ -186,7 +254,7 @@ export default function Users() {
           <div className="px-4 py-6 text-sm text-muted-foreground">אין משתמשים להצגה</div>
         ) : (
           users.map(u => (
-            <div key={u.id} className="grid grid-cols-[1.3fr_1.5fr_1fr_auto] gap-3 items-center px-4 py-2.5 border-b border-border/40 last:border-b-0">
+            <div key={u.id} className="grid grid-cols-[1.2fr_1.4fr_1fr_1fr_auto] gap-3 items-center px-4 py-2.5 border-b border-border/40 last:border-b-0">
               <span className="text-sm font-medium truncate">
                 {u.full_name || <span className="text-muted-foreground">ללא שם</span>}
                 {u.id === user?.id && <span className="text-xs text-muted-foreground mr-1">(את/ה)</span>}
@@ -203,6 +271,23 @@ export default function Users() {
                     {Object.entries(ROLE_DISPLAY_NAMES).map(([value, label]) => (
                       <SelectItem key={value} value={value}>{label}</SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {seesAllBranches(u) ? (
+                // admin and מזכירה are never scoped to a branch, so offering the
+                // control would suggest it does something.
+                <span className="text-xs text-muted-foreground">כל הסניפים</span>
+              ) : (
+                <Select
+                  value={u.branch_id || NO_BRANCH}
+                  onValueChange={v => changeBranch(u, v)}
+                  disabled={savingBranchFor === u.id}
+                >
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="ללא סניף" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_BRANCH}>ללא סניף</SelectItem>
+                    {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               )}
@@ -288,6 +373,25 @@ export default function Users() {
                 </SelectContent>
               </Select>
             </div>
+
+            {!seesAllBranches({ role: form.role }) && (
+              <div className="space-y-1.5">
+                <Label>סניף</Label>
+                <Select
+                  value={form.branch_id || NO_BRANCH}
+                  onValueChange={v => setForm(f => ({ ...f, branch_id: v === NO_BRANCH ? '' : v }))}
+                >
+                  <SelectTrigger><SelectValue placeholder="ללא סניף" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_BRANCH}>ללא סניף</SelectItem>
+                    {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  מנהלת במקום רואה במסך כוח אדם רק את הסניף שלה. בלי שיוך לסניף לא יוצגו לה נתונים.
+                </p>
+              </div>
+            )}
           </div>
 
           <DialogFooter>

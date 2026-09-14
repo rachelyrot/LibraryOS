@@ -7,7 +7,7 @@ import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { VOLUNTEER_ACTIVITY_LABELS, VOLUNTEER_STATUS_LABELS, VOLUNTEER_STATUS_COLORS, fullName } from '@/lib/staffUtils';
-import { canManageVolunteers } from '@/lib/permissions';
+import { canManageVolunteers, scopeToBranches } from '@/lib/permissions';
 import VolunteerDialog from './VolunteerDialog';
 
 export default function VolunteersTab({ user, branches }) {
@@ -21,7 +21,9 @@ export default function VolunteersTab({ user, branches }) {
   const load = () => base44.entities.Volunteer.list('-created_date', 500).then(setVolunteers).catch(() => []);
   useEffect(() => { load(); }, []);
 
-  const filtered = volunteers.filter(v => {
+  // This tab fetches its own rows, so Staff.jsx's branch scoping of the
+  // `branches`/`employees` props doesn't reach them — scope here too.
+  const filtered = scopeToBranches(user, volunteers, 'preferred_branch_id').filter(v => {
     if (search && !fullName(v).includes(search)) return false;
     if (statusFilter !== 'all' && v.status !== statusFilter) return false;
     return true;

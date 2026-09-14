@@ -6,7 +6,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { ATTENDANCE_STATUS_LABELS, ATTENDANCE_STATUS_COLORS, formatDate, fullName } from '@/lib/staffUtils';
-import { canManageSchedule } from '@/lib/permissions';
+import { canManageSchedule, scopeToBranches } from '@/lib/permissions';
 import AttendanceDialog from './AttendanceDialog';
 
 export default function AttendanceTab({ user, branches, employees }) {
@@ -22,7 +22,9 @@ export default function AttendanceTab({ user, branches, employees }) {
   };
   useEffect(() => { load(); }, [selectedDate]);
 
-  const filtered = records.filter(r => branchFilter === 'all' || r.branch_id === branchFilter);
+  // Records are fetched here, so Staff.jsx's prop scoping doesn't cover them.
+  const filtered = scopeToBranches(user, records, 'branch_id')
+    .filter(r => branchFilter === 'all' || r.branch_id === branchFilter);
 
   const handleSave = async (data) => {
     try {

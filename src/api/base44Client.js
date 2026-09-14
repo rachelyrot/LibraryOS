@@ -112,7 +112,20 @@ async function me() {
   if (profileError) throw profileError;
   if (!profile) throw new Error('User not registered');
 
-  return { id: user.id, email: user.email, full_name: profile.full_name, role: profile.role };
+  // branch_id/branch_name (migration 0010) ride along because the staff screens
+  // scope a local_manager to her own branch — see visibleBranchIds().
+  //
+  // `undefined` is preserved when the column is absent (migration not applied)
+  // and is meaningfully different there from `null` (column present, nobody
+  // assigned a branch) — so don't collapse it with `|| null`.
+  return {
+    id: user.id,
+    email: user.email,
+    full_name: profile.full_name,
+    role: profile.role,
+    branch_id: 'branch_id' in profile ? (profile.branch_id ?? null) : undefined,
+    branch_name: profile.branch_name || '',
+  };
 }
 
 async function logout() {

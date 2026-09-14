@@ -6,7 +6,7 @@ import { Plus, ChevronRight, ChevronLeft, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { getWeekDates, formatDate, fullName, calcShiftHours } from '@/lib/staffUtils';
 import { validateAll } from '@/lib/staffValidation';
-import { canManageSchedule } from '@/lib/permissions';
+import { canManageSchedule, scopeToBranches } from '@/lib/permissions';
 import ScheduleDialog from './ScheduleDialog';
 import ScheduleWarnings from './ScheduleWarnings';
 import WeeklyScheduleTable from './WeeklyScheduleTable';
@@ -39,15 +39,18 @@ export default function ScheduleTab({ user, branches, employees }) {
   };
   useEffect(() => { loadSchedules(); }, [weekRef]);
 
-  const allPeople = [...employees.map(e => ({ ...e, _type: 'employee' })), ...volunteers.map(v => ({ ...v, _type: 'volunteer' }))];
+  // `employees` arrives already scoped from Staff.jsx; volunteers and schedules
+  // are fetched here, so they get the same treatment.
+  const scopedVolunteers = scopeToBranches(user, volunteers, 'preferred_branch_id');
+  const allPeople = [...employees.map(e => ({ ...e, _type: 'employee' })), ...scopedVolunteers.map(v => ({ ...v, _type: 'volunteer' }))];
 
-  const filteredSchedules = schedules.filter(s => {
+  const filteredSchedules = scopeToBranches(user, schedules, 'branch_id').filter(s => {
     if (viewMode === 'branch' && selectedBranch !== 'all' && s.branch_id !== selectedBranch) return false;
     if (viewMode === 'employee' && selectedPerson !== 'all' && s.person_id !== selectedPerson) return false;
     return true;
   });
 
-  const warnings = validateAll(filteredSchedules, employees, volunteers, positions);
+  const warnings = validateAll(filteredSchedules, employees, scopedVolunteers, positions);
 
   const shiftWeek = (direction) => {
     const d = new Date(weekRef + 'T00:00:00');
