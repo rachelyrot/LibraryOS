@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import MoneyInput from '@/components/budget/MoneyInput';
 
 const PRESET_COLORS = ['#8b5cf6', '#14b8a6', '#f97316', '#ec4899', '#3b82f6', '#22c55e', '#f43f5e', '#f59e0b', '#6366f1', '#0ea5e9'];
-const EMPTY = { name: '', funding_source_type: '', color: '#8b5cf6', total_amount: '', year: new Date().getFullYear().toString(), notes: '', status: 'active', start_date: '', end_date: '' };
+const EMPTY = { name: '', funding_source_type: '', color: '#8b5cf6', planned_amount: '', year: new Date().getFullYear().toString(), notes: '', status: 'active', start_date: '', end_date: '' };
 const PRESETS = ['עיריית בני ברק', 'משרד התרבות', 'משרד הפריפריה', 'מפעל הפייס', 'קרן תרבות', 'ג\'וינט', 'עמותה מקומית'];
 
 const FUNDING_TYPES = [
@@ -28,8 +28,10 @@ export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmi
       name: source.name,
       funding_source_type: source.funding_source_type || '',
       color: source.color || '#8b5cf6',
-      // total_amount מוחזק כמחרוזת גולמית בטופס — ראה MoneyInput
-      total_amount: source.total_amount != null ? String(source.total_amount) : '',
+      // planned_amount מוחזק כמחרוזת גולמית בטופס — ראה MoneyInput.
+      // זהו הסכום שהמשתמשת מקלידה; total_amount מחושב מהקטגוריות ולא נערך כאן
+      // (ראה מיגרציה 0011).
+      planned_amount: source.planned_amount != null ? String(source.planned_amount) : '',
       year: source.year || '',
       start_date: source.start_date || '',
       end_date: source.end_date || '',
@@ -42,7 +44,7 @@ export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmi
     if (!form.name) return;
     setSaving(true);
     try {
-      await onSubmit({ ...form, total_amount: form.total_amount === '' ? '' : Number(form.total_amount) });
+      await onSubmit({ ...form, planned_amount: form.planned_amount === '' ? '' : Number(form.planned_amount) });
       onOpenChange(false);
     } finally {
       setSaving(false);
@@ -77,9 +79,9 @@ export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmi
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>סכום התחלתי ₪</Label>
-              <MoneyInput value={form.total_amount} onChange={v => setForm(f => ({ ...f, total_amount: v }))} />
-              <p className="text-xs text-muted-foreground">לעיון בלבד – הסכום מחושב מהקטגוריות</p>
+              <Label>סכום מתוכנן ₪</Label>
+              <MoneyInput value={form.planned_amount} onChange={v => setForm(f => ({ ...f, planned_amount: v }))} />
+              <p className="text-xs text-muted-foreground">התקציב שאושר למקור הזה. מוצג מול סכום הקטגוריות בפועל.</p>
             </div>
             <div className="space-y-1.5">
               <Label>שנה</Label>

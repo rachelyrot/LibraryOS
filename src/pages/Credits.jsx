@@ -123,6 +123,14 @@ export default function Credits() {
     return map;
   }, [allCategories]);
 
+  // התקציב שמוצג כמספר הראשי של מקור: הסכום המתוכנן אם הוזן, אחרת סכום
+  // ההקצאות. ההזמנות עצמן יכולות למשוך רק ממה שהוקצה בקטגוריות — את הפער
+  // מציגים בנפרד כ"טרם הוקצה", כדי שלא ייראה כאילו אפשר להזמין ממנו כבר עכשיו.
+  const sourceBudget = (src) => {
+    const allocated = sourceTotals[src.id]?.total || 0;
+    return src.planned_amount != null ? Number(src.planned_amount) : allocated;
+  };
+
   const catTotals = useMemo(() => computeSourceTotals(categories), [categories]);
   const warnings = categories.filter(c => {
     const pct = c.allocated_amount > 0 ? ((c.reserved_amount || 0) + (c.spent_amount || 0)) / c.allocated_amount : 0;
@@ -269,10 +277,12 @@ export default function Credits() {
   }
 
   if (!activeSourceId) {
-    const grandTotal = Object.values(sourceTotals).reduce((s, t) => s + t.total, 0);
+    const grandTotal = sources.reduce((s, src) => s + sourceBudget(src), 0);
     const grandReserved = Object.values(sourceTotals).reduce((s, t) => s + t.reserved, 0);
     const grandSpent = Object.values(sourceTotals).reduce((s, t) => s + t.spent, 0);
     const grandAvailable = Math.max(0, grandTotal - grandReserved - grandSpent);
+    const grandUnallocated = sources.reduce((s, src) =>
+      s + (src.planned_amount != null ? Math.max(0, Number(src.planned_amount) - (sourceTotals[src.id]?.total || 0)) : 0), 0);
 
     return (
       <div className="p-6 max-w-5xl mx-auto animate-fade-in">
@@ -292,7 +302,10 @@ export default function Credits() {
               <div><p className="text-violet-200 text-xs">יתרה</p><p className="text-xl font-bold mt-0.5 text-violet-200">₪{grandAvailable.toLocaleString('he-IL')}</p></div>
             </div>
             <ProgressBar value={grandReserved + grandSpent} max={grandTotal} color="#fff" />
-            <p className="text-violet-200 text-xs mt-1.5">{sources.length} מקורות תקציב</p>
+            <p className="text-violet-200 text-xs mt-1.5">
+              {sources.length} מקורות תקציב
+              {grandUnallocated > 0 && ` · מתוכם ₪${grandUnallocated.toLocaleString('he-IL')} טרם הוקצו לקטגוריות (לא זמינים להזמנות)`}
+            </p>
           </div>
         )}
 
@@ -312,8 +325,9 @@ export default function Credits() {
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {sources.map(src => {
                   const totals = sourceTotals[src.id] || { total: 0, reserved: 0, spent: 0 };
-                  const avail = Math.max(0, totals.total - totals.reserved - totals.spent);
-                  const usedPct = totals.total > 0 ? Math.min(100, ((totals.reserved + totals.spent) / totals.total) * 100) : 0;
+                  const budget = sourceBudget(src);
+                  const avail = Math.max(0, budget - totals.reserved - totals.spent);
+                  const usedPct = budget > 0 ? Math.min(100, ((totals.reserved + totals.spent) / budget) * 100) : 0;
                   const srcCats = allCategories.filter(c => c.budget_source_id === src.id);
 
                   return (
@@ -336,15 +350,37 @@ export default function Credits() {
                         </div>
                       </div>
                       <div className="mb-3">
-                        <p className="text-2xl font-bold text-foreground">₪{totals.total.toLocaleString('he-IL')}</p>
-                        <p className="text-xs text-muted-foreground">תקציב כולל · {srcCats.length} קטגוריות</p>
+                        <p className="text-2xl font-bold text-foreground">₪{budget.toLocaleString('he-IL')}</p>
+                        {/* הסכום המתוכנן (מיגרציה 0011) הוא מה שהמשתמשת מקלידה
+                            בעריכת המקור, ולכן הוא המספר הראשי כשהוא קיים. */}
+                        {src.planned_amount == null ? (
+                          <p className="text-xs text-muted-foreground">מוקצה בקטגוריות · {srcCats.length} קטגוריות</p>
+                        ) : (
+                          <>
+                            <p className="text-xs text-muted-foreground">תקציב מתוכנן</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              מוקצה בקטגוריות ₪{totals.total.toLocaleString('he-IL')} · {srcCats.length} קטגוריות
+                            </p>
+                            {(() => {
+                              const gap = Number(src.planned_amount) - totals.total;
+                              if (Math.abs(gap) < 0.005) return null;
+                              return (
+                                <p className={cn('text-xs font-medium mt-0.5', gap > 0 ? 'text-amber-600' : 'text-red-500')}>
+                                  {gap > 0
+                                    ? `₪${gap.toLocaleString('he-IL')} טרם הוקצו לקטגוריות — לא זמינים להזמנות`
+                                    : `חריגה: הוקצו ₪${Math.abs(gap).toLocaleString('he-IL')} מעבר למתוכנן`}
+                                </p>
+                              );
+                            })()}
+                          </>
+                        )}
                       </div>
                       <div className="grid grid-cols-3 gap-2 mb-3 text-center text-xs">
                         <div><p className="text-muted-foreground">משוריין</p><p className="font-bold text-amber-600">₪{totals.reserved.toLocaleString('he-IL')}</p></div>
                         <div><p className="text-muted-foreground">נוצל</p><p className="font-bold text-red-500">₪{totals.spent.toLocaleString('he-IL')}</p></div>
                         <div><p className="text-muted-foreground">יתרה</p><p className="font-bold text-teal-600">₪{avail.toLocaleString('he-IL')}</p></div>
                       </div>
-                      <ProgressBar value={totals.reserved + totals.spent} max={totals.total} color={src.color} />
+                      <ProgressBar value={totals.reserved + totals.spent} max={budget} color={src.color} />
                       <div className="flex justify-between text-xs mt-1.5">
                         <span className="text-muted-foreground" dir="ltr">{usedPct.toFixed(0)}%</span>
                         <span className="font-medium" style={{ color: src.color || '#8b5cf6' }}>יתרה ₪{avail.toLocaleString('he-IL')}</span>
@@ -472,8 +508,14 @@ export default function Credits() {
 
       {/* Source summary */}
       <div className="bg-card border border-border rounded-2xl p-5 mb-6">
-        <div className="grid grid-cols-4 gap-3 mb-3 text-center">
-          <div><p className="text-xs text-muted-foreground">תקציב כולל</p><p className="text-2xl font-bold">₪{catTotals.total.toLocaleString('he-IL')}</p></div>
+        <div className={cn('grid gap-3 mb-3 text-center', activeSource?.planned_amount != null ? 'grid-cols-5' : 'grid-cols-4')}>
+          {activeSource?.planned_amount != null && (
+            <div>
+              <p className="text-xs text-muted-foreground">סכום מתוכנן</p>
+              <p className="text-2xl font-bold text-violet-600">₪{Number(activeSource.planned_amount).toLocaleString('he-IL')}</p>
+            </div>
+          )}
+          <div><p className="text-xs text-muted-foreground">מוקצה בקטגוריות</p><p className="text-2xl font-bold">₪{catTotals.total.toLocaleString('he-IL')}</p></div>
           <div><p className="text-xs text-muted-foreground">משוריין</p><p className="text-2xl font-bold text-amber-600">₪{catTotals.reserved.toLocaleString('he-IL')}</p></div>
           <div><p className="text-xs text-muted-foreground">נוצל בפועל</p><p className="text-2xl font-bold text-red-500">₪{catTotals.spent.toLocaleString('he-IL')}</p></div>
           <div><p className="text-xs text-muted-foreground">יתרה זמינה</p><p className="text-2xl font-bold text-teal-600">₪{avail.toLocaleString('he-IL')}</p></div>
