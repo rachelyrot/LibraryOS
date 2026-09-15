@@ -81,6 +81,8 @@ export const PAGE_ACCESS = {
   // local_manager sees her own branch only (see visibleBranchIds).
   '/staff': [ROLES.ADMIN, ROLES.REMOTE_MANAGER, ROLES.LOCAL_MANAGER],
   '/credits': [ROLES.ADMIN],
+  // Annual work plan for משרד התרבות — financial planning, same gate as budgets.
+  '/work-plan': [ROLES.ADMIN],
   '/projects': [ROLES.ADMIN],
   '/users': [ROLES.ADMIN],
   '/settings': [ROLES.ADMIN],
@@ -280,6 +282,19 @@ export function canConvertQuoteToOrder(user) {
  * Order totals are not covered by this; they stay visible wherever an order is.
  */
 export function canViewBudgets(user) {
+  return user?.role === ROLES.ADMIN;
+}
+
+/**
+ * Admin only — view the annual work plan (תכנית עבודה שנתית).
+ * Mirrors the RLS in migration 0012; widen both together.
+ */
+export function canViewWorkPlan(user) {
+  return user?.role === ROLES.ADMIN;
+}
+
+/** Admin only — create/edit/delete work plans and their rows */
+export function canEditWorkPlan(user) {
   return user?.role === ROLES.ADMIN;
 }
 

@@ -2,7 +2,7 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import {
-  LayoutDashboard, ShoppingCart, FileText, Package, BookOpen, CreditCard, Menu, X, LogOut, BookMarked, ChevronLeft, Building2, Settings as SettingsIcon, Users, FolderKanban, UserCog
+  LayoutDashboard, ShoppingCart, FileText, Package, BookOpen, CreditCard, Menu, X, LogOut, BookMarked, ChevronLeft, Building2, Settings as SettingsIcon, Users, FolderKanban, UserCog, ClipboardList
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { canAccessPage, ROLE_DISPLAY_NAMES } from '@/lib/permissions';
@@ -17,6 +17,7 @@ const navItems = [
   { to: '/inventory', label: 'מלאי', icon: Package, color: 'text-orange-400' },
   { to: '/book-procurement', label: 'רכש ספרים', icon: BookMarked, color: 'text-pink-400' },
   { to: '/credits', label: 'מקורות תקציב', icon: CreditCard, color: 'text-green-400' },
+  { to: '/work-plan', label: 'תכנית עבודה', icon: ClipboardList, color: 'text-violet-400' },
   { to: '/suppliers', label: 'ספקים', icon: Building2, color: 'text-emerald-400' },
   { to: '/staff', label: 'כוח אדם', icon: Users, color: 'text-indigo-400' },
   { to: '/projects', label: 'ניהול פרויקטים', icon: FolderKanban, color: 'text-cyan-400' },

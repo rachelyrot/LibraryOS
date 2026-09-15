@@ -34,6 +34,8 @@ const TABLE_MAP = {
   SupplierBookList: 'supplier_book_lists',
   SupplierCredit: 'supplier_credits',
   Volunteer: 'volunteers',
+  WorkPlan: 'work_plans',
+  WorkPlanItem: 'work_plan_items',
 };
 
 function unwrap({ data, error }) {

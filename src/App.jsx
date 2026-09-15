@@ -10,6 +10,7 @@ import ResetPassword from '@/pages/ResetPassword';
 import Layout from '@/components/Layout';
 import RequirePage from '@/components/RequirePage';
 import Dashboard from '@/pages/Dashboard';
+import WorkPlan from '@/pages/WorkPlan';
 import Orders from '@/pages/Orders';
 import OrderDetail from '@/pages/OrderDetail';
 import Quotes from '@/pages/Quotes';
@@ -65,6 +66,7 @@ const AuthenticatedApp = () => {
         <Route path="/inventory" element={<RequirePage><Inventory /></RequirePage>} />
         <Route path="/book-procurement" element={<RequirePage><BookProcurement /></RequirePage>} />
         <Route path="/credits" element={<RequirePage><Credits /></RequirePage>} />
+        <Route path="/work-plan" element={<RequirePage><WorkPlan /></RequirePage>} />
         <Route path="/suppliers" element={<RequirePage><Suppliers /></RequirePage>} />
         <Route path="/suppliers/:id" element={<RequirePage><SupplierDetail /></RequirePage>} />
         <Route path="/staff" element={<RequirePage><Staff /></RequirePage>} />
