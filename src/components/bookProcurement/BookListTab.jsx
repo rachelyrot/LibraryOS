@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,14 +8,18 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { isNylonChecked, nylonFromChecked, isBindingChecked, bookKey } from '@/lib/bookQuoteExcel';
 import { importBookFiles } from '@/lib/bookListImport';
+import { checkBooksInAgron, applyAgronResult, agronTooltip } from '@/lib/agron';
 import AddBookDialog from '@/components/bookLists/AddBookDialog';
 import { canMarkBooksForOrder, canCreateBookQuoteRequest, canEditBookList } from '@/lib/permissions';
 
-export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onStatusChange, inventoryItems }) {
+export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onStatusChange }) {
   const [books, setBooks] = useState([]);
+  const booksRef = useRef(books);
+  booksRef.current = books;
   const [searchBook, setSearchBook] = useState('');
   const [user, setUser] = useState(null);
   const [checkingAgron, setCheckingAgron] = useState(false);
+  const [agronProgress, setAgronProgress] = useState(null);
   const [addBookOpen, setAddBookOpen] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -60,40 +64,37 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
     saveBooks(updated);
   };
 
+  // בדיקה מול הקטלוג האמיתי (Libnet) — ראו src/lib/agron.js. הבדיקה לוקחת
+  // כמה שניות, ובזמן הזה אפשר להמשיך לסמן ספרים; לכן התוצאות ממוזגות לתוך
+  // המצב העדכני (booksRef) ולא לתוך העותק שהיה ברגע הלחיצה, כדי לא לדרוס סימונים.
   const checkAgainstAgron = async () => {
+    const targets = books.map((b, i) => ({ b, i })).filter(({ b }) => b.marked_for_order);
+    if (targets.length === 0) return;
+
     setCheckingAgron(true);
-    const updated = [...books];
-    for (let i = 0; i < updated.length; i++) {
-      const b = updated[i];
-      if (!b.marked_for_order) continue;
-      if (!b.isbn && !b.title) {
-        updated[i] = { ...b, existing_in_agron: false, existing_copies: 0, system_recommendation: 'דורש בדיקה ידנית', recommendation_reason: 'לא נמצאה התאמה חד־משמעית לפי ISBN או שם ספר' };
-        continue;
-      }
-      let match = null;
-      if (b.isbn) {
-        const cleanIsbn = b.isbn.replace(/[^0-9Xx]/g, '').toUpperCase();
-        match = inventoryItems.find(item => { const itemIsbn = (item.isbn || '').replace(/[^0-9Xx]/g, '').toUpperCase(); return itemIsbn && itemIsbn === cleanIsbn; });
-      }
-      if (!match && b.title) {
-        match = inventoryItems.find(item => item.name?.toLowerCase() === b.title?.toLowerCase() && (!b.author || item.author?.toLowerCase() === b.author?.toLowerCase()));
-      }
-      if (!match) {
-        updated[i] = { ...b, existing_in_agron: false, existing_copies: 0, system_recommendation: 'מומלץ לשלוח להצעת מחיר', recommendation_reason: 'הספר לא נמצא במלאי הספרייה' };
-      } else {
-        const copies = match.copies_in_agron || match.current_quantity || 0;
-        let recommendation, reason;
-        if (copies === 0) { recommendation = 'מומלץ לשלוח להצעת מחיר'; reason = 'הספר לא נמצא במלאי הספרייה'; }
-        else if (copies === 1) { recommendation = 'לבדיקה'; reason = 'קיים עותק אחד בלבד, ייתכן שכדאי להזמין עותק נוסף'; }
-        else if (copies <= 3) { recommendation = 'לבדיקה מקצועית'; reason = 'קיימים מספר עותקים, נדרש שיקול מקצועי'; }
-        else { recommendation = 'לא מומלץ להזמין'; reason = 'קיימים כבר מספיק עותקים בספרייה'; }
-        updated[i] = { ...b, existing_in_agron: true, existing_copies: copies, system_recommendation: recommendation, recommendation_reason: reason };
-      }
+    setAgronProgress(null);
+    try {
+      const results = await checkBooksInAgron(targets.map(t => t.b), (done, total) => setAgronProgress({ done, total }));
+      const byIndex = new Map(targets.map((t, k) => [t.i, { book: t.b, result: results[k] }]));
+      const updated = booksRef.current.map((b, i) => {
+        const hit = byIndex.get(i);
+        // הרשימה רק מתארכת (ספרים נוספים לסופה), אבל אם הספר במקום הזה הוחלף — מדלגים.
+        if (!hit || bookKey(hit.book) !== bookKey(b)) return b;
+        return applyAgronResult(b, hit.result);
+      });
+      await saveBooks(updated);
+
+      const errors = results.filter(r => r?.status === 'error');
+      const failed = errors.length;
+      const found = results.filter(r => r?.status === 'found').length;
+      const possible = results.filter(r => r?.status === 'possible').length;
+      if (failed > 0) toast.error(`בדיקת ${failed} ספרים מול אגרון נכשלה — אפשר לנסות שוב`, { description: errors[0].error, duration: 10000 });
+      if (failed < results.length) toast.success(`בדיקת אגרון הושלמה: ${found} קיימים${possible ? `, ${possible} לבדיקה ידנית` : ''}, ${results.length - found - possible - failed} לא נמצאו`);
+    } catch (err) {
+      toast.error(`הבדיקה מול אגרון נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
     }
-    setBooks(updated);
-    await onBooksChange(updated);
     setCheckingAgron(false);
-    toast.success('בדיקת אגרון הושלמה!');
+    setAgronProgress(null);
   };
 
   // ── הוספה מאוחרת: צירוף ספרים לרשימה שכבר נשמרה ──────────────────
@@ -165,7 +166,8 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
           </>
         )}
         <Button variant="outline" size="sm" onClick={checkAgainstAgron} disabled={checkingAgron || interestedCount === 0} className="gap-1.5 shrink-0">
-          <Database className="w-3.5 h-3.5" /> {checkingAgron ? 'בודק...' : 'בדוק מול אגרון'}
+          <Database className="w-3.5 h-3.5" />
+          {checkingAgron ? (agronProgress && agronProgress.total > agronProgress.done ? `בודק ${agronProgress.done}/${agronProgress.total}...` : 'בודק...') : 'בדוק מול אגרון'}
         </Button>
       </div>
 
@@ -260,7 +262,13 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
                         }}
                       />
                     </td>
-                    <td className="p-2 text-center">{book.existing_in_agron ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{book.existing_copies || 0}</span> : <span className="text-xs text-muted-foreground">-</span>}</td>
+                    <td className="p-2 text-center" title={agronTooltip(book)}>
+                      {book.existing_in_agron
+                        ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{book.existing_copies || 0}</span>
+                        : book.agron_matches?.length > 0
+                          ? <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded cursor-help">?</span>
+                          : <span className="text-xs text-muted-foreground">-</span>}
+                    </td>
                     <td className="p-2 hidden md:table-cell">
                       {book.system_recommendation ? (
                         <div className="text-xs">

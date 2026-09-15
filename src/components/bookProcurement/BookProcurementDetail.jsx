@@ -34,7 +34,6 @@ export default function BookProcurementDetail({ bookList, onClose, onRefresh }) 
   const [quoteRequests, setQuoteRequests] = useState([]);
   const [currentStatus, setCurrentStatus] = useState('');
   const [tab, setTab] = useState('books');
-  const [inventoryItems, setInventoryItems] = useState([]);
   // עותק מקומי של הספרים, כדי שניקוי סימוני "לשליחה" אחרי שליחת מחזור ישתקף
   // מיד בטאבים בלי לחכות לרענון מהשרת.
   const [books, setBooks] = useState([]);
@@ -42,7 +41,6 @@ export default function BookProcurementDetail({ bookList, onClose, onRefresh }) 
   useEffect(() => {
     base44.auth.me().then(setUser).catch(() => {});
     base44.entities.Supplier.list('name', 500).then(setSuppliers).catch(() => {});
-    base44.entities.InventoryItem.list('-updated_date', 500).then(setInventoryItems).catch(() => {});
   }, []);
 
   const changeStatus = async (newStatus) => {
@@ -188,7 +186,7 @@ export default function BookProcurementDetail({ bookList, onClose, onRefresh }) 
           </TabsList>
 
           <TabsContent value="books" className="flex-1 overflow-y-auto">
-            <BookListTab bookList={listBookList} sentBookKeys={sentBookKeys} onBooksChange={handleBooksChange} onStatusChange={changeStatus} inventoryItems={inventoryItems} />
+            <BookListTab bookList={listBookList} sentBookKeys={sentBookKeys} onBooksChange={handleBooksChange} onStatusChange={changeStatus} />
           </TabsContent>
 
           <TabsContent value="quote" className="flex-1 overflow-y-auto">
