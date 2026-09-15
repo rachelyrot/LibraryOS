@@ -1,61 +1,78 @@
 import {
-  VIEWS, amountColumns, itemsForView, groupByCategory, groupAmount, quartersLabel, num, formatMoney,
+  VIEWS, MONTHS, QUARTERS, amountColumns, itemsForView, groupByCategory, parameterRows, monthlySchedule,
+  toQuarters, utilizationLabel, RULE_STATUS_LABELS, num, formatMoney, formatPct,
 } from '@/lib/workPlan';
 
 /**
- * ייצוא תכנית העבודה: קובץ Excel (גיליון לכל תצוגה + סיכום) ומסמך להדפסה/PDF.
+ * ייצוא תכנית העבודה: קובץ Excel (טופס הפרמטרים, פירוט לכל תצוגה ולוח ניצול
+ * חודשי) ומסמך להדפסה/PDF לתצוגה הנבחרת.
  */
 
 const viewLabel = (view) => VIEWS.find(v => v.id === view)?.label || '';
+const round = (v) => Math.round(num(v) * 100) / 100;
+const pct1 = (v) => Math.round(num(v) * 10) / 10;
 
-const DETAIL_HEADERS = ['קטגוריה', 'שם הפעילות', 'תיאור', 'קהל יעד', 'משתתפים צפויים', 'מועד'];
+/** גיליון בנוסח טופס המשרד: פרמטר, סכומים ואחוזים לכל מקור, הגבלה ועמידה בה. */
+function formSheetRows(plan, items) {
+  const all = parameterRows(items, 'all');
+  const mun = parameterRows(items, 'municipal');
+  const min = parameterRows(items, 'ministry');
+  const find = (res, category) => res.rows.find(r => r.category === category) || { amount: 0, pct: 0, status: null };
+
+  const rows = [
+    [`תכנון התקציב של הספרייה לשנת ${plan.year}`],
+    [plan.title],
+    [],
+    ['פרמטר', 'סה"כ', 'אחוז', 'תקציב עירוני', 'אחוז', 'משרד התרבות', 'אחוז', 'הגבלה', 'עמידה בהגבלה (סה"כ)', 'עמידה בהגבלה (משרד התרבות)'],
+  ];
+  for (const r of all.rows) {
+    const m = find(mun, r.category);
+    const k = find(min, r.category);
+    rows.push([
+      r.category, round(r.amount), pct1(r.pct), round(m.amount), pct1(m.pct), round(k.amount), pct1(k.pct),
+      r.rule, r.status ? RULE_STATUS_LABELS[r.status] : '', k.status ? RULE_STATUS_LABELS[k.status] : '',
+    ]);
+  }
+  rows.push(['סה"כ', round(all.total), all.total > 0 ? 100 : 0, round(mun.total), mun.total > 0 ? 100 : 0, round(min.total), min.total > 0 ? 100 : 0, '', '', '']);
+  return rows;
+}
 
 function detailSheetRows(plan, items, view) {
   const cols = amountColumns(view);
   const rows = [
     [plan.title],
-    [`שנת ${plan.year} · ${viewLabel(view)}`],
+    [`שנת ${plan.year} · פירוט · ${viewLabel(view)}`],
     [],
-    [...DETAIL_HEADERS, ...cols.map(c => c.label), 'הערות'],
+    ['פרמטר', 'פירוט', 'תיאור', 'זמן ניצול', 'קהל יעד', 'משתתפים צפויים', ...cols.map(c => c.label), 'הערות'],
   ];
-  const groups = groupByCategory(itemsForView(items, view));
+  const groups = groupByCategory(itemsForView(items, view), { includeEmpty: false });
   for (const g of groups) {
     for (const i of g.items) {
       rows.push([
-        g.category, i.activity_name || '', i.description || '', i.target_audience || '',
-        i.expected_participants != null ? num(i.expected_participants) : '',
-        quartersLabel(i.quarters),
-        ...cols.map(c => c.value(i)),
-        i.notes || '',
+        g.category, i.activity_name || '', i.description || '', utilizationLabel(i) || 'לא נקבע',
+        i.target_audience || '', i.expected_participants != null ? num(i.expected_participants) : '',
+        ...cols.map(c => round(c.value(i))), i.notes || '',
       ]);
     }
-    rows.push([`סה"כ ${g.category}`, '', '', '', '', '', ...cols.map(c => g.items.reduce((s, i) => s + c.value(i), 0)), '']);
+    rows.push([`סה"כ ${g.category}`, '', '', '', '', '', ...cols.map(c => round(g.items.reduce((s, i) => s + c.value(i), 0))), '']);
     rows.push([]);
   }
   const all = groups.flatMap(g => g.items);
-  rows.push(['סה"כ התכנית', '', '', '', '', '', ...cols.map(c => all.reduce((s, i) => s + c.value(i), 0)), '']);
+  rows.push(['סה"כ התכנית', '', '', '', '', '', ...cols.map(c => round(all.reduce((s, i) => s + c.value(i), 0))), '']);
   return rows;
 }
 
-function summarySheetRows(plan, items) {
-  const groups = groupByCategory(items);
-  const grand = groups.reduce((s, g) => s + g.total, 0);
+function scheduleSheetRows(plan, items, view) {
+  const s = monthlySchedule(items, view);
   const rows = [
     [plan.title],
-    [`שנת ${plan.year} · סיכום לפי קטגוריה`],
+    [`שנת ${plan.year} · לוח ניצול חודשי · ${viewLabel(view)}`],
+    ['הסכום של כל שורה מחולק שווה בין החודשים בתקופת הניצול שלה'],
     [],
-    ['קטגוריה', 'תקציב עירוני', 'משרד התרבות', 'סה"כ', 'אחוז מהתכנית'],
+    ['פרמטר', ...MONTHS, 'לא נקבע', 'סה"כ'],
   ];
-  for (const g of groups) {
-    rows.push([g.category, g.municipal, g.ministry, g.total, grand > 0 ? Math.round((g.total / grand) * 1000) / 10 : 0]);
-  }
-  rows.push([
-    'סה"כ',
-    groups.reduce((s, g) => s + g.municipal, 0),
-    groups.reduce((s, g) => s + g.ministry, 0),
-    grand,
-    grand > 0 ? 100 : 0,
-  ]);
+  for (const g of s.groups) rows.push([g.category, ...g.months.map(Math.round), Math.round(g.unscheduled), round(g.total)]);
+  rows.push(['סה"כ', ...s.months.map(Math.round), Math.round(s.unscheduled), round(s.total)]);
   return rows;
 }
 
@@ -66,17 +83,20 @@ export async function exportWorkPlanExcel(plan, items) {
   const addSheet = (rows, name, widths) => {
     const ws = utils.aoa_to_sheet(rows);
     ws['!cols'] = widths.map(wch => ({ wch }));
-    utils.book_append_sheet(wb, ws, name);
+    utils.book_append_sheet(wb, ws, name.slice(0, 31));
   };
 
-  const detailWidths = (view) => [16, 30, 40, 18, 14, 18, ...amountColumns(view).map(() => 15), 30];
-  addSheet(summarySheetRows(plan, items), 'סיכום', [22, 15, 15, 15, 14]);
-  for (const v of VIEWS) addSheet(detailSheetRows(plan, items, v.id), v.label, detailWidths(v.id));
+  addSheet(formSheetRows(plan, items), 'תכנון לפי פרמטרים', [46, 14, 8, 14, 8, 14, 8, 18, 20, 24]);
+  for (const v of VIEWS) {
+    addSheet(detailSheetRows(plan, items, v.id), `פירוט - ${v.label}`, [40, 30, 36, 16, 16, 12, ...amountColumns(v.id).map(() => 14), 28]);
+  }
+  addSheet(scheduleSheetRows(plan, items, 'all'), 'לוח ניצול - כל התכנית', [46, ...MONTHS.map(() => 11), 11, 14]);
+  addSheet(scheduleSheetRows(plan, items, 'ministry'), 'לוח ניצול - משרד התרבות', [46, ...MONTHS.map(() => 11), 11, 14]);
 
   // גיליונות מימין לשמאל
   wb.Workbook = { Views: [{ RTL: true }] };
 
-  writeFile(wb, `תכנית_עבודה_${plan.year}.xlsx`);
+  writeFile(wb, `תכנון_תקציב_${plan.year}.xlsx`);
 }
 
 const escapeHtml = (s) => String(s ?? '')
@@ -91,31 +111,43 @@ const escapeHtml = (s) => String(s ?? '')
  */
 export function printWorkPlan(plan, items, view) {
   const cols = amountColumns(view);
-  const groups = groupByCategory(itemsForView(items, view));
+  const form = parameterRows(items, view);
+  const schedule = monthlySchedule(items, view);
+  const groups = groupByCategory(itemsForView(items, view), { includeEmpty: false });
   const all = groups.flatMap(g => g.items);
-  const grand = groups.reduce((s, g) => s + groupAmount(g, view), 0);
 
-  const summaryRows = groups.map(g => `
+  const formRows = form.rows.map(r => `
     <tr>
-      <td>${escapeHtml(g.category)}</td>
-      ${view === 'all' ? `<td class="num">${formatMoney(g.municipal)}</td><td class="num">${formatMoney(g.ministry)}</td>` : ''}
-      <td class="num">${formatMoney(groupAmount(g, view))}</td>
-      <td class="num">${grand > 0 ? ((groupAmount(g, view) / grand) * 100).toFixed(1) : '0'}%</td>
+      <td>${escapeHtml(r.category)}</td>
+      <td class="num">${formatMoney(r.amount)}</td>
+      <td class="num strong">${formatPct(r.pct)}</td>
+      <td class="rule">${escapeHtml(r.rule)}</td>
+      <td class="${r.status === 'ok' ? 'ok' : r.status ? 'bad' : ''}">${r.status ? RULE_STATUS_LABELS[r.status] : ''}</td>
     </tr>`).join('');
 
+  const scheduleRows = schedule.groups.map(g => {
+    const q = toQuarters(g.months);
+    return `<tr>
+      <td>${escapeHtml(g.category)}</td>
+      ${q.map(v => `<td class="num">${v > 0 ? formatMoney(v, 0) : '-'}</td>`).join('')}
+      <td class="num">${g.unscheduled > 0 ? formatMoney(g.unscheduled, 0) : '-'}</td>
+      <td class="num strong">${formatMoney(g.total, 0)}</td>
+    </tr>`;
+  }).join('');
+  const qTotals = toQuarters(schedule.months);
+
   const detailBody = groups.map(g => `
-    <tr class="group"><td colspan="${5 + cols.length}">${escapeHtml(g.category)}</td></tr>
+    <tr class="group"><td colspan="${4 + cols.length}">${escapeHtml(g.category)}</td></tr>
     ${g.items.map(i => `
       <tr>
         <td><strong>${escapeHtml(i.activity_name)}</strong>${i.description ? `<div class="desc">${escapeHtml(i.description)}</div>` : ''}</td>
-        <td>${escapeHtml(i.target_audience)}</td>
-        <td class="num">${i.expected_participants != null ? num(i.expected_participants).toLocaleString('he-IL') : ''}</td>
-        <td>${escapeHtml(quartersLabel(i.quarters))}</td>
+        <td>${escapeHtml(utilizationLabel(i) || 'לא נקבע')}</td>
+        <td>${escapeHtml(i.target_audience)}${i.expected_participants != null ? ` <span class="desc">(${num(i.expected_participants).toLocaleString('he-IL')} משתתפים)</span>` : ''}</td>
         ${cols.map(c => `<td class="num">${formatMoney(c.value(i))}</td>`).join('')}
         <td>${escapeHtml(i.notes)}</td>
       </tr>`).join('')}
     <tr class="subtotal">
-      <td colspan="4">סה"כ ${escapeHtml(g.category)}</td>
+      <td colspan="3">סה"כ ${escapeHtml(g.category)}</td>
       ${cols.map(c => `<td class="num">${formatMoney(g.items.reduce((s, i) => s + c.value(i), 0))}</td>`).join('')}
       <td></td>
     </tr>`).join('');
@@ -130,60 +162,65 @@ export function printWorkPlan(plan, items, view) {
   * { box-sizing: border-box; }
   body { font-family: 'Heebo', 'Arial', sans-serif; color: #111; font-size: 11px; margin: 0; }
   header { border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 14px; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
   .meta { color: #555; font-size: 12px; }
-  h2 { font-size: 14px; margin: 18px 0 6px; }
+  h2 { font-size: 14px; margin: 20px 0 6px; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #bbb; padding: 4px 6px; text-align: right; vertical-align: top; }
-  th { background: #eee; font-weight: 700; }
+  th, td { border: 1px solid #999; padding: 5px 7px; text-align: right; vertical-align: top; }
+  th { background: #dfe7f5; font-weight: 700; }
   td.num, th.num { text-align: left; direction: ltr; white-space: nowrap; }
-  tr.group td { background: #f3f0ff; font-weight: 700; font-size: 12px; }
+  td.strong { font-weight: 700; }
+  td.rule { color: #c00; font-weight: 700; }
+  td.ok { color: #1a7f37; font-weight: 700; }
+  td.bad { color: #c00; font-weight: 700; }
+  tr.group td { background: #eef2fa; font-weight: 700; font-size: 12px; }
   tr.subtotal td { background: #fafafa; font-weight: 700; }
-  tr.total td { background: #e8e8e8; font-weight: 700; font-size: 12px; }
-  .desc { color: #555; margin-top: 2px; }
+  tr.total td { background: #c9d6ee; font-weight: 700; font-size: 12px; }
+  .desc { color: #555; margin-top: 2px; font-weight: normal; }
+  .note { color: #666; font-size: 10px; margin: 4px 0 0; }
   thead { display: table-header-group; }
   tr { page-break-inside: avoid; }
-  .summary { width: auto; min-width: 50%; }
+  .page-break { page-break-before: always; }
   .signatures { display: flex; gap: 60px; margin-top: 40px; }
   .signatures div { border-top: 1px solid #333; padding-top: 4px; min-width: 180px; }
 </style>
 </head>
 <body>
   <header>
-    <h1>${escapeHtml(plan.title)}</h1>
-    <div class="meta">שנת ${escapeHtml(plan.year)} · ${escapeHtml(viewLabel(view))} · הופק ב-${new Date().toLocaleDateString('he-IL')}</div>
+    <h1>תכנון התקציב של הספרייה לשנת ${escapeHtml(plan.year)}</h1>
+    <div class="meta">${escapeHtml(plan.title)} · ${escapeHtml(viewLabel(view))} · הופק ב-${new Date().toLocaleDateString('he-IL')}</div>
   </header>
 
-  <h2>סיכום לפי קטגוריה</h2>
-  <table class="summary">
-    <thead><tr>
-      <th>קטגוריה</th>
-      ${view === 'all' ? '<th class="num">תקציב עירוני</th><th class="num">משרד התרבות</th>' : ''}
-      <th class="num">${view === 'all' ? 'סה"כ' : escapeHtml(viewLabel(view))}</th>
-      <th class="num">אחוז</th>
-    </tr></thead>
+  <h2>תכנון לפי פרמטרים</h2>
+  <table>
+    <thead><tr><th>פרמטר</th><th class="num">סכום</th><th class="num">אחוז</th><th>הגבלה</th><th>עמידה בהגבלה</th></tr></thead>
     <tbody>
-      ${summaryRows}
-      <tr class="total">
-        <td>סה"כ</td>
-        ${view === 'all' ? `<td class="num">${formatMoney(groups.reduce((s, g) => s + g.municipal, 0))}</td><td class="num">${formatMoney(groups.reduce((s, g) => s + g.ministry, 0))}</td>` : ''}
-        <td class="num">${formatMoney(grand)}</td>
-        <td class="num">${grand > 0 ? '100%' : '0%'}</td>
-      </tr>
+      ${formRows}
+      <tr class="total"><td>סה"כ</td><td class="num">${formatMoney(form.total)}</td><td class="num">${form.total > 0 ? '100%' : '0%'}</td><td></td><td></td></tr>
     </tbody>
   </table>
 
-  <h2>פירוט פעילויות</h2>
+  <h2>לוח זמנים לניצול התקציב</h2>
+  <table>
+    <thead><tr><th>פרמטר</th>${QUARTERS.map(q => `<th class="num">${q.label}</th>`).join('')}<th class="num">לא נקבע</th><th class="num">סה"כ</th></tr></thead>
+    <tbody>
+      ${scheduleRows}
+      <tr class="total"><td>סה"כ</td>${qTotals.map(v => `<td class="num">${formatMoney(v, 0)}</td>`).join('')}<td class="num">${formatMoney(schedule.unscheduled, 0)}</td><td class="num">${formatMoney(schedule.total, 0)}</td></tr>
+    </tbody>
+  </table>
+  <p class="note">סכום כל שורה מחולק שווה בין החודשים בתקופת הניצול שלה.</p>
+
+  <h2 class="page-break">פירוט</h2>
   <table>
     <thead><tr>
-      <th>פעילות</th><th>קהל יעד</th><th class="num">משתתפים</th><th>מועד</th>
+      <th>פירוט</th><th>זמן ניצול</th><th>קהל יעד</th>
       ${cols.map(c => `<th class="num">${escapeHtml(c.label)}</th>`).join('')}
       <th>הערות</th>
     </tr></thead>
     <tbody>
-      ${detailBody || `<tr><td colspan="${5 + cols.length}">אין פעילויות בתצוגה זו</td></tr>`}
+      ${detailBody || `<tr><td colspan="${4 + cols.length}">אין שורות בתצוגה זו</td></tr>`}
       <tr class="total">
-        <td colspan="4">סה"כ התכנית</td>
+        <td colspan="3">סה"כ התכנית</td>
         ${cols.map(c => `<td class="num">${formatMoney(all.reduce((s, i) => s + c.value(i), 0))}</td>`).join('')}
         <td></td>
       </tr>
@@ -193,7 +230,8 @@ export function printWorkPlan(plan, items, view) {
   ${plan.notes ? `<h2>הערות</h2><p>${escapeHtml(plan.notes).replace(/\n/g, '<br>')}</p>` : ''}
 
   <div class="signatures">
-    <div>מנהלת הספרייה</div>
+    <div>מנהל/ת הספרייה</div>
+    <div>חתימה</div>
     <div>תאריך</div>
   </div>
 </body>
