@@ -333,6 +333,45 @@ export function planAllocationSplits(items, allocations, funder) {
 }
 
 /**
+ * כמה מתוכנן בתכניות העבודה מכל קטגוריית תקציב — לתצוגה במסך מקורות תקציב.
+ * לכל תכנית ולכל גורם מממן שלה: במקור מחולק לקטגוריות לפי planAllocationSplits,
+ * ובמקור בלי קטגוריות (0015) כל סכום הגורם נספר על הקטגוריה היחידה.
+ * לא שריון: הזמנות משריינות בעצמן, ושריון גם לתכנית היה מוריד את אותו כסף פעמיים.
+ *
+ * @returns {Map<string, { planned: number, plans: string[] }>} לפי budget_allocations.id
+ */
+export function plannedByAllocation(plans, itemsByPlan, sources, allocations) {
+  const out = new Map();
+  const add = (id, amount, title) => {
+    if (amount <= 0.005) return;
+    const e = out.get(id) || { planned: 0, plans: [] };
+    e.planned += amount;
+    if (!e.plans.includes(title)) e.plans.push(title);
+    out.set(id, e);
+  };
+  const funders = [
+    { field: 'municipal_budget_source_id', funder: 'municipal' },
+    { field: 'ministry_budget_source_id', funder: 'ministry' },
+  ];
+  for (const plan of plans) {
+    const items = itemsByPlan.get(plan.id) || [];
+    const title = `${plan.title}${plan.year ? ` (${plan.year})` : ''}`;
+    for (const { field, funder } of funders) {
+      const source = sources.find(s => s.id === plan[field]);
+      if (!source) continue;
+      const allocs = allocations.filter(a => a.budget_source_id === source.id);
+      if (source.uses_categories === false) {
+        if (allocs[0]) add(allocs[0].id, items.reduce((s, i) => s + num(i[`${funder}_amount`]), 0), title);
+        continue;
+      }
+      const { byItem } = planAllocationSplits(items, allocs, funder);
+      for (const { splits } of byItem.values()) for (const s of splits) add(s.id, s.amount, title);
+    }
+  }
+  return out;
+}
+
+/**
  * הסכום המקסימלי שהשורה יכולה לקבל מהקטגוריות שלה: מה שפנוי בהן אחרי כל
  * השורות האחרות. null — לשורה אין קטגוריות, ואין הגבלה.
  */

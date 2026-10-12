@@ -16,6 +16,7 @@ import BudgetTable from '@/components/budget/BudgetTable';
 import BudgetSourceDialog from '@/components/budget/BudgetSourceDialog';
 import SupplierCreditDialog from '@/components/budget/SupplierCreditDialog';
 import { recalcBudgetSource } from '@/lib/budgetUpdater';
+import { plannedByAllocation } from '@/lib/workPlan';
 import { canEditBudgets, canCreateSupplierCredits, canAddManualExpense, canViewBudgets, canViewSensitiveBudgetData } from '@/lib/permissions';
 
 const VIEWS = [
@@ -52,6 +53,9 @@ export default function Credits() {
   const [allCategories, setAllCategories] = useState([]);
   const [allOrders, setAllOrders] = useState([]);
   const [supplierCredits, setSupplierCredits] = useState([]);
+  const [planned, setPlanned] = useState(() => new Map());
+  const plannedFor = (catId) => planned.get(catId)?.planned || 0;
+  const plannedForSource = (srcId) => allCategories.filter(c => c.budget_source_id === srcId).reduce((s, c) => s + plannedFor(c.id), 0);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [noAccess, setNoAccess] = useState(false);
@@ -80,6 +84,20 @@ export default function Credits() {
     setAllOrders(orders);
     setSupplierCredits(credits);
     setLoading(false);
+    loadPlanned(srcs, cats);
+  };
+
+  // כמה מתוכנן מכל קטגוריה בתכניות העבודה שמקושרות למקורות — לתצוגה בלבד.
+  // נטען אחרי שאר הנתונים ולא חוסם אותם; כשל כאן פשוט לא מציג את המספר.
+  const loadPlanned = async (srcs, cats) => {
+    try {
+      const plans = (await base44.entities.WorkPlan.list('-created_date', 50))
+        .filter(p => p.municipal_budget_source_id || p.ministry_budget_source_id);
+      const lists = await Promise.all(plans.map(p => base44.entities.WorkPlanItem.filter({ work_plan_id: p.id }, 'sort_order', 2000)));
+      setPlanned(plannedByAllocation(plans, new Map(plans.map((p, k) => [p.id, lists[k]])), srcs, cats));
+    } catch {
+      setPlanned(new Map());
+    }
   };
 
   useEffect(() => {
@@ -389,6 +407,12 @@ export default function Credits() {
                         <div><p className="text-muted-foreground">נוצל</p><p className="font-bold text-red-500">₪{totals.spent.toLocaleString('he-IL')}</p></div>
                         <div><p className="text-muted-foreground">יתרה</p><p className="font-bold text-teal-600">₪{avail.toLocaleString('he-IL')}</p></div>
                       </div>
+                      {plannedForSource(src.id) > 0.005 && (
+                        <div className="flex justify-between text-xs bg-violet-50 text-violet-700 rounded-lg px-2.5 py-1.5 mb-3">
+                          <span>מתוכנן בתכנית עבודה ₪{plannedForSource(src.id).toLocaleString('he-IL')}</span>
+                          <span className="font-semibold">פנוי לתכנון ₪{Math.max(0, totals.total - plannedForSource(src.id)).toLocaleString('he-IL')}</span>
+                        </div>
+                      )}
                       <ProgressBar value={totals.reserved + totals.spent} max={budget} color={src.color} />
                       <div className="flex justify-between text-xs mt-1.5">
                         <span className="text-muted-foreground" dir="ltr">{usedPct.toFixed(0)}%</span>
@@ -532,6 +556,12 @@ export default function Credits() {
           <div><p className="text-xs text-muted-foreground">נוצל בפועל</p><p className="text-2xl font-bold text-red-500">₪{catTotals.spent.toLocaleString('he-IL')}</p></div>
           <div><p className="text-xs text-muted-foreground">יתרה זמינה</p><p className="text-2xl font-bold text-teal-600">₪{avail.toLocaleString('he-IL')}</p></div>
         </div>
+        {plannedForSource(activeSourceId) > 0.005 && (
+          <div className="flex flex-wrap justify-between gap-2 text-sm bg-violet-50 text-violet-700 rounded-xl px-3 py-2 mb-3">
+            <span>מתוכנן בתכנית העבודה: <b>₪{plannedForSource(activeSourceId).toLocaleString('he-IL')}</b></span>
+            <span>פנוי לתכנון: <b>₪{Math.max(0, catTotals.total - plannedForSource(activeSourceId)).toLocaleString('he-IL')}</b></span>
+          </div>
+        )}
         <ProgressBar value={catTotals.reserved + catTotals.spent} max={catTotals.total} color="#14b8a6" />
         <div className="flex justify-between text-xs text-muted-foreground mt-1">
           <span>{usedPct}% מנוצל</span>
@@ -605,6 +635,18 @@ export default function Credits() {
                     </div>
                     <ProgressBar value={reserved + spent} max={allocated} color={cat.color} />
                     <div className="flex justify-between text-xs text-muted-foreground mt-1"><span>{pct.toFixed(0)}% מנוצל</span></div>
+
+                    {/* מה תוכנן מהקטגוריה בתכניות העבודה — תצוגה, לא שריון */}
+                    {plannedFor(cat.id) > 0.005 && (
+                      <div className="mt-3 flex flex-wrap justify-between gap-2 text-xs bg-violet-50 text-violet-700 rounded-lg px-2.5 py-1.5">
+                        <span>מתוכנן בתכנית העבודה ₪{plannedFor(cat.id).toLocaleString('he-IL')} · {planned.get(cat.id).plans.join(', ')}</span>
+                        <span className={cn('font-semibold', plannedFor(cat.id) > allocated + 0.005 && 'text-red-600')}>
+                          {plannedFor(cat.id) > allocated + 0.005
+                            ? `תוכנן ₪${(plannedFor(cat.id) - allocated).toLocaleString('he-IL')} מעבר לקטגוריה`
+                            : `פנוי לתכנון ₪${(allocated - plannedFor(cat.id)).toLocaleString('he-IL')}`}
+                        </span>
+                      </div>
+                    )}
 
                     {/* Orders linked to this category */}
                     {linkedOrders.length > 0 && (
