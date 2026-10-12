@@ -16,7 +16,22 @@ import BudgetTable from '@/components/budget/BudgetTable';
 import BudgetSourceDialog from '@/components/budget/BudgetSourceDialog';
 import SupplierCreditDialog from '@/components/budget/SupplierCreditDialog';
 import { recalcBudgetSource } from '@/lib/budgetUpdater';
-import { plannedByAllocation } from '@/lib/workPlan';
+import { plannedByAllocation, allocationCommitted } from '@/lib/workPlan';
+
+/** פס סגול של תכנית העבודה: מאושר (יורד מהיתרה) ומוגש (מתוכנן בלבד). */
+function PlanStrip({ approved, submitted, leftInPlan, allocated, plans, className }) {
+  if (approved <= 0.005 && submitted <= 0.005) return null;
+  const over = approved + submitted - allocated;
+  return (
+    <div className={cn('flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs bg-violet-50 text-violet-700 rounded-lg px-2.5 py-1.5', className)}>
+      {approved > 0.005 && <span>תכנית שאושרה — נוצל ₪{approved.toLocaleString('he-IL')}</span>}
+      {submitted > 0.005 && <span>תכנית שהוגשה למשרד — משוריין ₪{submitted.toLocaleString('he-IL')}</span>}
+      <span>נשאר בתכניות להזמנות <b>₪{leftInPlan.toLocaleString('he-IL')}</b></span>
+      {over > 0.005 && <span className="font-semibold text-red-600">תוכנן ₪{over.toLocaleString('he-IL')} מעבר לתקציב</span>}
+      {plans?.length > 0 && <span className="text-violet-400 w-full">{plans.join(', ')}</span>}
+    </div>
+  );
+}
 import { canEditBudgets, canCreateSupplierCredits, canAddManualExpense, canViewBudgets, canViewSensitiveBudgetData } from '@/lib/permissions';
 
 const VIEWS = [
@@ -54,8 +69,26 @@ export default function Credits() {
   const [allOrders, setAllOrders] = useState([]);
   const [supplierCredits, setSupplierCredits] = useState([]);
   const [planned, setPlanned] = useState(() => new Map());
-  const plannedFor = (catId) => planned.get(catId)?.planned || 0;
-  const plannedForSource = (srcId) => allCategories.filter(c => c.budget_source_id === srcId).reduce((s, c) => s + plannedFor(c.id), 0);
+  // טיוטה — לא יורד כלום; הוגשה למשרד — משוריין; אושרה — נוצל. ההזמנות של
+  // הפעילויות יורדות מתוך התכנית ולא פעם נוספת (allocationCommitted).
+  // משוריין + נוצל + יתרה = מוקצה.
+  const approvedFor = (catId) => planned.get(catId)?.approved || 0;
+  const submittedFor = (catId) => planned.get(catId)?.submitted || 0;
+  const ledgerFor = (cat) => allocationCommitted(cat, approvedFor(cat.id), submittedFor(cat.id));
+  const committedFor = (cat) => ledgerFor(cat).committed;
+  const reservedFor = (cat) => ledgerFor(cat).reservedShown;
+  const spentFor = (cat) => ledgerFor(cat).spentShown;
+  const sourcePlan = (srcId) => allCategories.filter(c => c.budget_source_id === srcId).reduce((t, c) => {
+    const l = ledgerFor(c);
+    return {
+      approved: t.approved + approvedFor(c.id),
+      submitted: t.submitted + submittedFor(c.id),
+      leftInPlan: t.leftInPlan + l.leftInPlan,
+      committed: t.committed + l.committed,
+      reserved: t.reserved + l.reservedShown,
+      spent: t.spent + l.spentShown,
+    };
+  }, { approved: 0, submitted: 0, leftInPlan: 0, committed: 0, reserved: 0, spent: 0 });
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [noAccess, setNoAccess] = useState(false);
@@ -301,9 +334,9 @@ export default function Credits() {
 
   if (!activeSourceId) {
     const grandTotal = sources.reduce((s, src) => s + sourceBudget(src), 0);
-    const grandReserved = Object.values(sourceTotals).reduce((s, t) => s + t.reserved, 0);
-    const grandSpent = Object.values(sourceTotals).reduce((s, t) => s + t.spent, 0);
-    const grandAvailable = Math.max(0, grandTotal - grandReserved - grandSpent);
+    const grandReserved = sources.reduce((s, src) => s + sourcePlan(src.id).reserved, 0);
+    const grandSpent = sources.reduce((s, src) => s + sourcePlan(src.id).spent, 0);
+    const grandAvailable = Math.max(0, grandTotal - sources.reduce((s, src) => s + sourcePlan(src.id).committed, 0));
     const grandUnallocated = sources.reduce((s, src) =>
       s + (src.planned_amount != null ? Math.max(0, Number(src.planned_amount) - (sourceTotals[src.id]?.total || 0)) : 0), 0);
 
@@ -349,8 +382,9 @@ export default function Credits() {
                 {sources.map(src => {
                   const totals = sourceTotals[src.id] || { total: 0, reserved: 0, spent: 0 };
                   const budget = sourceBudget(src);
-                  const avail = Math.max(0, budget - totals.reserved - totals.spent);
-                  const usedPct = budget > 0 ? Math.min(100, ((totals.reserved + totals.spent) / budget) * 100) : 0;
+                  const plan = sourcePlan(src.id);
+                  const avail = Math.max(0, budget - plan.committed);
+                  const usedPct = budget > 0 ? Math.min(100, (plan.committed / budget) * 100) : 0;
                   const srcCats = allCategories.filter(c => c.budget_source_id === src.id);
 
                   return (
@@ -403,17 +437,12 @@ export default function Credits() {
                         )}
                       </div>
                       <div className="grid grid-cols-3 gap-2 mb-3 text-center text-xs">
-                        <div><p className="text-muted-foreground">משוריין</p><p className="font-bold text-amber-600">₪{totals.reserved.toLocaleString('he-IL')}</p></div>
-                        <div><p className="text-muted-foreground">נוצל</p><p className="font-bold text-red-500">₪{totals.spent.toLocaleString('he-IL')}</p></div>
+                        <div><p className="text-muted-foreground">משוריין</p><p className="font-bold text-amber-600">₪{plan.reserved.toLocaleString('he-IL')}</p></div>
+                        <div><p className="text-muted-foreground">נוצל</p><p className="font-bold text-red-500">₪{plan.spent.toLocaleString('he-IL')}</p></div>
                         <div><p className="text-muted-foreground">יתרה</p><p className="font-bold text-teal-600">₪{avail.toLocaleString('he-IL')}</p></div>
                       </div>
-                      {plannedForSource(src.id) > 0.005 && (
-                        <div className="flex justify-between text-xs bg-violet-50 text-violet-700 rounded-lg px-2.5 py-1.5 mb-3">
-                          <span>מתוכנן בתכנית עבודה ₪{plannedForSource(src.id).toLocaleString('he-IL')}</span>
-                          <span className="font-semibold">פנוי לתכנון ₪{Math.max(0, totals.total - plannedForSource(src.id)).toLocaleString('he-IL')}</span>
-                        </div>
-                      )}
-                      <ProgressBar value={totals.reserved + totals.spent} max={budget} color={src.color} />
+                      <PlanStrip {...plan} allocated={totals.total} className="mb-3" />
+                      <ProgressBar value={plan.committed} max={budget} color={src.color} />
                       <div className="flex justify-between text-xs mt-1.5">
                         <span className="text-muted-foreground" dir="ltr">{usedPct.toFixed(0)}%</span>
                         <span className="font-medium" style={{ color: src.color || '#8b5cf6' }}>יתרה ₪{avail.toLocaleString('he-IL')}</span>
@@ -508,8 +537,9 @@ export default function Credits() {
   }
 
   // ─── SOURCE DETAIL ───────────────────────────────────────────────────────────
-  const avail = Math.max(0, catTotals.total - catTotals.reserved - catTotals.spent);
-  const usedPct = catTotals.total > 0 ? ((catTotals.reserved + catTotals.spent) / catTotals.total * 100).toFixed(0) : 0;
+  const activePlan = sourcePlan(activeSourceId);
+  const avail = Math.max(0, catTotals.total - activePlan.committed);
+  const usedPct = catTotals.total > 0 ? (activePlan.committed / catTotals.total * 100).toFixed(0) : 0;
   const single = isSingle(activeSource);
 
   return (
@@ -552,17 +582,12 @@ export default function Credits() {
             </div>
           )}
           <div><p className="text-xs text-muted-foreground">{single ? 'תקציב' : 'מוקצה בקטגוריות'}</p><p className="text-2xl font-bold">₪{catTotals.total.toLocaleString('he-IL')}</p></div>
-          <div><p className="text-xs text-muted-foreground">משוריין</p><p className="text-2xl font-bold text-amber-600">₪{catTotals.reserved.toLocaleString('he-IL')}</p></div>
-          <div><p className="text-xs text-muted-foreground">נוצל בפועל</p><p className="text-2xl font-bold text-red-500">₪{catTotals.spent.toLocaleString('he-IL')}</p></div>
+          <div><p className="text-xs text-muted-foreground">משוריין</p><p className="text-2xl font-bold text-amber-600">₪{activePlan.reserved.toLocaleString('he-IL')}</p></div>
+          <div><p className="text-xs text-muted-foreground">נוצל</p><p className="text-2xl font-bold text-red-500">₪{activePlan.spent.toLocaleString('he-IL')}</p></div>
           <div><p className="text-xs text-muted-foreground">יתרה זמינה</p><p className="text-2xl font-bold text-teal-600">₪{avail.toLocaleString('he-IL')}</p></div>
         </div>
-        {plannedForSource(activeSourceId) > 0.005 && (
-          <div className="flex flex-wrap justify-between gap-2 text-sm bg-violet-50 text-violet-700 rounded-xl px-3 py-2 mb-3">
-            <span>מתוכנן בתכנית העבודה: <b>₪{plannedForSource(activeSourceId).toLocaleString('he-IL')}</b></span>
-            <span>פנוי לתכנון: <b>₪{Math.max(0, catTotals.total - plannedForSource(activeSourceId)).toLocaleString('he-IL')}</b></span>
-          </div>
-        )}
-        <ProgressBar value={catTotals.reserved + catTotals.spent} max={catTotals.total} color="#14b8a6" />
+        <PlanStrip {...activePlan} allocated={catTotals.total} className="mb-3 text-sm" />
+        <ProgressBar value={activePlan.committed} max={catTotals.total} color="#14b8a6" />
         <div className="flex justify-between text-xs text-muted-foreground mt-1">
           <span>{usedPct}% מנוצל</span>
           {activeSource?.start_date && <span>התחלה: {new Date(activeSource.start_date).toLocaleDateString('he-IL')}</span>}
@@ -590,11 +615,9 @@ export default function Credits() {
           {(view === 'overview' || single) && (
             <div className="space-y-3">
               {categories.map(cat => {
-                const reserved = cat.reserved_amount || 0;
-                const spent = cat.spent_amount || 0;
                 const allocated = cat.allocated_amount || 0;
-                const catAvail = Math.max(0, allocated - reserved - spent);
-                const pct = allocated > 0 ? Math.min(100, ((reserved + spent) / allocated) * 100) : 0;
+                const catAvail = Math.max(0, allocated - committedFor(cat));
+                const pct = allocated > 0 ? Math.min(100, (committedFor(cat) / allocated) * 100) : 0;
                 const linkedOrders = getLinkedOrders(cat.id);
                 const allTxs = (cat.transactions || []).sort((a, b) => b.date?.localeCompare?.(a.date) || 0);
 
@@ -629,24 +652,22 @@ export default function Credits() {
 
                     <div className="grid grid-cols-4 gap-3 mb-3 text-center">
                       <div><p className="text-xs text-muted-foreground">מוקצה</p><p className="font-bold">₪{allocated.toLocaleString('he-IL')}</p></div>
-                      <div><p className="text-xs text-muted-foreground">משוריין</p><p className="font-bold text-amber-600">₪{reserved.toLocaleString('he-IL')}</p></div>
-                      <div><p className="text-xs text-muted-foreground">נוצל</p><p className={cn('font-bold', spent > 0 ? 'text-red-500' : 'text-muted-foreground')}>₪{spent.toLocaleString('he-IL')}</p></div>
+                      <div><p className="text-xs text-muted-foreground">משוריין</p><p className="font-bold text-amber-600">₪{reservedFor(cat).toLocaleString('he-IL')}</p></div>
+                      <div><p className="text-xs text-muted-foreground">נוצל</p><p className={cn('font-bold', spentFor(cat) > 0 ? 'text-red-500' : 'text-muted-foreground')}>₪{spentFor(cat).toLocaleString('he-IL')}</p></div>
                       <div><p className="text-xs text-muted-foreground">יתרה</p><p className="font-bold text-teal-600">₪{catAvail.toLocaleString('he-IL')}</p></div>
                     </div>
-                    <ProgressBar value={reserved + spent} max={allocated} color={cat.color} />
+                    <ProgressBar value={committedFor(cat)} max={allocated} color={cat.color} />
                     <div className="flex justify-between text-xs text-muted-foreground mt-1"><span>{pct.toFixed(0)}% מנוצל</span></div>
 
                     {/* מה תוכנן מהקטגוריה בתכניות העבודה — תצוגה, לא שריון */}
-                    {plannedFor(cat.id) > 0.005 && (
-                      <div className="mt-3 flex flex-wrap justify-between gap-2 text-xs bg-violet-50 text-violet-700 rounded-lg px-2.5 py-1.5">
-                        <span>מתוכנן בתכנית העבודה ₪{plannedFor(cat.id).toLocaleString('he-IL')} · {planned.get(cat.id).plans.join(', ')}</span>
-                        <span className={cn('font-semibold', plannedFor(cat.id) > allocated + 0.005 && 'text-red-600')}>
-                          {plannedFor(cat.id) > allocated + 0.005
-                            ? `תוכנן ₪${(plannedFor(cat.id) - allocated).toLocaleString('he-IL')} מעבר לקטגוריה`
-                            : `פנוי לתכנון ₪${(allocated - plannedFor(cat.id)).toLocaleString('he-IL')}`}
-                        </span>
-                      </div>
-                    )}
+                    <PlanStrip
+                      approved={approvedFor(cat.id)}
+                      submitted={submittedFor(cat.id)}
+                      leftInPlan={ledgerFor(cat).leftInPlan}
+                      allocated={allocated}
+                      plans={planned.get(cat.id)?.plans}
+                      className="mt-3"
+                    />
 
                     {/* Orders linked to this category */}
                     {linkedOrders.length > 0 && (

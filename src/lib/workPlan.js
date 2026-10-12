@@ -336,16 +336,18 @@ export function planAllocationSplits(items, allocations, funder) {
  * כמה מתוכנן בתכניות העבודה מכל קטגוריית תקציב — לתצוגה במסך מקורות תקציב.
  * לכל תכנית ולכל גורם מממן שלה: במקור מחולק לקטגוריות לפי planAllocationSplits,
  * ובמקור בלי קטגוריות (0015) כל סכום הגורם נספר על הקטגוריה היחידה.
- * לא שריון: הזמנות משריינות בעצמן, ושריון גם לתכנית היה מוריד את אותו כסף פעמיים.
+ * טיוטה לא נספרת. תכנית שהוגשה נספרת ב-submitted (מתוכנן בלבד), ותכנית
+ * שאושרה ב-approved — הסכום שיורד מהקטגוריה (ראה allocationCommitted).
  *
- * @returns {Map<string, { planned: number, plans: string[] }>} לפי budget_allocations.id
+ * @returns {Map<string, { approved: number, submitted: number, plans: string[] }>} לפי budget_allocations.id
  */
 export function plannedByAllocation(plans, itemsByPlan, sources, allocations) {
   const out = new Map();
+  let bucket = 'approved';
   const add = (id, amount, title) => {
     if (amount <= 0.005) return;
-    const e = out.get(id) || { planned: 0, plans: [] };
-    e.planned += amount;
+    const e = out.get(id) || { approved: 0, submitted: 0, plans: [] };
+    e[bucket] += amount;
     if (!e.plans.includes(title)) e.plans.push(title);
     out.set(id, e);
   };
@@ -354,8 +356,10 @@ export function plannedByAllocation(plans, itemsByPlan, sources, allocations) {
     { field: 'ministry_budget_source_id', funder: 'ministry' },
   ];
   for (const plan of plans) {
+    if (plan.status !== 'approved' && plan.status !== 'submitted') continue;
+    bucket = plan.status;
     const items = itemsByPlan.get(plan.id) || [];
-    const title = `${plan.title}${plan.year ? ` (${plan.year})` : ''}`;
+    const title = `${plan.title}${plan.year ? ` (${plan.year})` : ''} — ${plan.status === 'approved' ? 'אושרה' : 'הוגשה'}`;
     for (const { field, funder } of funders) {
       const source = sources.find(s => s.id === plan[field]);
       if (!source) continue;
@@ -367,6 +371,54 @@ export function plannedByAllocation(plans, itemsByPlan, sources, allocations) {
       const { byItem } = planAllocationSplits(items, allocs, funder);
       for (const { splits } of byItem.values()) for (const s of splits) add(s.id, s.amount, title);
     }
+  }
+  return out;
+}
+
+/**
+ * כמה יורד מקטגוריה לפי סטטוס התכניות: טיוטה — כלום; הוגשה למשרד — משוריין;
+ * אושרה — נוצל. הזמנות של הפעילויות יורדות מתוך התכנית ולא פעם נוספת, ולכן
+ * הסך שיורד הוא הגבוה מבין סכום התכניות לבין מה שההזמנות שריינו/ניצלו; הזמנה
+ * מעבר לתכנית מורידה רק את מה שמעבר.
+ *   committed — כל מה שיורד; יתרה = מוקצה − committed
+ *   spentShown — "נוצל": התכנית המאושרת, או מה שהזמנות ניצלו אם זה יותר
+ *   reservedShown — "משוריין": השאר (תכנית שהוגשה + הזמנות פתוחות מעבר)
+ *   leftInPlan — מה שנשאר בתכניות להזמנות
+ * תצוגה בלבד — הבדיקה של הזמנה (מוקצה − משוריין − נוצל של ההזמנות) לא
+ * משתנה, כי הכסף שבתכנית נועד בדיוק להזמנות האלה.
+ */
+export function allocationCommitted(alloc, approvedPlanned, submittedPlanned = 0) {
+  const approved = num(approvedPlanned);
+  const plan = approved + num(submittedPlanned);
+  const orders = num(alloc.reserved_amount) + num(alloc.spent_amount);
+  const committed = Math.max(plan, orders);
+  const spentShown = Math.min(committed, Math.max(approved, num(alloc.spent_amount)));
+  return {
+    committed,
+    spentShown,
+    reservedShown: committed - spentShown,
+    leftInPlan: Math.max(0, plan - orders),
+  };
+}
+
+/**
+ * מצב מקור תקציב אחד אחרי כל התכניות המאושרות — אותו חשבון בדיוק כמו במסך
+ * מקורות תקציב, כדי ששני המסכים יראו את אותה יתרה. מקבל את קטגוריות המקור
+ * ואת התוצאה של plannedByAllocation.
+ * יתרה = מוקצה − משוריין − נוצל, כשמשוריין כולל את התכניות המאושרות.
+ */
+export function sourceLedger(allocs, planned) {
+  const out = { allocated: 0, reserved: 0, spent: 0, balance: 0, approved: 0, submitted: 0, plans: [] };
+  for (const a of allocs) {
+    const e = planned.get(a.id);
+    const c = allocationCommitted(a, e?.approved || 0, e?.submitted || 0);
+    out.allocated += num(a.allocated_amount);
+    out.spent += c.spentShown;
+    out.reserved += c.reservedShown;
+    out.balance += Math.max(0, num(a.allocated_amount) - c.committed);
+    out.approved += e?.approved || 0;
+    out.submitted += e?.submitted || 0;
+    for (const p of e?.plans || []) if (!out.plans.includes(p)) out.plans.push(p);
   }
   return out;
 }

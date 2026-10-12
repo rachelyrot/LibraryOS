@@ -14,7 +14,7 @@ import WorkPlanGrid from '@/components/workPlan/WorkPlanGrid';
 import { canViewWorkPlan, canEditWorkPlan, canViewBudgets } from '@/lib/permissions';
 import {
   PLAN_STATUSES, VIEWS, MONTHS, RULE_STATUS_LABELS, amountColumns, itemsForView, groupByCategory,
-  groupAmount, planTotals, parameterRows, monthlySchedule, YEAR_PCT_LABELS, planAllocationSplits, formatMoney, formatPct, num,
+  groupAmount, planTotals, parameterRows, monthlySchedule, YEAR_PCT_LABELS, planAllocationSplits, plannedByAllocation, sourceLedger, formatMoney, formatPct, num,
   linkedSourceIds, budgetActuals,
 } from '@/lib/workPlan';
 import { exportWorkPlanExcel, printWorkPlan } from '@/lib/workPlanExport';
@@ -117,6 +117,25 @@ export default function WorkPlan() {
       .then(setItems)
       .catch(() => setItems([]));
   }, [activePlanId]);
+
+  // שורות של שאר התכניות (שהוגשו/אושרו ומקושרות למקור) — כדי שהיתרה בכרטיס
+  // המקור תחשב גם תכניות אחרות שמשריינות מאותו מקור, כמו במסך מקורות תקציב
+  const [otherItems, setOtherItems] = useState(() => new Map());
+  const otherPlanIds = plans
+    .filter(p => p.id !== activePlanId && (p.status === 'approved' || p.status === 'submitted')
+      && (p.municipal_budget_source_id || p.ministry_budget_source_id))
+    .map(p => p.id).join(',');
+  useEffect(() => {
+    const ids = otherPlanIds ? otherPlanIds.split(',') : [];
+    Promise.all(ids.map(id => base44.entities.WorkPlanItem.filter({ work_plan_id: id }, 'sort_order', 2000)))
+      .then(lists => setOtherItems(new Map(ids.map((id, k) => [id, lists[k]]))))
+      .catch(() => setOtherItems(new Map()));
+  }, [otherPlanIds]);
+  const plannedAll = useMemo(() => {
+    const byPlan = new Map(otherItems);
+    if (activePlanId) byPlan.set(activePlanId, items);
+    return plannedByAllocation(plans, byPlan, budgetSources, allocations);
+  }, [otherItems, items, activePlanId, plans, budgetSources, allocations]);
 
   // שורה שנערכה או נוספה בתצוגה של גורם מממן אחד נשארת גלויה גם כשהסכום שלה שם
   // עדיין/כבר 0, כדי שלא תיעלם מתחת ליד באמצע עריכה. מתאפס במעבר תצוגה.
@@ -390,13 +409,18 @@ export default function WorkPlan() {
                 {funderActuals.map(f => {
                   const a = f.actuals;
                   const linked = !!activePlan[f.field];
-                  const used = a.totals.reserved + a.totals.spent;
-                  // כל הכסף במקור: סכום כל הקטגוריות שלו. במקור בלי קטגוריות זו
-                  // הקטגוריה היחידה, ששווה לסכום המקור (0015)
-                  const available = a.totals.allocated;
-                  const leftToPlan = available - f.planned;
+                  // תכנית מאושרת משוריינת: ההזמנות יורדות מתוכה, ולכן משוריין =
+                  // הגבוה מבין סכום התכנית למה שההזמנות לקחו, פחות מה שכבר נוצל
                   const source = budgetSources.find(s => s.id === activePlan[f.field]);
-                  const catCount = allocations.filter(x => x.budget_source_id === source?.id).length;
+                  const sourceAllocs = allocations.filter(x => x.budget_source_id === source?.id);
+                  const catCount = sourceAllocs.length;
+                  // אותו חשבון כמו במסך מקורות תקציב (sourceLedger): כל התכניות
+                  // המאושרות שמשריינות מהמקור, לא רק זו
+                  const ledger = sourceLedger(sourceAllocs, plannedAll);
+                  const available = ledger.allocated;
+                  const reservedShown = ledger.reserved;
+                  const balance = ledger.balance;
+                  const leftToPlan = available - f.planned;
                   return (
                     <div key={f.field} className={cn('border border-border border-t-4 rounded-xl p-4', f.bar)}>
                       <p className={cn('font-bold mb-3', f.accent)}>{f.title}</p>
@@ -416,55 +440,44 @@ export default function WorkPlan() {
 
                       {linked ? (
                         <>
-                          {/* שלב 1 — תכנון: כמה כסף יש במקור, כמה תוכנן, כמה נשאר לתכנן */}
-                          <p className="text-xs font-semibold text-muted-foreground mb-1.5">תכנון</p>
-                          <div className="grid grid-cols-3 gap-2 mb-1">
-                            <div className="bg-muted/40 rounded-lg p-2.5">
-                              <p className="text-xs text-muted-foreground">כסף במקור</p>
+                          {/* חשבון אחד מלמעלה למטה: כסף במקור − משוריין − נוצל = יתרה.
+                              יתרה אחת בלבד, כדי שלא יהיו שני מספרים לאותו דבר */}
+                          <div className="rounded-lg bg-muted/40 divide-y divide-border/60 text-sm">
+                            <div className="flex items-center justify-between px-3 py-2">
+                              <div>
+                                <p>כסף במקור</p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  {source?.uses_categories === false ? 'מקור ללא חלוקה לקטגוריות' : `סכום ${catCount} הקטגוריות של המקור`}
+                                </p>
+                              </div>
                               <p className={cn('text-lg font-bold', f.accent)} dir="ltr">{formatMoney(available, 0)}</p>
                             </div>
-                            <div className="bg-muted/40 rounded-lg p-2.5">
-                              <p className="text-xs text-muted-foreground">מתוכנן בתכנית</p>
-                              <p className="text-lg font-bold" dir="ltr">{formatMoney(f.planned, 0)}</p>
+                            <div className="flex items-center justify-between px-3 py-2">
+                              <div>
+                                <p>משוריין</p>
+                                <p className="text-[11px] text-muted-foreground">תכניות שהוגשו למשרד, והזמנות פתוחות מעבר להן</p>
+                                {activePlan.status === 'draft' && f.planned > 0.005 && (
+                                  <p className="text-[11px] text-violet-600">התכנית הזו בטיוטה ({formatMoney(f.planned, 0)}) — תשוריין כשתוגש למשרד</p>
+                                )}
+                              </div>
+                              <p className="font-bold text-amber-600" dir="ltr">− {formatMoney(reservedShown, 0)}</p>
                             </div>
-                            <div className="bg-muted/40 rounded-lg p-2.5">
-                              <p className="text-xs text-muted-foreground">נשאר לתכנון</p>
-                              <p className={cn('text-lg font-bold', leftToPlan < -0.005 ? 'text-red-600' : 'text-green-600')} dir="ltr">{formatMoney(leftToPlan, 0)}</p>
+                            <div className="flex items-center justify-between px-3 py-2">
+                              <div>
+                                <p>נוצל</p>
+                                <p className="text-[11px] text-muted-foreground">תכניות שאושרו, והוצאות מעבר להן</p>
+                              </div>
+                              <p className="font-bold text-red-500" dir="ltr">− {formatMoney(ledger.spent, 0)}</p>
+                            </div>
+                            <div className="flex items-center justify-between px-3 py-2.5 bg-card/60 rounded-b-lg">
+                              <p className="font-bold">יתרה</p>
+                              <p className="text-xl font-bold text-green-600" dir="ltr">{formatMoney(balance, 0)}</p>
                             </div>
                           </div>
-                          <p className="text-[11px] text-muted-foreground mb-3">
-                            {source?.uses_categories === false
-                              ? 'מקור ללא חלוקה לקטגוריות — כל הסכום שלו זמין לתכנון'
-                              : `סכום כל ${catCount} הקטגוריות של המקור`}
-                          </p>
                           {leftToPlan < -0.005 && (
-                            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mb-3">
+                            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-3">
                               בתכנית תוכננו {formatMoney(-leftToPlan, 0)} יותר ממה שיש במקור.
                             </p>
-                          )}
-
-                          {/* שלב 2 — ביצוע: מה כבר שוריין ונוצל מהמקור בהזמנות */}
-                          <p className="text-xs font-semibold text-muted-foreground mb-1.5">ביצוע בפועל</p>
-                          <div className="grid grid-cols-3 gap-2">
-                            {[
-                              { label: 'משוריין', value: a.totals.reserved, color: 'text-amber-600' },
-                              { label: 'נוצל', value: a.totals.spent, color: 'text-red-500' },
-                              { label: 'יתרה', value: Math.max(0, available - used), color: 'text-green-600' },
-                            ].map(s => (
-                              <div key={s.label} className="bg-muted/40 rounded-lg p-2.5">
-                                <p className="text-xs text-muted-foreground">{s.label}</p>
-                                <p className={cn('font-bold', s.color)} dir="ltr">{formatMoney(s.value, 0)}</p>
-                              </div>
-                            ))}
-                          </div>
-                          {available > 0 && (
-                            <div className="mt-3">
-                              <div className="h-2 bg-muted rounded-full overflow-hidden flex">
-                                <div className="h-full bg-red-400" style={{ width: `${Math.min(100, (a.totals.spent / available) * 100)}%` }} />
-                                <div className="h-full bg-amber-300" style={{ width: `${Math.min(100, (a.totals.reserved / available) * 100)}%` }} />
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-1">{((used / available) * 100).toFixed(0)}% מהכסף במקור שוריין או נוצל</p>
-                            </div>
                           )}
                           {(() => {
                             const missing = [...(funding[f.view]?.splits.byItem.values() || [])].reduce((s, x) => s + x.shortfall, 0);
