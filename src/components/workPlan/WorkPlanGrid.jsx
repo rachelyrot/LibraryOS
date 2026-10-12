@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { MINISTRY_PARAMETERS, MONTHS, itemMonths, num, formatMoney } from '@/lib/workPlan';
+import { toast } from 'sonner';
+import { MINISTRY_PARAMETERS, MONTHS, itemMonths, num, formatMoney, parameterAllocations, rowAllocationLimit } from '@/lib/workPlan';
 import { allocationLabel } from '@/lib/budgetUpdater';
 
 /**
@@ -71,33 +72,47 @@ function MonthSelect({ value, onChange, col, disabled, allowEmpty, min }) {
  * הסכום מתחלק ביניהן לפי הסדר (planAllocationSplits), וכשאין בהן מספיק מוצג
  * כמה חסר.
  */
-function AllocationPicker({ item, funder, info, canEdit, onSave }) {
+function AllocationPicker({ item, funder, info, canEdit, onSave, limit }) {
   const field = `${funder}_allocation_ids`;
   const ids = Array.isArray(item[field]) ? item[field] : [];
   const { splits = [], shortfall = 0 } = info.splits.byItem.get(item.id) || {};
   const byId = new Map(info.options.map(a => [a.id, a]));
   const free = (a) => Math.max(0, num(a.allocated_amount) - (info.splits.used.get(a.id) || 0));
-  const remaining = info.options.filter(a => !ids.includes(a.id));
+  // מוצגות רק קטגוריות ששויכו לפרמטר של השורה
+  const linked = parameterAllocations(item, info.options);
+  const remaining = linked.filter(a => !ids.includes(a.id));
+  const auto = ids.length === 0 && linked.length > 0;
+
+  if (linked.length === 0 && ids.length === 0) {
+    return (
+      <p className="px-1.5 pb-1 text-[11px] text-amber-700">
+        אין קטגוריה ששויכה לפרמטר הזה. אפשר לשייך במקורות תקציב, בעריכת הקטגוריה ← "פרמטר בתכנית העבודה".
+      </p>
+    );
+  }
 
   return (
     <div className="px-1.5 pb-1 space-y-0.5">
-      {splits.map(s => (
+      {limit != null && <p className="text-[11px] text-muted-foreground">עד {formatMoney(limit, 0)}</p>}
+      {auto && splits.length > 0 && <p className="text-[10px] text-muted-foreground/80">מתוך הקטגוריות של הפרמטר:</p>}
+      {splits.filter(s => !auto || s.amount > 0).map(s => (
         <div key={s.id} className="flex items-center gap-1 text-[11px] text-muted-foreground">
           <span className="truncate max-w-[110px]" title={allocationLabel(byId.get(s.id))}>{allocationLabel(byId.get(s.id))}</span>
           <span className="shrink-0" dir="ltr">{formatMoney(s.amount, 0)}</span>
-          {canEdit && (
+          {canEdit && !auto && (
             <button className="shrink-0 hover:text-red-500" title="הסרת הקטגוריה"
               onClick={() => onSave(item, { [field]: ids.filter(x => x !== s.id) })}>×</button>
           )}
         </div>
       ))}
-      {ids.length > 0 && shortfall > 0.005 && (
-        <p className="text-[11px] font-medium text-red-600">חסרים {formatMoney(shortfall, 0)} — הוסיפי קטגוריה</p>
+      {shortfall > 0.005 && (
+        <p className="text-[11px] font-medium text-red-600">חסרים {formatMoney(shortfall, 0)}</p>
       )}
-      {canEdit && remaining.length > 0 && (
+      {/* בחירה ידנית: במקום כל קטגוריות הפרמטר — רק אלה שנבחרו, לפי הסדר */}
+      {canEdit && remaining.length > 0 && (linked.length > 1 || !auto) && (
         <select value="" className={cn(cellInput, 'text-[11px] text-muted-foreground cursor-pointer px-0.5 py-0.5')}
           onChange={e => e.target.value && onSave(item, { [field]: [...ids, e.target.value] })}>
-          <option value="">{ids.length ? '+ עוד קטגוריה' : '+ מאיזו קטגוריה'}</option>
+          <option value="">{auto ? 'בחירת קטגוריה מסוימת' : '+ עוד קטגוריה'}</option>
           {remaining.map(a => (
             <option key={a.id} value={a.id}>{allocationLabel(a)} · פנוי {formatMoney(free(a), 0)}</option>
           ))}
@@ -148,13 +163,25 @@ function ItemRow({ item, cols, canEdit, onSave, onDelete, funding }) {
         <td key={c.key} className="p-1 w-40">
           {c.key === 'total'
             ? <span className="block px-1.5 py-1 text-left font-semibold whitespace-nowrap" dir="ltr">{formatMoney(c.value(item))}</span>
-            : (
-              <>
-                <Cell col={c.key} numeric value={item[`${c.key}_amount`] ?? 0} disabled={!canEdit}
-                  format={v => formatMoney(v)} onCommit={v => save({ [`${c.key}_amount`]: num(v) })} />
-                {funding?.[c.key] && <AllocationPicker item={item} funder={c.key} info={funding[c.key]} canEdit={canEdit} onSave={onSave} />}
-              </>
-            )}
+            : (() => {
+              const info = funding?.[c.key];
+              const limit = info ? rowAllocationLimit(item, c.key, info.options, info.splits) : null;
+              const commit = (v) => {
+                // אי אפשר לתכנן בשורה יותר ממה שפנוי בקטגוריות שלה
+                if (limit != null && num(v) > limit + 0.005) {
+                  toast.error(`אפשר לתכנן בשורה הזו עד ${formatMoney(limit, 0)} — זה מה שפנוי בקטגוריות שלה`);
+                  return;
+                }
+                save({ [`${c.key}_amount`]: num(v) });
+              };
+              return (
+                <>
+                  <Cell col={c.key} numeric value={item[`${c.key}_amount`] ?? 0} disabled={!canEdit}
+                    format={v => formatMoney(v)} onCommit={commit} />
+                  {info && <AllocationPicker item={item} funder={c.key} info={info} canEdit={canEdit} onSave={onSave} limit={limit} />}
+                </>
+              );
+            })()}
         </td>
       ))}
       <td className="p-1 hidden xl:table-cell min-w-[120px]">

@@ -294,15 +294,29 @@ export function budgetActuals(plan, sources, allocations, view) {
  * @param {'municipal'|'ministry'} funder
  * @returns {{ byItem: Map<string, { splits: {id, amount}[], shortfall: number }>, used: Map<string, number> }}
  */
+/** קטגוריות המקור ששויכו לפרמטר של השורה (budget_allocations.work_plan_category). */
+export function parameterAllocations(item, allocations) {
+  const cat = (item.category || '').trim();
+  return allocations.filter(a => (a.work_plan_category || '').trim() === cat);
+}
+
+/**
+ * הקטגוריות שהשורה יורדת מהן בפועל: מה שנבחר לה במפורש, ואם לא נבחר כלום —
+ * כל הקטגוריות ששויכו לפרמטר שלה, לפי הסדר.
+ */
+export function effectiveAllocationIds(item, funder, allocations) {
+  const ids = Array.isArray(item[`${funder}_allocation_ids`]) ? item[`${funder}_allocation_ids`] : [];
+  return ids.length ? ids : parameterAllocations(item, allocations).map(a => a.id);
+}
+
 export function planAllocationSplits(items, allocations, funder) {
-  const idsField = `${funder}_allocation_ids`;
   const amountField = `${funder}_amount`;
   const capacity = new Map(allocations.map(a => [a.id, num(a.allocated_amount)]));
   const used = new Map();
   const byItem = new Map();
   const ordered = [...items].sort((a, b) => num(a.sort_order) - num(b.sort_order));
   for (const item of ordered) {
-    const ids = Array.isArray(item[idsField]) ? item[idsField] : [];
+    const ids = effectiveAllocationIds(item, funder, allocations);
     if (ids.length === 0) continue;
     let left = num(item[amountField]);
     const splits = [];
@@ -316,6 +330,22 @@ export function planAllocationSplits(items, allocations, funder) {
     byItem.set(item.id, { splits, shortfall: Math.max(0, left) });
   }
   return { byItem, used };
+}
+
+/**
+ * הסכום המקסימלי שהשורה יכולה לקבל מהקטגוריות שלה: מה שפנוי בהן אחרי כל
+ * השורות האחרות. null — לשורה אין קטגוריות, ואין הגבלה.
+ */
+export function rowAllocationLimit(item, funder, allocations, splits) {
+  const ids = effectiveAllocationIds(item, funder, allocations);
+  if (ids.length === 0) return null;
+  const own = new Map((splits.byItem.get(item.id)?.splits || []).map(s => [s.id, s.amount]));
+  return ids.reduce((sum, id) => {
+    const a = allocations.find(x => x.id === id);
+    if (!a) return sum;
+    const usedByOthers = (splits.used.get(id) || 0) - (own.get(id) || 0);
+    return sum + Math.max(0, num(a.allocated_amount) - usedByOthers);
+  }, 0);
 }
 
 /**
