@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Pencil, Trash2, FileSpreadsheet, Printer, ClipboardList, Copy, CheckCircle2, AlertTriangle, CalendarRange } from 'lucide-react';
+import { Plus, Trash2, FileSpreadsheet, Printer, ClipboardList, Copy, CheckCircle2, AlertTriangle, CalendarRange, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,15 +10,24 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import PageHeader from '@/components/PageHeader';
-import WorkPlanItemDialog from '@/components/workPlan/WorkPlanItemDialog';
-import { canViewWorkPlan, canEditWorkPlan } from '@/lib/permissions';
+import WorkPlanGrid from '@/components/workPlan/WorkPlanGrid';
+import { canViewWorkPlan, canEditWorkPlan, canViewBudgets } from '@/lib/permissions';
 import {
-  PLAN_STATUSES, VIEWS, MONTHS, QUARTERS, RULE_STATUS_LABELS, amountColumns, itemsForView, groupByCategory,
-  groupAmount, planTotals, parameterRows, monthlySchedule, toQuarters, utilizationLabel, formatMoney, formatPct, num,
+  PLAN_STATUSES, VIEWS, MONTHS, RULE_STATUS_LABELS, amountColumns, itemsForView, groupByCategory,
+  groupAmount, planTotals, parameterRows, monthlySchedule, YEAR_PCT_LABELS, planAllocationSplits, formatMoney, formatPct, num,
+  linkedSourceIds, budgetActuals,
 } from '@/lib/workPlan';
 import { exportWorkPlanExcel, printWorkPlan } from '@/lib/workPlanExport';
 
 const NO_COPY = '__none__';
+const NO_SOURCE = '__none__';
+
+// לכל עמודת סכום בתכנית — המקור שמממן אותה וסוג המימון שמוצע ראשון בבחירה
+// view — התצוגה שמסננת את המקור הזה בלבד (budgetActuals), והסכום בתכנית ב-planTotals
+const FUNDERS = [
+  { field: 'municipal_budget_source_id', label: 'מקור תקציב עירוני', title: 'תקציב עירוני', fundingType: 'municipal', view: 'municipal', accent: 'text-sky-600', bar: 'border-t-sky-400' },
+  { field: 'ministry_budget_source_id', label: 'מקור תקציב משרד התרבות', title: 'משרד התרבות', fundingType: 'culture_ministry', view: 'ministry', accent: 'text-violet-600', bar: 'border-t-violet-400' },
+];
 
 function RuleBadge({ status }) {
   if (!status) return <span className="text-xs text-muted-foreground">-</span>;
@@ -39,15 +48,13 @@ export default function WorkPlan() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [view, setView] = useState('all');
-  const [scheduleMode, setScheduleMode] = useState('quarters');
+  const [scheduleMode, setScheduleMode] = useState('percent');
+  const [budgetSources, setBudgetSources] = useState([]);
+  const [allocations, setAllocations] = useState([]);
 
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [planForm, setPlanForm] = useState({ year: '', title: '', copyFrom: NO_COPY });
   const [savingPlan, setSavingPlan] = useState(false);
-
-  const [itemDialogOpen, setItemDialogOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
-  const [defaultCategory, setDefaultCategory] = useState('');
 
   const canEdit = canEditWorkPlan(user);
   const activePlan = plans.find(p => p.id === activePlanId) || null;
@@ -66,12 +73,43 @@ export default function WorkPlan() {
     }
   };
 
+  // הביצוע בפועל מגיע ממקורות התקציב; כשל כאן לא מפיל את התכנית עצמה
+  const loadBudget = async () => {
+    try {
+      const [srcs, allocs] = await Promise.all([
+        base44.entities.BudgetSource.list('-created_date', 200),
+        base44.entities.BudgetAllocation.list('name', 2000),
+      ]);
+      setBudgetSources(srcs);
+      setAllocations(allocs);
+    } catch {
+      setBudgetSources([]);
+      setAllocations([]);
+    }
+  };
+
   useEffect(() => {
     base44.auth.me().then(u => {
       setUser(u);
-      if (canViewWorkPlan(u)) loadPlans(); else setLoading(false);
+      if (canViewWorkPlan(u)) {
+        loadPlans();
+        if (canViewBudgets(u)) loadBudget();
+      } else setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
+
+  // הוצאות והזמנות נרשמות במסך אחר (מקורות תקציב / הזמנות) — טוענים מחדש בכל
+  // חזרה ללשונית, כדי שהניצול כאן לא יישאר תקוע על מה שנטען בפתיחת הדף
+  useEffect(() => {
+    if (!canViewBudgets(user)) return;
+    const refresh = () => { if (document.visibilityState === 'visible') loadBudget(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!activePlanId) { setItems([]); return; }
@@ -80,17 +118,46 @@ export default function WorkPlan() {
       .catch(() => setItems([]));
   }, [activePlanId]);
 
-  const groups = useMemo(() => groupByCategory(itemsForView(items, view)), [items, view]);
+  // שורה שנערכה או נוספה בתצוגה של גורם מממן אחד נשארת גלויה גם כשהסכום שלה שם
+  // עדיין/כבר 0, כדי שלא תיעלם מתחת ליד באמצע עריכה. מתאפס במעבר תצוגה.
+  const [pinnedIds, setPinnedIds] = useState(() => new Set());
+  useEffect(() => { setPinnedIds(new Set()); }, [view, activePlanId]);
+  const groups = useMemo(() => {
+    const visible = new Set(itemsForView(items, view).map(i => i.id));
+    return groupByCategory(items.filter(i => visible.has(i.id) || pinnedIds.has(i.id)));
+  }, [items, view, pinnedIds]);
   const totals = useMemo(() => planTotals(items), [items]);
   const form = useMemo(() => parameterRows(items, view), [items, view]);
   const schedule = useMemo(() => monthlySchedule(items, view), [items, view]);
   const cols = amountColumns(view);
   const viewLabel = VIEWS.find(v => v.id === view)?.label;
   const violations = form.rows.filter(r => r.status === 'below' || r.status === 'above');
+  const hasLinkedSources = linkedSourceIds(activePlan, view).length > 0;
+  const actuals = useMemo(() => budgetActuals(activePlan, budgetSources, allocations, view), [activePlan, budgetSources, allocations, view]);
+  const actualUsed = actuals.totals.reserved + actuals.totals.spent;
+  // מאילו קטגוריות יורדת כל שורה — רק למקור מקושר שמחולק לקטגוריות. מקור בלי
+  // קטגוריות (0015) מסתנכרן כסכום אחד ואין בו מה לבחור.
+  const funding = useMemo(() => {
+    const out = {};
+    for (const f of FUNDERS) {
+      const source = budgetSources.find(s => s.id === activePlan?.[f.field]);
+      if (!source || source.uses_categories === false) continue;
+      const options = allocations.filter(a => a.budget_source_id === source.id);
+      out[f.view] = { options, splits: planAllocationSplits(items, options, f.view) };
+    }
+    return out;
+  }, [activePlan, budgetSources, allocations, items]);
 
-  const scheduleColumns = scheduleMode === 'months'
-    ? MONTHS.map((m, k) => ({ label: m, value: row => row.months[k] }))
-    : QUARTERS.map((q, k) => ({ label: q.label, value: row => toQuarters(row.months)[k] }));
+  // כרטיס נפרד לכל מקור בסנכרון — לא תלוי בתצוגה שנבחרה למטה
+  const funderActuals = useMemo(
+    () => FUNDERS.map(f => ({ ...f, actuals: budgetActuals(activePlan, budgetSources, allocations, f.view), planned: totals[f.view] })),
+    [activePlan, budgetSources, allocations, totals],
+  );
+
+  // שתי תצוגות של אותם סכומים חודשיים: אחוזים — הכותרות הן אחוז השנה (כל חודש
+  // 100/12, דצמבר = 100%); חודשים — שמות החודשים
+  const scheduleColumns = (scheduleMode === 'percent' ? YEAR_PCT_LABELS : MONTHS)
+    .map((label, k) => ({ label, value: row => row.months[k] }));
 
   // ── Plans ────────────────────────────────────────────────────
   const openNewPlan = () => {
@@ -128,15 +195,17 @@ export default function WorkPlan() {
     setPlans(list => list.map(p => (p.id === activePlan.id ? { ...p, ...updates } : p)));
     try {
       await base44.entities.WorkPlan.update(activePlan.id, updates);
+      return true;
     } catch (e) {
       toast.error(e?.message || 'שגיאה בעדכון התכנית');
+      return false;
     }
   };
 
-  const changeStatus = (status) => {
+  const changeStatus = async (status) => {
     const updates = { status };
     if (status === 'submitted' && !activePlan?.submitted_date) updates.submitted_date = new Date().toISOString().split('T')[0];
-    updatePlan(updates);
+    await updatePlan(updates);
   };
 
   const deletePlan = async () => {
@@ -151,21 +220,51 @@ export default function WorkPlan() {
     }
   };
 
-  // ── Items ────────────────────────────────────────────────────
-  const openNewItem = (category = '') => { setEditingItem(null); setDefaultCategory(category); setItemDialogOpen(true); };
-  const openEditItem = (item) => { setEditingItem(item); setItemDialogOpen(true); };
+  // ── Budget sync ──────────────────────────────────────────────
+  const sourceOptions = (fundingType) => {
+    const matching = budgetSources.filter(s => s.funding_source_type === fundingType);
+    return matching.length ? matching : budgetSources;
+  };
 
-  const saveItem = async (data) => {
+  // הכיוון הוא ממקורות התקציב אל התכנית בלבד: התכנית קוראת כמה כסף יש במקור
+  // (סכום כל הקטגוריות שלו) ומתכננת בתוכו. היא לא כותבת למקורות — קודם לכן
+  // אישור התכנית דרס את הסכומים במקורות בסכומי התכנית (sync_work_plan_budget).
+  const linkSource = async (field, value) => {
+    await updatePlan({ [field]: value === NO_SOURCE ? null : value });
+  };
+
+  // ── Items ────────────────────────────────────────────────────
+  // עריכה בתוך הטבלה (WorkPlanGrid): כל תא נשמר לבד כשיוצאים ממנו.
+
+  const pin = (id) => setPinnedIds(s => (s.has(id) ? s : new Set(s).add(id)));
+
+  const saveItemField = async (item, patch) => {
     if (!canEditWorkPlan(user) || !activePlan) return;
-    if (editingItem) {
-      const updated = await base44.entities.WorkPlanItem.update(editingItem.id, data);
+    pin(item.id);
+    // עדכון מיידי בטבלה; אם השמירה נכשלת — חוזרים לערך הקודם
+    setItems(list => list.map(i => (i.id === item.id ? { ...i, ...patch } : i)));
+    try {
+      const updated = await base44.entities.WorkPlanItem.update(item.id, patch);
       setItems(list => list.map(i => (i.id === updated.id ? updated : i)));
-      toast.success('השורה עודכנה');
-    } else {
-      const sort_order = items.reduce((m, i) => Math.max(m, num(i.sort_order)), 0) + 1;
-      const created = await base44.entities.WorkPlanItem.create({ ...data, work_plan_id: activePlan.id, sort_order });
+    } catch (e) {
+      setItems(list => list.map(i => (i.id === item.id ? item : i)));
+      toast.error(e?.message || 'שגיאה בשמירת השינוי');
+    }
+  };
+
+  const createItem = async (category, data) => {
+    if (!canEditWorkPlan(user) || !activePlan) return;
+    const sort_order = items.reduce((m, i) => Math.max(m, num(i.sort_order)), 0) + 1;
+    try {
+      const created = await base44.entities.WorkPlanItem.create({
+        municipal_amount: 0, ministry_amount: 0, quarters: [],
+        ...data, category, work_plan_id: activePlan.id, sort_order,
+      });
+      pin(created.id);
       setItems(list => [...list, created]);
-      toast.success('השורה נוספה');
+    } catch (e) {
+      toast.error(e?.message || 'שגיאה בהוספת השורה');
+      throw e;
     }
   };
 
@@ -179,6 +278,10 @@ export default function WorkPlan() {
       toast.error(e?.message || 'שגיאה במחיקה');
     }
   };
+
+  // "הוספת שורה" בכותרת פרמטר מעבירה לשורה הריקה שלו
+  const [newRowFocus, setNewRowFocus] = useState({});
+  const focusNewRow = (category) => setNewRowFocus(f => ({ ...f, [category]: (f[category] || 0) + 1 }));
 
   // ── Export ───────────────────────────────────────────────────
   const handleExcel = async () => {
@@ -273,6 +376,115 @@ export default function WorkPlan() {
             ))}
           </div>
 
+          {/* Budget sources link — סכום כללי מול מה שנוצל בפועל */}
+          {canViewBudgets(user) && (
+            <div className="bg-card border border-border rounded-2xl p-4 mb-5">
+              <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+                <div>
+                  <p className="font-bold flex items-center gap-1.5"><Link2 className="w-4 h-4 text-violet-500" /> סנכרון עם מקורות תקציב</p>
+                  <p className="text-xs text-muted-foreground">בוחרים מקור, והתכנית מקבלת את כל הכסף שיש בו. התכנית מתכננת בתוך הסכום הזה ולא משנה את מקורות התקציב.</p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                {funderActuals.map(f => {
+                  const a = f.actuals;
+                  const linked = !!activePlan[f.field];
+                  const used = a.totals.reserved + a.totals.spent;
+                  // כל הכסף במקור: סכום כל הקטגוריות שלו. במקור בלי קטגוריות זו
+                  // הקטגוריה היחידה, ששווה לסכום המקור (0015)
+                  const available = a.totals.allocated;
+                  const leftToPlan = available - f.planned;
+                  const source = budgetSources.find(s => s.id === activePlan[f.field]);
+                  const catCount = allocations.filter(x => x.budget_source_id === source?.id).length;
+                  return (
+                    <div key={f.field} className={cn('border border-border border-t-4 rounded-xl p-4', f.bar)}>
+                      <p className={cn('font-bold mb-3', f.accent)}>{f.title}</p>
+
+                      <div className="space-y-1.5 mb-4">
+                        <Label className="text-xs">{f.label}</Label>
+                        <Select value={activePlan[f.field] || NO_SOURCE} onValueChange={v => linkSource(f.field, v)} disabled={!canEdit}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NO_SOURCE}>לא מקושר</SelectItem>
+                            {sourceOptions(f.fundingType).map(s => (
+                              <SelectItem key={s.id} value={s.id}>{s.name}{s.year ? ` · ${s.year}` : ''}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {linked ? (
+                        <>
+                          {/* שלב 1 — תכנון: כמה כסף יש במקור, כמה תוכנן, כמה נשאר לתכנן */}
+                          <p className="text-xs font-semibold text-muted-foreground mb-1.5">תכנון</p>
+                          <div className="grid grid-cols-3 gap-2 mb-1">
+                            <div className="bg-muted/40 rounded-lg p-2.5">
+                              <p className="text-xs text-muted-foreground">כסף במקור</p>
+                              <p className={cn('text-lg font-bold', f.accent)} dir="ltr">{formatMoney(available, 0)}</p>
+                            </div>
+                            <div className="bg-muted/40 rounded-lg p-2.5">
+                              <p className="text-xs text-muted-foreground">מתוכנן בתכנית</p>
+                              <p className="text-lg font-bold" dir="ltr">{formatMoney(f.planned, 0)}</p>
+                            </div>
+                            <div className="bg-muted/40 rounded-lg p-2.5">
+                              <p className="text-xs text-muted-foreground">נשאר לתכנון</p>
+                              <p className={cn('text-lg font-bold', leftToPlan < -0.005 ? 'text-red-600' : 'text-green-600')} dir="ltr">{formatMoney(leftToPlan, 0)}</p>
+                            </div>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mb-3">
+                            {source?.uses_categories === false
+                              ? 'מקור ללא חלוקה לקטגוריות — כל הסכום שלו זמין לתכנון'
+                              : `סכום כל ${catCount} הקטגוריות של המקור`}
+                          </p>
+                          {leftToPlan < -0.005 && (
+                            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mb-3">
+                              בתכנית תוכננו {formatMoney(-leftToPlan, 0)} יותר ממה שיש במקור.
+                            </p>
+                          )}
+
+                          {/* שלב 2 — ביצוע: מה כבר שוריין ונוצל מהמקור בהזמנות */}
+                          <p className="text-xs font-semibold text-muted-foreground mb-1.5">ביצוע בפועל</p>
+                          <div className="grid grid-cols-3 gap-2">
+                            {[
+                              { label: 'משוריין', value: a.totals.reserved, color: 'text-amber-600' },
+                              { label: 'נוצל', value: a.totals.spent, color: 'text-red-500' },
+                              { label: 'יתרה', value: Math.max(0, available - used), color: 'text-green-600' },
+                            ].map(s => (
+                              <div key={s.label} className="bg-muted/40 rounded-lg p-2.5">
+                                <p className="text-xs text-muted-foreground">{s.label}</p>
+                                <p className={cn('font-bold', s.color)} dir="ltr">{formatMoney(s.value, 0)}</p>
+                              </div>
+                            ))}
+                          </div>
+                          {available > 0 && (
+                            <div className="mt-3">
+                              <div className="h-2 bg-muted rounded-full overflow-hidden flex">
+                                <div className="h-full bg-red-400" style={{ width: `${Math.min(100, (a.totals.spent / available) * 100)}%` }} />
+                                <div className="h-full bg-amber-300" style={{ width: `${Math.min(100, (a.totals.reserved / available) * 100)}%` }} />
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">{((used / available) * 100).toFixed(0)}% מהכסף במקור שוריין או נוצל</p>
+                            </div>
+                          )}
+                          {(() => {
+                            const missing = [...(funding[f.view]?.splits.byItem.values() || [])].reduce((s, x) => s + x.shortfall, 0);
+                            return missing > 0.005 && (
+                              <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-3">
+                                בקטגוריות שנבחרו לשורות חסרים {formatMoney(missing, 0)} — הוסיפי קטגוריות לשורות המסומנות באדום.
+                              </p>
+                            );
+                          })()}
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">בחרי מקור תקציב כדי לראות כמה יש בו ומה נוצל ממנו.</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Ministry form */}
           <div className="bg-card border border-border rounded-2xl overflow-hidden mb-5">
             <div className="flex flex-wrap items-center gap-2 justify-between px-4 py-3 border-b border-border">
@@ -293,6 +505,9 @@ export default function WorkPlan() {
                     <th className="text-right font-medium p-2.5">פרמטר</th>
                     <th className="text-left font-medium p-2.5 whitespace-nowrap">סכום</th>
                     <th className="text-left font-medium p-2.5 w-20">אחוז</th>
+                    {hasLinkedSources && <th className="text-left font-medium p-2.5 whitespace-nowrap">משוריין</th>}
+                    {hasLinkedSources && <th className="text-left font-medium p-2.5 whitespace-nowrap">נוצל</th>}
+                    {hasLinkedSources && <th className="text-left font-medium p-2.5 whitespace-nowrap">% ניצול</th>}
                     <th className="text-right font-medium p-2.5 whitespace-nowrap">הגבלה</th>
                     <th className="text-right font-medium p-2.5">סטטוס</th>
                   </tr>
@@ -303,6 +518,17 @@ export default function WorkPlan() {
                       <td className="p-2.5 font-medium">{r.category}{!r.param && <span className="text-xs text-muted-foreground mr-1">(לא מטופס המשרד)</span>}</td>
                       <td className="p-2.5 text-left whitespace-nowrap" dir="ltr">{formatMoney(r.amount)}</td>
                       <td className="p-2.5 text-left font-semibold" dir="ltr">{formatPct(r.pct)}</td>
+                      {hasLinkedSources && (() => {
+                        const a = actuals.byCategory.get(r.category);
+                        const used = (a?.reserved || 0) + (a?.spent || 0);
+                        return (
+                          <>
+                            <td className="p-2.5 text-left whitespace-nowrap text-amber-600" dir="ltr">{a ? formatMoney(a.reserved, 0) : '-'}</td>
+                            <td className="p-2.5 text-left whitespace-nowrap text-red-500" dir="ltr">{a ? formatMoney(a.spent, 0) : '-'}</td>
+                            <td className="p-2.5 text-left whitespace-nowrap text-xs" dir="ltr">{r.amount > 0 && a ? formatPct((used / r.amount) * 100) : '-'}</td>
+                          </>
+                        );
+                      })()}
                       <td className="p-2.5 text-xs text-muted-foreground whitespace-nowrap">{r.rule || '-'}</td>
                       <td className="p-2.5"><RuleBadge status={r.status} /></td>
                     </tr>
@@ -311,6 +537,13 @@ export default function WorkPlan() {
                     <td className="p-2.5">סה"כ</td>
                     <td className="p-2.5 text-left" dir="ltr">{formatMoney(form.total)}</td>
                     <td className="p-2.5 text-left" dir="ltr">{form.total > 0 ? '100%' : '0%'}</td>
+                    {hasLinkedSources && (
+                      <>
+                        <td className="p-2.5 text-left whitespace-nowrap text-amber-600" dir="ltr">{formatMoney(actuals.totals.reserved, 0)}</td>
+                        <td className="p-2.5 text-left whitespace-nowrap text-red-500" dir="ltr">{formatMoney(actuals.totals.spent, 0)}</td>
+                        <td className="p-2.5 text-left whitespace-nowrap text-xs" dir="ltr">{form.total > 0 ? formatPct((actualUsed / form.total) * 100) : '-'}</td>
+                      </>
+                    )}
                     <td colSpan={2} />
                   </tr>
                 </tbody>
@@ -323,10 +556,13 @@ export default function WorkPlan() {
             <div className="flex flex-wrap items-center gap-2 justify-between px-4 py-3 border-b border-border">
               <div>
                 <p className="font-bold flex items-center gap-1.5"><CalendarRange className="w-4 h-4 text-violet-500" /> לוח זמנים לניצול התקציב</p>
-                <p className="text-xs text-muted-foreground">סכום כל שורה מתחלק שווה בין החודשים בתקופת הניצול שלה</p>
+                <p className="text-xs text-muted-foreground">
+                  סכום כל שורה מתחלק שווה בין החודשים בתקופת הניצול שלה.
+                  {scheduleMode === 'percent' && ' כל עמודה היא חודש — 100% חלקי 12 — והכותרת היא האחוז מהשנה בסופו.'}
+                </p>
               </div>
               <div className="inline-flex rounded-lg bg-muted p-0.5">
-                {[{ id: 'quarters', label: 'רבעונים' }, { id: 'months', label: 'חודשים' }].map(m => (
+                {[{ id: 'percent', label: 'אחוזים' }, { id: 'amount', label: 'חודשים' }].map(m => (
                   <button key={m.id} onClick={() => setScheduleMode(m.id)}
                     className={cn('px-2.5 py-1 text-xs rounded-md', scheduleMode === m.id ? 'bg-card shadow-sm font-semibold' : 'text-muted-foreground')}>
                     {m.label}
@@ -382,7 +618,7 @@ export default function WorkPlan() {
               <span className="text-xs text-muted-foreground">מוצגות רק שורות עם סכום ב{viewLabel}</span>
             )}
             <div className="flex-1" />
-            {canEdit && <Button onClick={() => openNewItem()} className="gap-1.5"><Plus className="w-4 h-4" /> שורה חדשה</Button>}
+            {canEdit && <span className="text-xs text-muted-foreground">לחצי על תא כדי לערוך · Enter שומר ויורד שורה · Esc מבטל</span>}
           </div>
 
           {/* Detailed rows by parameter */}
@@ -396,54 +632,19 @@ export default function WorkPlan() {
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="font-bold text-sm" dir="ltr">{formatMoney(groupAmount(g, view))}</span>
-                    {canEdit && <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => openNewItem(g.category)}><Plus className="w-3.5 h-3.5" /> הוספת שורה</Button>}
+                    {canEdit && <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => focusNewRow(g.category)}><Plus className="w-3.5 h-3.5" /> הוספת שורה</Button>}
                   </div>
                 </div>
-                {g.items.length === 0 ? (
-                  <p className="px-4 py-3 text-sm text-muted-foreground">אין עדיין שורות בפרמטר זה</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-xs text-muted-foreground border-b border-border/60">
-                          <th className="text-right font-medium p-2.5">פירוט</th>
-                          <th className="text-right font-medium p-2.5 whitespace-nowrap">זמן ניצול</th>
-                          <th className="text-right font-medium p-2.5 hidden md:table-cell">קהל יעד</th>
-                          <th className="text-right font-medium p-2.5 hidden lg:table-cell">משתתפים</th>
-                          {cols.map(c => <th key={c.key} className="text-left font-medium p-2.5 whitespace-nowrap">{c.label}</th>)}
-                          {canEdit && <th className="w-20" />}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {g.items.map(i => {
-                          const when = utilizationLabel(i);
-                          return (
-                            <tr key={i.id} className="border-b border-border/40 last:border-b-0 hover:bg-muted/20">
-                              <td className="p-2.5">
-                                <p className="font-medium">{i.activity_name}</p>
-                                {i.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{i.description}</p>}
-                              </td>
-                              <td className={cn('p-2.5 text-xs whitespace-nowrap', when ? 'text-foreground' : 'text-amber-600')}>{when || 'לא נקבע'}</td>
-                              <td className="p-2.5 hidden md:table-cell text-muted-foreground">{i.target_audience || '-'}</td>
-                              <td className="p-2.5 hidden lg:table-cell text-muted-foreground">{i.expected_participants != null ? num(i.expected_participants).toLocaleString('he-IL') : '-'}</td>
-                              {cols.map(c => (
-                                <td key={c.key} className={cn('p-2.5 text-left whitespace-nowrap', c.key === 'total' && 'font-semibold')} dir="ltr">{formatMoney(c.value(i))}</td>
-                              ))}
-                              {canEdit && (
-                                <td className="p-2.5">
-                                  <div className="flex justify-end gap-0.5">
-                                    <button onClick={() => openEditItem(i)} className="p-1.5 rounded-lg hover:bg-muted" title="עריכה"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
-                                    <button onClick={() => deleteItem(i)} className="p-1.5 rounded-lg hover:bg-muted" title="מחיקה"><Trash2 className="w-3.5 h-3.5 text-red-400" /></button>
-                                  </div>
-                                </td>
-                              )}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                <WorkPlanGrid
+                  items={g.items}
+                  cols={cols}
+                  canEdit={canEdit}
+                  onSave={saveItemField}
+                  onCreate={data => createItem(g.category, data)}
+                  onDelete={deleteItem}
+                  focusToken={newRowFocus[g.category]}
+                  funding={funding}
+                />
               </div>
             ))}
           </div>
@@ -499,13 +700,6 @@ export default function WorkPlan() {
         </DialogContent>
       </Dialog>
 
-      <WorkPlanItemDialog
-        open={itemDialogOpen}
-        onOpenChange={setItemDialogOpen}
-        item={editingItem}
-        defaultCategory={defaultCategory}
-        onSubmit={saveItem}
-      />
     </div>
   );
 }

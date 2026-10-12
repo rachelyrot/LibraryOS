@@ -4,11 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import MoneyInput from '@/components/budget/MoneyInput';
 
 const PRESET_COLORS = ['#8b5cf6', '#14b8a6', '#f97316', '#ec4899', '#3b82f6', '#22c55e', '#f43f5e', '#f59e0b', '#6366f1', '#0ea5e9'];
-const EMPTY = { name: '', funding_source_type: '', color: '#8b5cf6', planned_amount: '', year: new Date().getFullYear().toString(), notes: '', status: 'active', start_date: '', end_date: '' };
+const EMPTY = { name: '', funding_source_type: '', color: '#8b5cf6', planned_amount: '', uses_categories: true, category_number: '', year: new Date().getFullYear().toString(), notes: '', status: 'active', start_date: '', end_date: '' };
+// סוגי מימון שמקור חדש מהם נפתח כברירת מחדל בלי חלוקה לקטגוריות
+const NO_CATEGORIES_BY_DEFAULT = ['culture_ministry'];
 const PRESETS = ['עיריית בני ברק', 'משרד התרבות', 'משרד הפריפריה', 'מפעל הפייס', 'קרן תרבות', 'ג\'וינט', 'עמותה מקומית'];
 
 const FUNDING_TYPES = [
@@ -19,9 +22,15 @@ const FUNDING_TYPES = [
   { value: 'other', label: 'אחר' },
 ];
 
-export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmit }) {
+/**
+ * categoryCount — כמה קטגוריות יש כבר למקור. אי אפשר לבטל חלוקה לקטגוריות
+ * כשיש יותר מאחת (גם הטריגר במיגרציה 0015 חוסם את זה).
+ */
+export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmit, categoryCount = 0 }) {
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+  // אפשר להדליק חלוקה תמיד; לכבות רק כשיש לכל היותר קטגוריה אחת
+  const lockCategories = form.uses_categories && categoryCount > 1;
 
   useEffect(() => {
     if (open) setForm(source ? {
@@ -32,6 +41,8 @@ export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmi
       // זהו הסכום שהמשתמשת מקלידה; total_amount מחושב מהקטגוריות ולא נערך כאן
       // (ראה מיגרציה 0011).
       planned_amount: source.planned_amount != null ? String(source.planned_amount) : '',
+      uses_categories: source.uses_categories !== false,
+      category_number: source.category_number || '',
       year: source.year || '',
       start_date: source.start_date || '',
       end_date: source.end_date || '',
@@ -44,7 +55,14 @@ export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmi
     if (!form.name) return;
     setSaving(true);
     try {
-      await onSubmit({ ...form, planned_amount: form.planned_amount === '' ? '' : Number(form.planned_amount) });
+      // category_number שייך רק למקור בלי קטגוריות (מיגרציה 0016 מעתיקה אותו
+      // לקטגוריה היחידה), ונשלח רק כשיש בו ערך — כדי שהשמירה לא תיכשל לפני 0016
+      // uses_categories נשלח רק כשהוא כבוי או כשכבר קיים במקור, מאותה סיבה (0015)
+      const { category_number, uses_categories, ...rest } = form;
+      const data = { ...rest, planned_amount: form.planned_amount === '' ? '' : Number(form.planned_amount) };
+      if (!uses_categories || source?.uses_categories != null) data.uses_categories = uses_categories;
+      if (!form.uses_categories && (category_number || source?.category_number)) data.category_number = category_number.trim();
+      await onSubmit(data);
       onOpenChange(false);
     } finally {
       setSaving(false);
@@ -69,7 +87,12 @@ export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmi
 
           <div className="space-y-1.5">
             <Label>סוג מקור מימון</Label>
-            <Select value={form.funding_source_type || ''} onValueChange={v => setForm(f => ({ ...f, funding_source_type: v }))}>
+            <Select value={form.funding_source_type || ''} onValueChange={v => setForm(f => ({
+              ...f,
+              funding_source_type: v,
+              // רק במקור חדש — במקור קיים לא משנים את החלוקה בלי שהמשתמשת ביקשה
+              ...(source ? {} : { uses_categories: !NO_CATEGORIES_BY_DEFAULT.includes(v) }),
+            }))}>
               <SelectTrigger><SelectValue placeholder="בחר סוג מימון" /></SelectTrigger>
               <SelectContent>
                 {FUNDING_TYPES.map(ft => <SelectItem key={ft.value} value={ft.value}>{ft.label}</SelectItem>)}
@@ -77,11 +100,39 @@ export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmi
             </Select>
           </div>
 
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="uses-categories">חלוקה לקטגוריות</Label>
+              <p className="text-xs text-muted-foreground">
+                {form.uses_categories
+                  ? 'ההזמנות נרשמות על קטגוריות שמגדירים מתחת למקור.'
+                  : 'ההזמנות נרשמות ישירות על המקור, מתוך הסכום המתוכנן.'}
+              </p>
+              {lockCategories && (
+                <p className="text-xs text-amber-600">למקור יש {categoryCount} קטגוריות — כדי לבטל את החלוקה צריך שתישאר אחת בלבד.</p>
+              )}
+            </div>
+            <Switch id="uses-categories" checked={form.uses_categories} disabled={lockCategories}
+              onCheckedChange={v => setForm(f => ({ ...f, uses_categories: v }))} />
+          </div>
+
+          {!form.uses_categories && (
+            <div className="space-y-1.5">
+              <Label>מספר קטגוריה</Label>
+              <Input value={form.category_number || ''} onChange={e => setForm(f => ({ ...f, category_number: e.target.value }))} placeholder="אופציונלי" dir="ltr" />
+              <p className="text-xs text-muted-foreground">מוצג ליד המקור בהזמנות, בהצעות מחיר ובדוחות.</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>סכום מתוכנן ₪</Label>
               <MoneyInput value={form.planned_amount} onChange={v => setForm(f => ({ ...f, planned_amount: v }))} />
-              <p className="text-xs text-muted-foreground">התקציב שאושר למקור הזה. מוצג מול סכום הקטגוריות בפועל.</p>
+              <p className="text-xs text-muted-foreground">
+                {form.uses_categories
+                  ? 'התקציב שאושר למקור הזה. מוצג מול סכום הקטגוריות בפועל.'
+                  : 'התקציב שאושר למקור הזה — וזה הסכום שזמין להזמנות.'}
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>שנה</Label>

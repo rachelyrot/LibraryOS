@@ -3,7 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Check, Search, Database, Plus, FileSpreadsheet, Lock } from 'lucide-react';
+import { Check, Minus, Search, Database, Plus, FileSpreadsheet, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { isNylonChecked, nylonFromChecked, isBindingChecked, bookKey } from '@/lib/bookQuoteExcel';
@@ -11,6 +11,31 @@ import { importBookFiles } from '@/lib/bookListImport';
 import { checkBooksInAgron, applyAgronResult, agronTooltip } from '@/lib/agron';
 import AddBookDialog from '@/components/bookLists/AddBookDialog';
 import { canMarkBooksForOrder, canCreateBookQuoteRequest, canEditBookList } from '@/lib/permissions';
+
+/** 'all' | 'some' | 'none' — כמה מהפריטים עומדים בתנאי. */
+function selectionState(items, pred) {
+  const n = items.filter(pred).length;
+  if (n === 0) return 'none';
+  return n === items.length ? 'all' : 'some';
+}
+
+function SelectAllBox({ state, onClick, disabled, color }) {
+  const on = color === 'green' ? 'bg-green-500 border-green-500' : 'bg-indigo-500 border-indigo-500';
+  const hover = color === 'green' ? 'hover:border-green-400' : 'hover:border-indigo-400';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={state === 'all' ? 'בטל בחירת הכל' : 'בחר הכל'}
+      aria-label={state === 'all' ? 'בטל בחירת הכל' : 'בחר הכל'}
+      className={cn('w-5 h-5 rounded border-2 flex items-center justify-center transition-all', state === 'none' ? `border-border ${hover}` : on, disabled && 'opacity-30 cursor-not-allowed')}
+    >
+      {state === 'all' && <Check className="w-3 h-3 text-white" />}
+      {state === 'some' && <Minus className="w-3 h-3 text-white" />}
+    </button>
+  );
+}
 
 export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onStatusChange }) {
   const [books, setBooks] = useState([]);
@@ -42,10 +67,28 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
       const newMarked = !b.marked_for_order;
       return { ...b, marked_for_order: newMarked, selected_for_quote: newMarked ? b.selected_for_quote : false };
     });
+    saveMarked(updated);
+  };
+
+  const saveMarked = (updated) => {
     const hasMarked = updated.some(b => b.marked_for_order);
     saveBooks(updated);
     if (hasMarked && (bookList.status === 'received' || bookList.status === 'in_review')) onStatusChange('books_selected');
     else if (!hasMarked && bookList.status === 'books_selected') onStatusChange('in_review');
+  };
+
+  // "בחר הכל" פועל על הספרים המוצגים כרגע (אחרי חיפוש), כך שאפשר לסנן ואז לסמן קבוצה.
+  const toggleAllInterested = () => {
+    if (!canMark) { toast.error('אין לך הרשאה לסמן ספרים'); return; }
+    const visible = new Set(filteredBooks);
+    const allMarked = filteredBooks.every(b => b.marked_for_order);
+    const updated = books.map(b => {
+      if (!visible.has(b)) return b;
+      return allMarked
+        ? { ...b, marked_for_order: false, selected_for_quote: false }
+        : { ...b, marked_for_order: true };
+    });
+    saveMarked(updated);
   };
 
   /**
@@ -61,6 +104,18 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
     if (isSent(book)) { toast.error('הספר כבר נשלח בבקשת הצעת מחיר ולא ניתן לשלוח אותו שוב'); return; }
     if (!book.marked_for_order) { toast.error('יש לסמן את הספר כ"מעניין אותי" תחילה'); return; }
     const updated = books.map((b, i) => i === idx ? { ...b, selected_for_quote: !b.selected_for_quote } : b);
+    saveBooks(updated);
+  };
+
+  // רק ספרים שסומנו "מעניין" ועדיין לא נשלחו ניתנים לבחירה לשליחה.
+  const isQuoteEligible = (b) => b.marked_for_order && !isSent(b);
+
+  const toggleAllSelectedForQuote = () => {
+    if (!canCreateQuoteReq) { toast.error('אין לך הרשאה לבחור ספרים לשליחה לספקים'); return; }
+    const eligible = new Set(filteredBooks.filter(isQuoteEligible));
+    if (eligible.size === 0) { toast.error('אין ספרים זמינים לשליחה — יש לסמן ספרים כ"מעניין אותי" תחילה'); return; }
+    const allSelected = [...eligible].every(b => b.selected_for_quote);
+    const updated = books.map(b => eligible.has(b) ? { ...b, selected_for_quote: !allSelected } : b);
     saveBooks(updated);
   };
 
@@ -176,8 +231,27 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/50 z-10">
             <tr className="border-b border-border">
-              <th className="p-2 w-10 text-center"><span className="text-xs">מעניין</span></th>
-              <th className="p-2 w-10 text-center hidden md:table-cell"><span className="text-xs">לשליחה</span></th>
+              <th className="p-2 w-10 text-center">
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-xs">מעניין</span>
+                  {canMark && filteredBooks.length > 0 && (
+                    <SelectAllBox state={selectionState(filteredBooks, b => b.marked_for_order)} onClick={toggleAllInterested} color="green" />
+                  )}
+                </div>
+              </th>
+              <th className="p-2 w-10 text-center hidden md:table-cell">
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-xs">לשליחה</span>
+                  {canCreateQuoteReq && filteredBooks.length > 0 && (
+                    <SelectAllBox
+                      state={selectionState(filteredBooks.filter(isQuoteEligible), b => b.selected_for_quote)}
+                      onClick={toggleAllSelectedForQuote}
+                      disabled={!filteredBooks.some(isQuoteEligible)}
+                      color="indigo"
+                    />
+                  )}
+                </div>
+              </th>
               <th className="text-right p-2 font-medium text-muted-foreground min-w-[120px]">שם ספר</th>
               <th className="text-right p-2 font-medium text-muted-foreground hidden md:table-cell">מחבר</th>
               <th className="text-right p-2 font-medium text-muted-foreground hidden lg:table-cell">הוצאה</th>

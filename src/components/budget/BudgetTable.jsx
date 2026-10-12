@@ -44,6 +44,7 @@ export default function BudgetTable({ categories, onEdit, onAddExpense, canEdit 
                       <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: cat.color || '#14b8a6' }} />
                       <div>
                         <span className="font-medium">{cat.name}</span>
+                        {cat.category_number && <span className="text-xs text-muted-foreground mr-1.5" dir="ltr">{cat.category_number}</span>}
                         {cat.supplier_name && <p className="text-xs text-muted-foreground">{cat.supplier_name}</p>}
                       </div>
                     </div>

@@ -298,6 +298,15 @@ export function canEditWorkPlan(user) {
   return user?.role === ROLES.ADMIN;
 }
 
+/**
+ * Admin only — write an approved work plan's amounts into its linked budget
+ * sources (sync_work_plan_budget, migration 0014). Also requires the plan to be
+ * 'approved'; the RPC re-checks both.
+ */
+export function canSyncWorkPlanBudget(user, plan) {
+  return canEditWorkPlan(user) && canEditBudgets(user) && plan?.status === 'approved';
+}
+
 /** Admin only — view sensitive budget data (full financial details, supplier credits) */
 export function canViewSensitiveBudgetData(user) {
   return user?.role === ROLES.ADMIN;

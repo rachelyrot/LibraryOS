@@ -232,5 +232,94 @@ export function monthlySchedule(items, view) {
   };
 }
 
-/** צבירה של לוח חודשי לרבעונים. */
-export const toQuarters = (months) => QUARTERS.map(q => q.months.reduce((s, m) => s + months[m - 1], 0));
+/**
+ * מקורות התקציב שמקושרים לתכנית ורלוונטיים לתצוגה: בתצוגה עירונית רק המקור
+ * העירוני, בתצוגת המשרד רק מקור המשרד, ובתצוגה המלאה שניהם (מיגרציה 0014).
+ */
+export function linkedSourceIds(plan, view) {
+  const ids = [];
+  if (view !== 'ministry' && plan?.municipal_budget_source_id) ids.push(plan.municipal_budget_source_id);
+  if (view !== 'municipal' && plan?.ministry_budget_source_id) ids.push(plan.ministry_budget_source_id);
+  return [...new Set(ids)];
+}
+
+/**
+ * ביצוע בפועל מול התכנית: מה הוקצה / שוריין / נוצל במקורות התקציב המקושרים,
+ * לכל פרמטר. קטגוריה בתקציב שייכת לפרמטר לפי work_plan_category; קטגוריות בלי
+ * שיוך נאספות ב-unlinked, כדי שהוצאה לא תיעלם מהסיכום רק כי לא שויכה. מקור
+ * בלי חלוקה לקטגוריות נספר רק ב-totals.
+ *
+ * @returns {{ byCategory: Map<string, {allocated, reserved, spent}>, unlinked: {allocated, reserved, spent, names: string[]}, totals: {allocated, reserved, spent}, budget: number }}
+ */
+export function budgetActuals(plan, sources, allocations, view) {
+  const ids = linkedSourceIds(plan, view);
+  const empty = () => ({ allocated: 0, reserved: 0, spent: 0 });
+  const byCategory = new Map();
+  const unlinked = { ...empty(), names: [] };
+  const totals = empty();
+  // מקור בלי חלוקה לקטגוריות (מיגרציה 0015) — הביצוע שלו נספר רק בסך הכולל,
+  // כי ההזמנות בו לא מתחלקות לפרמטרים, ואין לו "קטגוריה לא משויכת" להציג
+  const singleIds = new Set(sources.filter(s => s.uses_categories === false).map(s => s.id));
+  for (const a of allocations) {
+    if (!ids.includes(a.budget_source_id)) continue;
+    if (singleIds.has(a.budget_source_id)) {
+      totals.allocated += num(a.allocated_amount);
+      totals.reserved += num(a.reserved_amount);
+      totals.spent += num(a.spent_amount);
+      continue;
+    }
+    // קטגוריה ששמה זהה לשם פרמטר נספרת תחתיו גם בלי שיוך מפורש — כמו ש-
+    // sync_work_plan_budget מאמץ אותה לפי השם
+    const key = (a.work_plan_category || '').trim() || (getParameter(a.name) ? a.name.trim() : '');
+    const bucket = key ? (byCategory.get(key) || byCategory.set(key, empty()).get(key)) : unlinked;
+    for (const t of [bucket, totals]) {
+      t.allocated += num(a.allocated_amount);
+      t.reserved += num(a.reserved_amount);
+      t.spent += num(a.spent_amount);
+    }
+    if (!key) unlinked.names.push(a.name);
+  }
+  // כל הכסף במקורות המקושרים = סכום כל הקטגוריות שלהם (במקור בלי קטגוריות —
+  // הקטגוריה היחידה, ששווה לסכום המקור). לא planned_amount: התכנית קוראת את
+  // הכסף שבפועל זמין להזמנות, והסנכרון הישן דרס את planned_amount בסכומי התכנית.
+  return { byCategory, unlinked, totals, budget: totals.allocated };
+}
+
+/**
+ * מאילו קטגוריות תקציב יורדת כל שורה (מיגרציה 0017). לשורה נשמרות רק הקטגוריות
+ * שנבחרו, לפי הסדר; החלוקה מחושבת כאן: עוברים על השורות לפי sort_order, וכל
+ * שורה ממלאת את הקטגוריות שלה לפי הסדר, כל אחת עד מה שנשאר בה אחרי השורות
+ * הקודמות. מה שלא נכנס הוא shortfall — "חסרים".
+ *
+ * @param {'municipal'|'ministry'} funder
+ * @returns {{ byItem: Map<string, { splits: {id, amount}[], shortfall: number }>, used: Map<string, number> }}
+ */
+export function planAllocationSplits(items, allocations, funder) {
+  const idsField = `${funder}_allocation_ids`;
+  const amountField = `${funder}_amount`;
+  const capacity = new Map(allocations.map(a => [a.id, num(a.allocated_amount)]));
+  const used = new Map();
+  const byItem = new Map();
+  const ordered = [...items].sort((a, b) => num(a.sort_order) - num(b.sort_order));
+  for (const item of ordered) {
+    const ids = Array.isArray(item[idsField]) ? item[idsField] : [];
+    if (ids.length === 0) continue;
+    let left = num(item[amountField]);
+    const splits = [];
+    for (const id of ids) {
+      if (!capacity.has(id)) continue; // קטגוריה שנמחקה או לא שייכת למקור המקושר
+      const take = Math.min(Math.max(0, capacity.get(id) - (used.get(id) || 0)), left);
+      splits.push({ id, amount: take });
+      used.set(id, (used.get(id) || 0) + take);
+      left -= take;
+    }
+    byItem.set(item.id, { splits, shortfall: Math.max(0, left) });
+  }
+  return { byItem, used };
+}
+
+/**
+ * כותרות לוח הניצול באחוזי שנה: כל חודש הוא 100/12, והכותרת היא האחוז המצטבר
+ * בסופו — 8.3%, 16.7%, 25% ... 100%. עמודה אחת לכל חודש, אותם סכומים.
+ */
+export const YEAR_PCT_LABELS = MONTHS.map((_, k) => formatPct(((k + 1) * 100) / 12));

@@ -14,8 +14,8 @@ import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import useCategories from '@/hooks/useCategories';
 import { cn } from '@/lib/utils';
-import { handleBudgetOnStatusChange, validateBudgetSelection } from '@/lib/budgetUpdater';
-import { canApproveOrders, canRejectOrders, canCancelOrders, canReceiveGoods, canDeleteMasterData } from '@/lib/permissions';
+import { handleBudgetOnStatusChange, validateBudgetSelection, allocationRemaining, allocationLabel, budgetSourceOptions, singleAllocationFor } from '@/lib/budgetUpdater';
+import { canApproveOrders, canRejectOrders, canCancelOrders, canReceiveGoods, canDeleteMasterData, canAccessPage } from '@/lib/permissions';
 
 const FUNDING_TYPES = [
   { value: 'municipal', label: 'תקציב עירוני' },
@@ -94,6 +94,11 @@ export default function OrderDetail() {
     : [];
 
   const sourceCategories = allCategories.filter(c => c.budget_source_id === order.budget_source_id);
+  const singleAllocation = singleAllocationFor(budgetSources.find(s => s.id === order.budget_source_id), allCategories);
+  const sourceOptions = budgetSourceOptions(budgetSources, allCategories, order.funding_source_type);
+  // Approval reserves against a category or a credit — without one it can only fail.
+  const fundingIncomplete = !order.budget_category_id && !order.credit_id;
+  const canManageBudgets = canAccessPage(user, '/credits');
 
   const handleFundingChange = (type) => {
     setOrder(o => ({ ...o, funding_source_type: type, budget_source_id: '', budget_source_name: '', budget_category_id: '', budget_category_name: '', credit_id: '' }));
@@ -104,11 +109,15 @@ export default function OrderDetail() {
     const src = budgetSources.find(s => s.id === sourceId);
     setOrder(o => ({ ...o, budget_source_id: sourceId, budget_source_name: src?.name || '', budget_category_id: '', budget_category_name: '' }));
     setFundingError(null);
+    // מקור בלי חלוקה לקטגוריות — הקטגוריה היחידה שלו נבחרת אוטומטית
+    const single = singleAllocationFor(src, allCategories);
+    if (single) handleBudgetCategorySelect(single.id);
   };
 
   const handleBudgetCategorySelect = async (catId) => {
     const cat = allCategories.find(c => c.id === catId);
-    setOrder(o => ({ ...o, budget_category_id: catId, budget_category_name: cat?.name || '' }));
+    // budget_category_name הוא תמונת מצב שמוצגת בהזמנה ובדוחות — כולל מספר הקטגוריה
+    setOrder(o => ({ ...o, budget_category_id: catId, budget_category_name: allocationLabel(cat) }));
     setFundingError(null);
     if (catId) {
       setValidating(true);
@@ -266,7 +275,7 @@ export default function OrderDetail() {
   };
 
   const OrderFormProps = { order, setOrder, save, saving, suppliers, mains, getSubcategories, updateItem, addItem, removeItem,
-    budgetSources, sourceCategories, filteredCredits, fundingError, validating,
+    sourceOptions, sourceCategories, filteredCredits, fundingError, validating, canManageBudgets,
     handleFundingChange, handleBudgetSourceSelect, handleBudgetCategorySelect, handleCreditSelect, projects };
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
@@ -332,12 +341,15 @@ export default function OrderDetail() {
           <>
             {isApprover ? (
               <>
-                <Button onClick={approveOrder} className="gap-1.5 bg-blue-500 text-white border-0 hover:bg-blue-600">
+                <Button onClick={approveOrder} disabled={fundingIncomplete} className="gap-1.5 bg-blue-500 text-white border-0 hover:bg-blue-600">
                   <CheckCircle className="w-4 h-4" /> אשר הזמנה
                 </Button>
                 <Button onClick={openReject} variant="outline" className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50">
                   <XCircle className="w-4 h-4" /> דחה הזמנה
                 </Button>
+                {fundingIncomplete && (
+                  <span className="text-xs text-amber-600">לא ניתן לאשר: לא נבחרה קטגוריית תקציב או זיכוי ספק (בחלק "מקור מימון")</span>
+                )}
               </>
             ) : (
               <div className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
@@ -459,7 +471,7 @@ export default function OrderDetail() {
 }
 
 function OrderForm({ order, setOrder, save, saving, suppliers, isReceived, mains, getSubcategories, updateItem, addItem, removeItem,
-  budgetSources, sourceCategories, filteredCredits, fundingError, validating,
+  sourceOptions, sourceCategories, filteredCredits, fundingError, validating, canManageBudgets,
   handleFundingChange, handleBudgetSourceSelect, handleBudgetCategorySelect, handleCreditSelect, projects }) {
   const disabled = isReceived;
 
@@ -545,34 +557,47 @@ function OrderForm({ order, setOrder, save, saving, suppliers, isReceived, mains
               <Select value={order.budget_source_id || ''} onValueChange={handleBudgetSourceSelect} disabled={disabled}>
                 <SelectTrigger><SelectValue placeholder="בחר מקור תקציב" /></SelectTrigger>
                 <SelectContent>
-                  {(budgetSources.filter(bs => bs.funding_source_type === order.funding_source_type)).length === 0 ? (
+                  {sourceOptions.length === 0 ? (
                     <div className="px-2 py-3 text-sm text-muted-foreground text-center">אין מקורות תקציב מסוג זה</div>
                   ) : (
-                    budgetSources.filter(bs => bs.funding_source_type === order.funding_source_type).map(bs => (
-                      <SelectItem key={bs.id} value={bs.id}>{bs.name} · יתרה ₪{(bs.available_amount || 0).toLocaleString('he-IL')}</SelectItem>
+                    sourceOptions.map(bs => (
+                      <SelectItem key={bs.id} value={bs.id} disabled={!bs.hasCategories}>
+                        {bs.name} · {bs.hasCategories ? `יתרה ₪${bs.remaining.toLocaleString('he-IL')}` : 'טרם חולק לקטגוריות'}
+                      </SelectItem>
                     ))
                   )}
                 </SelectContent>
               </Select>
             </div>
-            {order.budget_source_id && sourceCategories.length > 0 && (
+            {singleAllocation && (
+              <p className="text-xs text-muted-foreground">
+                מקור ללא חלוקה לקטגוריות{singleAllocation.category_number ? ` · מספר קטגוריה ${singleAllocation.category_number}` : ''} · יתרה ₪{allocationRemaining(singleAllocation).toLocaleString('he-IL')}
+              </p>
+            )}
+            {order.budget_source_id && !singleAllocation && sourceCategories.length > 0 && (
               <div className="space-y-1.5">
                 <Label>קטגוריית תקציב</Label>
                 <Select value={order.budget_category_id || ''} onValueChange={handleBudgetCategorySelect} disabled={disabled}>
                   <SelectTrigger><SelectValue placeholder={validating ? 'בודק...' : 'בחר קטגוריית תקציב'} /></SelectTrigger>
                   <SelectContent>
                     {sourceCategories.map(cat => {
-                      const rem = cat.remaining_amount !== undefined ? cat.remaining_amount : Math.max(0, (cat.allocated_amount || 0) - (cat.reserved_amount || 0) - (cat.spent_amount || 0));
+                      const rem = allocationRemaining(cat);
                       const insufficient = order.total_amount > rem;
-                      return <SelectItem key={cat.id} value={cat.id} disabled={insufficient}>{cat.name} · יתרה ₪{rem.toLocaleString('he-IL')}{insufficient ? ' (אין מספיק)' : ''}</SelectItem>;
+                      return <SelectItem key={cat.id} value={cat.id} disabled={insufficient}>{allocationLabel(cat)} · יתרה ₪{rem.toLocaleString('he-IL')}{insufficient ? ' (אין מספיק)' : ''}</SelectItem>;
                     })}
                   </SelectContent>
                 </Select>
               </div>
             )}
             {order.budget_source_id && sourceCategories.length === 0 && (
-              <div className="text-sm text-muted-foreground bg-muted/60 rounded-lg p-3">
-                <p>אין קטגוריות תקציב במקור זה. צור קטגוריות בדף "מקורות תקציב".</p>
+              <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 rounded-lg p-3">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <p>
+                  התקציב של "{order.budget_source_name}" עדיין לא חולק לקטגוריות, ולכן אי אפשר לחייב אותו בהזמנה.{' '}
+                  {canManageBudgets
+                    ? <>יש להגדיר קטגוריות ב<Link to="/credits" className="underline font-medium">מקורות תקציב</Link>, או לבחור מקור אחר.</>
+                    : 'יש לבחור מקור אחר, או לפנות למנהל/ת המערכת כדי שיחלק את התקציב לקטגוריות.'}
+                </p>
               </div>
             )}
           </>

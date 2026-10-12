@@ -130,6 +130,9 @@ export default function Credits() {
     const allocated = sourceTotals[src.id]?.total || 0;
     return src.planned_amount != null ? Number(src.planned_amount) : allocated;
   };
+  // מקור בלי חלוקה לקטגוריות (מיגרציה 0015): יש לו קטגוריה אחת שמסונכרנת עם
+  // הסכום המתוכנן, ולכן לא מציגים בו "קטגוריות" ולא "טרם הוקצה"
+  const isSingle = (src) => src?.uses_categories === false;
 
   const catTotals = useMemo(() => computeSourceTotals(categories), [categories]);
   const warnings = categories.filter(c => {
@@ -153,7 +156,9 @@ export default function Credits() {
         toast.success('מקור תקציב נוסף!');
       }
     } catch (err) {
-      toast.error('שמירת מקור התקציב נכשלה. הנתונים לא נשמרו.');
+      // הטריגר של מקור בלי קטגוריות (מיגרציה 0015) מחזיר הודעה בעברית —
+      // למשל כשמקטינים מתחת למה שכבר שוריין — ומציגים אותה כמו שהיא
+      toast.error(err?.message ? `שמירת מקור התקציב נכשלה: ${err.message}` : 'שמירת מקור התקציב נכשלה. הנתונים לא נשמרו.');
       throw err;
     }
     load();
@@ -353,7 +358,11 @@ export default function Credits() {
                         <p className="text-2xl font-bold text-foreground">₪{budget.toLocaleString('he-IL')}</p>
                         {/* הסכום המתוכנן (מיגרציה 0011) הוא מה שהמשתמשת מקלידה
                             בעריכת המקור, ולכן הוא המספר הראשי כשהוא קיים. */}
-                        {src.planned_amount == null ? (
+                        {isSingle(src) ? (
+                          <p className="text-xs text-muted-foreground">
+                            תקציב מתוכנן · ללא חלוקה לקטגוריות{src.category_number ? ` · מספר קטגוריה ${src.category_number}` : ''}
+                          </p>
+                        ) : src.planned_amount == null ? (
                           <p className="text-xs text-muted-foreground">מוקצה בקטגוריות · {srcCats.length} קטגוריות</p>
                         ) : (
                           <>
@@ -386,7 +395,7 @@ export default function Credits() {
                         <span className="font-medium" style={{ color: src.color || '#8b5cf6' }}>יתרה ₪{avail.toLocaleString('he-IL')}</span>
                       </div>
                       <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
-                        <span className="text-xs text-muted-foreground">{srcCats.length} קטגוריות</span>
+                        <span className="text-xs text-muted-foreground">{isSingle(src) ? 'ללא קטגוריות' : `${srcCats.length} קטגוריות`}</span>
                         <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-[-4px] transition-all" />
                       </div>
                     </motion.div>
@@ -467,7 +476,8 @@ export default function Credits() {
           </div>
         )}
 
-        <BudgetSourceDialog open={sourceDialogOpen} onOpenChange={setSourceDialogOpen} source={editingSource} onSubmit={handleSaveSource} />
+        <BudgetSourceDialog open={sourceDialogOpen} onOpenChange={setSourceDialogOpen} source={editingSource} onSubmit={handleSaveSource}
+          categoryCount={editingSource ? allCategories.filter(c => c.budget_source_id === editingSource.id).length : 0} />
         <SupplierCreditDialog open={creditDialogOpen} onOpenChange={setCreditDialogOpen} credit={editingCredit} onSubmit={handleSaveCredit} />
       </div>
     );
@@ -476,6 +486,7 @@ export default function Credits() {
   // ─── SOURCE DETAIL ───────────────────────────────────────────────────────────
   const avail = Math.max(0, catTotals.total - catTotals.reserved - catTotals.spent);
   const usedPct = catTotals.total > 0 ? ((catTotals.reserved + catTotals.spent) / catTotals.total * 100).toFixed(0) : 0;
+  const single = isSingle(activeSource);
 
   return (
     <div className="p-6 max-w-6xl mx-auto animate-fade-in">
@@ -486,13 +497,14 @@ export default function Credits() {
       </div>
 
       <PageHeader
-        title="חלוקה לקטגוריות תקציב"
-        subtitle={`${activeSource?.name} · ${activeSource?.year || ''} ${!canEdit ? '(צפייה בלבד)' : ''}`}
+        title={single ? 'פירוט תקציב' : 'חלוקה לקטגוריות תקציב'}
+        subtitle={`${activeSource?.name} · ${activeSource?.year || ''}${single ? ' · ללא חלוקה לקטגוריות' : ''} ${!canEdit ? '(צפייה בלבד)' : ''}`}
         gradient="from-teal-400 to-green-500"
         actions={
           <div className="flex gap-2">
             {canAddExpense && <Button onClick={() => openAddExpense()} variant="outline" className="gap-1.5 text-sm"><Plus className="w-4 h-4" /> הוסף הוצאה</Button>}
-            {canEdit && <Button onClick={openNewCat} className="gap-1.5 bg-gradient-to-l from-teal-400 to-green-500 text-white border-0 hover:opacity-90 text-sm"><Plus className="w-4 h-4" /> קטגוריה חדשה</Button>}
+            {canEdit && single && <Button onClick={() => openEditSource(activeSource)} variant="outline" className="gap-1.5 text-sm"><Pencil className="w-4 h-4" /> עריכת מקור</Button>}
+            {canEdit && !single && <Button onClick={openNewCat} className="gap-1.5 bg-gradient-to-l from-teal-400 to-green-500 text-white border-0 hover:opacity-90 text-sm"><Plus className="w-4 h-4" /> קטגוריה חדשה</Button>}
           </div>
         }
       />
@@ -508,14 +520,14 @@ export default function Credits() {
 
       {/* Source summary */}
       <div className="bg-card border border-border rounded-2xl p-5 mb-6">
-        <div className={cn('grid gap-3 mb-3 text-center', activeSource?.planned_amount != null ? 'grid-cols-5' : 'grid-cols-4')}>
-          {activeSource?.planned_amount != null && (
+        <div className={cn('grid gap-3 mb-3 text-center', activeSource?.planned_amount != null && !single ? 'grid-cols-5' : 'grid-cols-4')}>
+          {activeSource?.planned_amount != null && !single && (
             <div>
               <p className="text-xs text-muted-foreground">סכום מתוכנן</p>
               <p className="text-2xl font-bold text-violet-600">₪{Number(activeSource.planned_amount).toLocaleString('he-IL')}</p>
             </div>
           )}
-          <div><p className="text-xs text-muted-foreground">מוקצה בקטגוריות</p><p className="text-2xl font-bold">₪{catTotals.total.toLocaleString('he-IL')}</p></div>
+          <div><p className="text-xs text-muted-foreground">{single ? 'תקציב' : 'מוקצה בקטגוריות'}</p><p className="text-2xl font-bold">₪{catTotals.total.toLocaleString('he-IL')}</p></div>
           <div><p className="text-xs text-muted-foreground">משוריין</p><p className="text-2xl font-bold text-amber-600">₪{catTotals.reserved.toLocaleString('he-IL')}</p></div>
           <div><p className="text-xs text-muted-foreground">נוצל בפועל</p><p className="text-2xl font-bold text-red-500">₪{catTotals.spent.toLocaleString('he-IL')}</p></div>
           <div><p className="text-xs text-muted-foreground">יתרה זמינה</p><p className="text-2xl font-bold text-teal-600">₪{avail.toLocaleString('he-IL')}</p></div>
@@ -528,7 +540,7 @@ export default function Credits() {
         </div>
       </div>
 
-      <div className="flex gap-1 bg-muted rounded-xl p-1 mb-5 w-fit">
+      <div className={cn('flex gap-1 bg-muted rounded-xl p-1 mb-5 w-fit', single && 'hidden')}>
         {VIEWS.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setView(id)} className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all', view === id ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
             <Icon className="w-3.5 h-3.5" />{label}
@@ -540,12 +552,12 @@ export default function Credits() {
         <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" /></div>
       ) : categories.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
-          <p className="mb-3">אין קטגוריות תקציב במקור זה.</p>
-          {canEdit && <Button onClick={openNewCat} variant="outline" className="gap-2"><Plus className="w-4 h-4" /> הוסף קטגוריה ראשונה</Button>}
+          <p className="mb-3">{single ? 'למקור זה עדיין לא נקבע סכום.' : 'אין קטגוריות תקציב במקור זה.'}</p>
+          {canEdit && !single && <Button onClick={openNewCat} variant="outline" className="gap-2"><Plus className="w-4 h-4" /> הוסף קטגוריה ראשונה</Button>}
         </div>
       ) : (
         <motion.div key={view} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          {view === 'overview' && (
+          {(view === 'overview' || single) && (
             <div className="space-y-3">
               {categories.map(cat => {
                 const reserved = cat.reserved_amount || 0;
@@ -562,6 +574,7 @@ export default function Credits() {
                       <div className="flex items-center gap-2">
                         <span className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color || '#14b8a6' }} />
                         <span className="font-bold">{cat.name}</span>
+                        {cat.category_number && <span className="text-xs text-muted-foreground bg-muted/60 rounded-full px-2 py-0.5" dir="ltr">{cat.category_number}</span>}
                         {cat.supplier_name && (
                           <span className="flex items-center gap-1 text-xs text-muted-foreground bg-muted/60 rounded-full px-2 py-0.5">
                             <Truck className="w-3 h-3" />{cat.supplier_name}
@@ -570,7 +583,7 @@ export default function Credits() {
                       </div>
                       <div className="flex items-center gap-2">
                         {canAddExpense && <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => openAddExpense(cat)}><Plus className="w-3 h-3" /> הוצאה ידנית</Button>}
-                        {canEdit && <Button size="sm" variant="ghost" className="text-xs" onClick={() => openEditCat(cat)}><Pencil className="w-3 h-3" /></Button>}
+                        {canEdit && !single && <Button size="sm" variant="ghost" className="text-xs" onClick={() => openEditCat(cat)}><Pencil className="w-3 h-3" /></Button>}
                       </div>
                     </div>
 
@@ -645,12 +658,14 @@ export default function Credits() {
               })}
             </div>
           )}
-          {view === 'pie' && <BudgetPieChart categories={categories} />}
-          {view === 'bar' && <BudgetBarChart categories={categories} />}
-          {view === 'table' && <BudgetTable categories={categories} onEdit={openEditCat} onAddExpense={openAddExpense} canEdit={canEdit} />}
+          {!single && view === 'pie' && <BudgetPieChart categories={categories} />}
+          {!single && view === 'bar' && <BudgetBarChart categories={categories} />}
+          {!single && view === 'table' && <BudgetTable categories={categories} onEdit={openEditCat} onAddExpense={openAddExpense} canEdit={canEdit} />}
         </motion.div>
       )}
 
+      <BudgetSourceDialog open={sourceDialogOpen} onOpenChange={setSourceDialogOpen} source={editingSource} onSubmit={handleSaveSource}
+        categoryCount={categories.length} />
       <CategoryDialog open={catDialogOpen} onOpenChange={setCatDialogOpen} category={editingCat} onSubmit={handleSaveCategory} />
       <AddExpenseDialog open={expenseDialogOpen} onOpenChange={setExpenseDialogOpen} categories={categories} preselected={preselectedCat} onSubmit={handleAddExpense} />
     </div>

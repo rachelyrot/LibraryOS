@@ -15,7 +15,8 @@ import useCategories from '@/hooks/useCategories';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { canApproveQuotes, canConvertQuoteToOrder } from '@/lib/permissions';
+import { canApproveQuotes, canConvertQuoteToOrder, canAccessPage } from '@/lib/permissions';
+import { allocationRemaining, allocationLabel, budgetSourceOptions, singleAllocationFor } from '@/lib/budgetUpdater';
 
 const STATUS_FLOW = {
   draft:            { next: 'sent_to_supplier',  label: 'שלח לספק',        color: 'bg-blue-500' },
@@ -111,6 +112,8 @@ export default function Quotes() {
       })
     : [];
   const sourceCategories = allCategories.filter(c => c.budget_source_id === form.budget_source_id);
+  const singleAllocation = singleAllocationFor(budgetSources.find(s => s.id === form.budget_source_id), allCategories);
+  const sourceOptions = budgetSourceOptions(budgetSources, allCategories, form.funding_source_type);
 
   const openNew = () => {
     setEditing(null);
@@ -157,7 +160,9 @@ export default function Quotes() {
 
   const handleBudgetSourceSelect = (sourceId) => {
     const src = budgetSources.find(s => s.id === sourceId);
-    setForm(f => ({ ...f, budget_source_id: sourceId, budget_category_id: '' }));
+    // מקור בלי חלוקה לקטגוריות — הקטגוריה היחידה שלו נבחרת אוטומטית
+    const single = singleAllocationFor(src, allCategories);
+    setForm(f => ({ ...f, budget_source_id: sourceId, budget_category_id: single?.id || '' }));
     setFundingError(null);
   };
 
@@ -278,7 +283,7 @@ export default function Quotes() {
         budget_source_id: quote.budget_source_id || '',
         budget_source_name: (budgetSources.find(bs => bs.id === quote.budget_source_id) || {}).name || '',
         budget_category_id: quote.budget_category_id || '',
-        budget_category_name: (allCategories.find(c => c.id === quote.budget_category_id) || {}).name || '',
+        budget_category_name: allocationLabel(allCategories.find(c => c.id === quote.budget_category_id)),
         credit_id: quote.credit_id || '',
         items,
         notes: quote.notes ? `${quote.notes}\n\n---\nנוצר מהצעת מחיר "${quote.title}"` : `נוצר מהצעת מחיר "${quote.title}"`,
@@ -503,34 +508,47 @@ export default function Quotes() {
                     <Select value={form.budget_source_id || ''} onValueChange={handleBudgetSourceSelect}>
                       <SelectTrigger><SelectValue placeholder="בחר מקור תקציב" /></SelectTrigger>
                       <SelectContent>
-                        {(budgetSources.filter(bs => bs.funding_source_type === form.funding_source_type)).length === 0 ? (
+                        {sourceOptions.length === 0 ? (
                           <div className="px-2 py-3 text-sm text-muted-foreground text-center">אין מקורות תקציב מסוג זה</div>
                         ) : (
-                          budgetSources.filter(bs => bs.funding_source_type === form.funding_source_type).map(bs => (
-                            <SelectItem key={bs.id} value={bs.id}>{bs.name} · יתרה ₪{(bs.available_amount || 0).toLocaleString('he-IL')}</SelectItem>
+                          sourceOptions.map(bs => (
+                            <SelectItem key={bs.id} value={bs.id} disabled={!bs.hasCategories}>
+                              {bs.name} · {bs.hasCategories ? `יתרה ₪${bs.remaining.toLocaleString('he-IL')}` : 'טרם חולק לקטגוריות'}
+                            </SelectItem>
                           ))
                         )}
                       </SelectContent>
                     </Select>
                   </div>
-                  {form.budget_source_id && sourceCategories.length > 0 && (
+                  {singleAllocation && (
+                    <p className="text-xs text-muted-foreground">
+                      מקור ללא חלוקה לקטגוריות{singleAllocation.category_number ? ` · מספר קטגוריה ${singleAllocation.category_number}` : ''} · יתרה ₪{allocationRemaining(singleAllocation).toLocaleString('he-IL')}
+                    </p>
+                  )}
+                  {form.budget_source_id && !singleAllocation && sourceCategories.length > 0 && (
                     <div className="space-y-1.5">
                       <Label>קטגוריית תקציב</Label>
                       <Select value={form.budget_category_id || ''} onValueChange={handleBudgetCategorySelect}>
                         <SelectTrigger><SelectValue placeholder="בחר קטגוריית תקציב" /></SelectTrigger>
                         <SelectContent>
                           {sourceCategories.map(cat => {
-                            const rem = cat.remaining_amount !== undefined ? cat.remaining_amount : Math.max(0, (cat.allocated_amount || 0) - (cat.reserved_amount || 0) - (cat.spent_amount || 0));
+                            const rem = allocationRemaining(cat);
                             const insufficient = form.total_amount > rem;
-                            return <SelectItem key={cat.id} value={cat.id} disabled={insufficient}>{cat.name} · יתרה ₪{rem.toLocaleString('he-IL')}{insufficient ? ' (אין מספיק)' : ''}</SelectItem>;
+                            return <SelectItem key={cat.id} value={cat.id} disabled={insufficient}>{allocationLabel(cat)} · יתרה ₪{rem.toLocaleString('he-IL')}{insufficient ? ' (אין מספיק)' : ''}</SelectItem>;
                           })}
                         </SelectContent>
                       </Select>
                     </div>
                   )}
                   {form.budget_source_id && sourceCategories.length === 0 && (
-                    <div className="text-sm text-muted-foreground bg-muted/60 rounded-lg p-3">
-                      <p>אין קטגוריות תקציב במקור זה.</p>
+                    <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 rounded-lg p-3">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <p>
+                        התקציב של "{budgetSources.find(bs => bs.id === form.budget_source_id)?.name}" עדיין לא חולק לקטגוריות, ולכן אי אפשר לחייב אותו.{' '}
+                        {canAccessPage(user, '/credits')
+                          ? 'יש להגדיר קטגוריות בדף "מקורות תקציב", או לבחור מקור אחר.'
+                          : 'יש לבחור מקור אחר, או לפנות למנהל/ת המערכת כדי שיחלק את התקציב לקטגוריות.'}
+                      </p>
                     </div>
                   )}
                 </>

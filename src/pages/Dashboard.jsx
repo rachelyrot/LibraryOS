@@ -589,6 +589,7 @@ export default function Dashboard() {
                 </div>
                 <Button onClick={() => exportToExcel('budget', filteredBudgetCategories.map(c => ({
                   budget_source_name: budgetSources.find(bs => bs.id === c.budget_source_id)?.name || '',
+                  category_number: c.category_number || '',
                   category_name: c.name,
                   allocated_amount: c.allocated_amount,
                   reserved_amount: c.reserved_amount,
@@ -649,7 +650,10 @@ export default function Dashboard() {
                             return (
                               <TableRow key={cat.id}>
                                 <TableCell className="font-medium">{source?.name || '-'}</TableCell>
-                                <TableCell>{cat.name}</TableCell>
+                                <TableCell>
+                                  {cat.name}
+                                  {cat.category_number && <span className="text-xs text-muted-foreground mr-1.5" dir="ltr">{cat.category_number}</span>}
+                                </TableCell>
                                 <TableCell className="text-right font-medium">₪{allocated.toLocaleString('he-IL')}</TableCell>
                                 <TableCell className="text-right text-amber-600">₪{reserved.toLocaleString('he-IL')}</TableCell>
                                 <TableCell className="text-right text-red-500">₪{spent.toLocaleString('he-IL')}</TableCell>

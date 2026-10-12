@@ -45,6 +45,59 @@ export async function recalcBudgetSource(sourceId) {
 }
 
 /**
+ * Write an approved work plan's per-parameter amounts into its linked budget
+ * sources' categories. All-or-nothing, in the sync_work_plan_budget RPC
+ * (migration 0014) — it refuses to cut a category below what orders already
+ * reserved/spent, and re-derives the source totals itself.
+ * @returns {Promise<{ created: number, updated: number }>}
+ */
+export async function syncWorkPlanBudget(planId) {
+  const { data, error } = await supabase.rpc('sync_work_plan_budget', { p_plan_id: planId });
+  if (error) throw error;
+  return data;
+}
+
+/** שם קטגוריה לתצוגה, עם מספר הקטגוריה לפניו אם הוזן (מיגרציה 0016). */
+export function allocationLabel(cat) {
+  if (!cat) return '';
+  const num = (cat.category_number || '').trim();
+  return num ? `${num} · ${cat.name}` : cat.name;
+}
+
+/** What is still free in one budget category (BudgetAllocation). */
+export function allocationRemaining(cat) {
+  return cat.remaining_amount != null
+    ? cat.remaining_amount
+    : Math.max(0, (cat.allocated_amount || 0) - (cat.reserved_amount || 0) - (cat.spent_amount || 0));
+}
+
+/**
+ * Budget sources of one funding type, each annotated with whether it has any
+ * categories and how much its categories have left. Orders and quotes can only
+ * be charged to a category, so a source without categories can't fund anything
+ * — pickers use this to say so instead of offering it as "יתרה ₪0".
+ */
+export function budgetSourceOptions(budgetSources, allCategories, fundingType) {
+  return budgetSources
+    .filter(bs => bs.funding_source_type === fundingType)
+    .map(bs => {
+      const cats = allCategories.filter(c => c.budget_source_id === bs.id);
+      return { ...bs, hasCategories: cats.length > 0, remaining: cats.reduce((s, c) => s + allocationRemaining(c), 0) };
+    });
+}
+
+/**
+ * מקור שאינו מחולק לקטגוריות (uses_categories = false, מיגרציה 0015) מחזיק
+ * קטגוריה אחת בלבד, שהטריגר בבסיס הנתונים מסנכרן עם סכום המקור. הבוררים
+ * בהזמנה ובהצעת מחיר בוחרים אותה אוטומטית במקום להציג בחירת קטגוריה.
+ * @returns {object|null} הקטגוריה היחידה, או null למקור שמחולק לקטגוריות
+ */
+export function singleAllocationFor(source, allCategories) {
+  if (!source || source.uses_categories !== false) return null;
+  return allCategories.find(c => c.budget_source_id === source.id) || null;
+}
+
+/**
  * Validate budget selection for an order. Stays a plain client-side read (no
  * mutation risk) — a lightweight pre-flight UX check; the RPC above is the
  * authoritative check and will reject if this pre-check was stale.

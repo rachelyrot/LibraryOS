@@ -1,6 +1,6 @@
 import {
-  VIEWS, MONTHS, QUARTERS, amountColumns, itemsForView, groupByCategory, parameterRows, monthlySchedule,
-  toQuarters, utilizationLabel, RULE_STATUS_LABELS, num, formatMoney, formatPct,
+  VIEWS, MONTHS, amountColumns, itemsForView, groupByCategory, parameterRows, monthlySchedule,
+  YEAR_PCT_LABELS, utilizationLabel, RULE_STATUS_LABELS, num, formatMoney, formatPct,
 } from '@/lib/workPlan';
 
 /**
@@ -62,14 +62,18 @@ function detailSheetRows(plan, items, view) {
   return rows;
 }
 
-function scheduleSheetRows(plan, items, view) {
+/**
+ * @param {string[]} headers שמות החודשים, או YEAR_PCT_LABELS — אותם סכומים,
+ *   כשבאחוזים כל עמודה היא חודש (100/12) והכותרת היא אחוז השנה בסופו
+ */
+function scheduleSheetRows(plan, items, view, headers = MONTHS) {
   const s = monthlySchedule(items, view);
   const rows = [
     [plan.title],
-    [`שנת ${plan.year} · לוח ניצול חודשי · ${viewLabel(view)}`],
+    [`שנת ${plan.year} · לוח ניצול ${headers === MONTHS ? 'חודשי' : 'לפי אחוזי שנה'} · ${viewLabel(view)}`],
     ['הסכום של כל שורה מחולק שווה בין החודשים בתקופת הניצול שלה'],
     [],
-    ['פרמטר', ...MONTHS, 'לא נקבע', 'סה"כ'],
+    ['פרמטר', ...headers, 'לא נקבע', 'סה"כ'],
   ];
   for (const g of s.groups) rows.push([g.category, ...g.months.map(Math.round), Math.round(g.unscheduled), round(g.total)]);
   rows.push(['סה"כ', ...s.months.map(Math.round), Math.round(s.unscheduled), round(s.total)]);
@@ -92,6 +96,8 @@ export async function exportWorkPlanExcel(plan, items) {
   }
   addSheet(scheduleSheetRows(plan, items, 'all'), 'לוח ניצול - כל התכנית', [46, ...MONTHS.map(() => 11), 11, 14]);
   addSheet(scheduleSheetRows(plan, items, 'ministry'), 'לוח ניצול - משרד התרבות', [46, ...MONTHS.map(() => 11), 11, 14]);
+  addSheet(scheduleSheetRows(plan, items, 'all', YEAR_PCT_LABELS), 'אחוזים - כל התכנית', [46, ...MONTHS.map(() => 11), 11, 14]);
+  addSheet(scheduleSheetRows(plan, items, 'ministry', YEAR_PCT_LABELS), 'אחוזים - משרד התרבות', [46, ...MONTHS.map(() => 11), 11, 14]);
 
   // גיליונות מימין לשמאל
   wb.Workbook = { Views: [{ RTL: true }] };
@@ -125,16 +131,12 @@ export function printWorkPlan(plan, items, view) {
       <td class="${r.status === 'ok' ? 'ok' : r.status ? 'bad' : ''}">${r.status ? RULE_STATUS_LABELS[r.status] : ''}</td>
     </tr>`).join('');
 
-  const scheduleRows = schedule.groups.map(g => {
-    const q = toQuarters(g.months);
-    return `<tr>
+  const scheduleRows = schedule.groups.map(g => `<tr>
       <td>${escapeHtml(g.category)}</td>
-      ${q.map(v => `<td class="num">${v > 0 ? formatMoney(v, 0) : '-'}</td>`).join('')}
+      ${g.months.map(v => `<td class="num">${v > 0 ? formatMoney(v, 0) : '-'}</td>`).join('')}
       <td class="num">${g.unscheduled > 0 ? formatMoney(g.unscheduled, 0) : '-'}</td>
       <td class="num strong">${formatMoney(g.total, 0)}</td>
-    </tr>`;
-  }).join('');
-  const qTotals = toQuarters(schedule.months);
+    </tr>`).join('');
 
   const detailBody = groups.map(g => `
     <tr class="group"><td colspan="${4 + cols.length}">${escapeHtml(g.category)}</td></tr>
@@ -202,13 +204,13 @@ export function printWorkPlan(plan, items, view) {
 
   <h2>לוח זמנים לניצול התקציב</h2>
   <table>
-    <thead><tr><th>פרמטר</th>${QUARTERS.map(q => `<th class="num">${q.label}</th>`).join('')}<th class="num">לא נקבע</th><th class="num">סה"כ</th></tr></thead>
+    <thead><tr><th>פרמטר</th>${YEAR_PCT_LABELS.map(p => `<th class="num">${p}</th>`).join('')}<th class="num">לא נקבע</th><th class="num">סה"כ</th></tr></thead>
     <tbody>
       ${scheduleRows}
-      <tr class="total"><td>סה"כ</td>${qTotals.map(v => `<td class="num">${formatMoney(v, 0)}</td>`).join('')}<td class="num">${formatMoney(schedule.unscheduled, 0)}</td><td class="num">${formatMoney(schedule.total, 0)}</td></tr>
+      <tr class="total"><td>סה"כ</td>${schedule.months.map(v => `<td class="num">${formatMoney(v, 0)}</td>`).join('')}<td class="num">${formatMoney(schedule.unscheduled, 0)}</td><td class="num">${formatMoney(schedule.total, 0)}</td></tr>
     </tbody>
   </table>
-  <p class="note">סכום כל שורה מחולק שווה בין החודשים בתקופת הניצול שלה.</p>
+  <p class="note">סכום כל שורה מחולק שווה בין החודשים בתקופת הניצול שלה. כל עמודה היא חודש — 100% חלקי 12 — והכותרת היא האחוז מהשנה בסופו.</p>
 
   <h2 class="page-break">פירוט</h2>
   <table>

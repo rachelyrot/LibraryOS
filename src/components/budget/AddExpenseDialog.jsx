@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import MoneyInput from '@/components/budget/MoneyInput';
+import { allocationLabel } from '@/lib/budgetUpdater';
 
 export default function AddExpenseDialog({ open, onOpenChange, categories, preselected, onSubmit }) {
   const [form, setForm] = useState({ category_id: '', amount: '', supplier_name: '', description: '', date: new Date().toISOString().split('T')[0] });
@@ -55,7 +56,7 @@ export default function AddExpenseDialog({ open, onOpenChange, categories, prese
                   <SelectItem key={c.id} value={c.id}>
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: c.color || '#14b8a6' }} />
-                      {c.name}
+                      {allocationLabel(c)}
                     </div>
                   </SelectItem>
                 ))}
