@@ -503,7 +503,7 @@ export default function WorkPlan() {
             <div className="flex flex-wrap items-center gap-2 justify-between px-4 py-3 border-b border-border">
               <div>
                 <p className="font-bold">תכנון התקציב לפי פרמטרים</p>
-                <p className="text-xs text-muted-foreground">{viewLabel} · האחוזים מחושבים מסך התצוגה הנוכחית</p>
+                <p className="text-xs text-muted-foreground">{viewLabel} · עמודת "אחוז" היא מסך התצוגה; עמידה בהגבלות נבדקת על התכנית כולה, מול הבסיס של כל הגבלה</p>
               </div>
               {violations.length > 0 && (
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1">
@@ -528,7 +528,10 @@ export default function WorkPlan() {
                 <tbody>
                   {form.rows.map(r => (
                     <tr key={r.category} className="border-b border-border/40">
-                      <td className="p-2.5 font-medium">{r.category}{!r.param && <span className="text-xs text-muted-foreground mr-1">(לא מטופס המשרד)</span>}</td>
+                      <td className="p-2.5">
+                        <p className="font-medium">{r.category}{!r.param && <span className="text-xs text-muted-foreground mr-1">(לא מטופס המשרד)</span>}</p>
+                        {r.param?.note && <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{r.param.note}</p>}
+                      </td>
                       <td className="p-2.5 text-left whitespace-nowrap" dir="ltr">{formatMoney(r.amount)}</td>
                       <td className="p-2.5 text-left font-semibold" dir="ltr">{formatPct(r.pct)}</td>
                       {hasLinkedSources && (() => {
@@ -542,8 +545,12 @@ export default function WorkPlan() {
                           </>
                         );
                       })()}
-                      <td className="p-2.5 text-xs text-muted-foreground whitespace-nowrap">{r.rule || '-'}</td>
-                      <td className="p-2.5"><RuleBadge status={r.status} /></td>
+                      <td className="p-2.5 text-xs text-muted-foreground">{r.rule || '-'}</td>
+                      <td className="p-2.5">
+                        <RuleBadge status={r.status} />
+                        {/* האחוז שנמדד מול הבסיס של ההגבלה — לא תמיד האחוז מסך התצוגה */}
+                        {r.status && r.rulePct != null && <p className="text-[11px] text-muted-foreground mt-0.5" dir="ltr">{formatPct(r.rulePct)}</p>}
+                      </td>
                     </tr>
                   ))}
                   <tr className="bg-muted/40 font-bold">

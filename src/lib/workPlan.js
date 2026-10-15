@@ -2,7 +2,7 @@
  * תכנית עבודה שנתית — חישובים משותפים לדף, לייצוא ל-Excel ולתצוגת ההדפסה.
  *
  * התכנית בנויה לפי טופס "תכנון התקציב של הספריות הציבוריות" של משרד התרבות:
- * חמישה פרמטרים קבועים, לכל אחד הגבלת אחוז (מינימום או מקסימום). מתחת לכל
+ * שמונה פרמטרים קבועים, לחלקם הגבלת אחוז (מינימום או מקסימום). מתחת לכל
  * פרמטר יש שורות מפורטות — כל שורה עם סכום עירוני, סכום משרד התרבות, ותקופת
  * ניצול (מחודש עד חודש).
  *
@@ -15,23 +15,92 @@
  * הפרמטרים של טופס המשרד, בסדר שבו הם מופיעים בטופס. השם נשמר כמו שהוא בעמודת
  * category של השורה — שינוי שם כאן ינתק שורות קיימות מהפרמטר שלהן.
  */
+//
+// כל הגבלה נמדדת מול הבסיס שהטופס קובע לה (base), ולא מול סך התצוגה הנוכחית:
+//   'all'      — סך התקציב השוטף של הספרייה (עירוני + משרד התרבות)
+//   'ministry' — סך כספי התמיכה שאושרו (עמודת משרד התרבות)
+// what — איזה סכום של הפרמטר נמדד: 'all' (שני המקורות) או 'ministry'.
+// group — פרמטרים שההגבלה חלה על הסכום של כולם יחד (שיווק + השתלמויות).
+// הפיצול בטופס של שיווק והשתלמויות ל"מתקציב הרשות" ו"מתמיכת משרד התרבות" הוא
+// שתי עמודות הסכום שכבר יש לכל שורה, ולא פרמטרים נפרדים.
 export const MINISTRY_PARAMETERS = [
-  { name: 'רכש ספרים, כתבי עת, מדיה ומאגרי מידע', min: 40 },
-  { name: 'פעילות תרבות', min: 25 },
-  { name: 'רכש מחשבים, תוכנות, ריהוט וציוד משרדי' },
-  { name: 'פעולות לשיווק, פרסום ומיתוג הספרייה', max: 10 },
-  { name: 'השתלמויות והכשרות מקצועיות למנהלי ספריות וספרנים', max: 10 },
+  {
+    name: 'שכר',
+    note: 'בספריות משולבות אין לכלול את עובדי המוסד החינוכי ועובדים שמשכורתם ממומנת על ידי משרד החינוך או המוסד החינוכי',
+  },
+  {
+    name: 'רכש ספרים, כתבי עת, מדיה ומאגרי מידע',
+    min: 40, base: 'all', what: 'all',
+    note: 'לפחות 40% מתוך סך התקציב השוטף של הספרייה ימומש מתוך סעיף זה',
+  },
+  {
+    // "פעולות תרבות" בטופס — השם נשאר כפי שנשמר בשורות הקיימות
+    name: 'פעילות תרבות',
+    min: 25, base: 'ministry', what: 'ministry',
+    note: 'רכש פעולות תרבות לא יפחת מ-25% מסך כספי התמיכה שאושרו לרשות',
+  },
+  { name: 'רכש מחשבים, תוכנות, ריהוט וציוד משרדי', note: 'לטובת מנויי הספרייה' },
+  {
+    name: 'פעולות לשיווק, פרסום ומיתוג הספרייה',
+    short: 'שיווק ומיתוג',
+    max: 10, base: 'ministry', what: 'all', group: 'marketing_training',
+    note: 'השתלמויות ושיווק ומיתוג שניהם יחד לא יעלו על 10% מסך כספי התמיכה',
+  },
+  {
+    name: 'השתלמויות והכשרות מקצועיות למנהלי ספריות וספרנים',
+    short: 'השתלמויות',
+    max: 10, base: 'ministry', what: 'all', group: 'marketing_training',
+    note: 'השתלמויות ושיווק ומיתוג שניהם יחד לא יעלו על 10% מסך כספי התמיכה',
+  },
+  {
+    name: 'הוצאות אחזקת מבנה הספרייה',
+    note: 'במבנה המשמש לכמה שימושים — יש לדווח רק את החלק היחסי לספרייה',
+  },
+  { name: 'הוצאות אחרות', note: 'יש לפרט בכל שורה מה ההוצאה' },
 ];
 
 const PARAMETER_BY_NAME = new Map(MINISTRY_PARAMETERS.map(p => [p.name, p]));
 
 export const getParameter = (category) => PARAMETER_BY_NAME.get((category || '').trim()) || null;
 
+const BASE_LABEL = { all: 'מסך התקציב השוטף', ministry: 'מכספי התמיכה' };
+
 export function ruleLabel(param) {
   if (!param) return '';
-  if (param.min != null) return `לא יפחת מ-${param.min}%`;
-  if (param.max != null) return `לא יעלה על ${param.max}%`;
+  const base = BASE_LABEL[param.base] || '';
+  const together = param.group ? 'יחד עם ' + MINISTRY_PARAMETERS
+    .filter(p => p.group === param.group && p.name !== param.name)
+    .map(p => p.short || p.name).join(', ') + ' — ' : '';
+  if (param.min != null) return `${together}לפחות ${param.min}% ${base}`.trim();
+  if (param.max != null) return `${together}עד ${param.max}% ${base}`.trim();
   return '';
+}
+
+/**
+ * בדיקת ההגבלות של כל הפרמטרים מול התכנית כולה — תמיד על כל השורות, לא על
+ * התצוגה, כי ההגבלות של המשרד הן על התקציב כולו.
+ * @returns {Map<string, { pct: number, status: 'ok'|'below'|'above'|null }>} לפי שם פרמטר
+ */
+export function evaluateRules(items) {
+  const totals = planTotals(items);
+  const byName = new Map();
+  for (const i of items) {
+    const key = (i.category || '').trim();
+    const e = byName.get(key) || { all: 0, ministry: 0 };
+    e.all += itemTotal(i);
+    e.ministry += num(i.ministry_amount);
+    byName.set(key, e);
+  }
+  const out = new Map();
+  for (const p of MINISTRY_PARAMETERS) {
+    if (p.min == null && p.max == null) continue;
+    const members = p.group ? MINISTRY_PARAMETERS.filter(x => x.group === p.group) : [p];
+    const amount = members.reduce((s, m) => s + (byName.get(m.name)?.[p.what] || 0), 0);
+    const base = p.base === 'ministry' ? totals.ministry : totals.total;
+    const pct = base > 0 ? (amount / base) * 100 : 0;
+    out.set(p.name, { pct, status: ruleStatus(p, pct, base > 0) });
+  }
+  return out;
 }
 
 /**
@@ -195,10 +264,14 @@ export function groupAmount(group, view) {
 export function parameterRows(items, view) {
   const groups = groupByCategory(itemsForView(items, view));
   const total = groups.reduce((s, g) => s + groupAmount(g, view), 0);
+  // ההגבלות נבדקות על התכנית כולה ומול הבסיס של כל אחת (evaluateRules), כך
+  // שהעמידה בהן זהה בכל תצוגה; pct נשאר האחוז מסך התצוגה
+  const rules = evaluateRules(items);
   const rows = groups.map(g => {
     const amount = groupAmount(g, view);
     const pct = total > 0 ? (amount / total) * 100 : 0;
-    return { ...g, amount, pct, rule: ruleLabel(g.param), status: ruleStatus(g.param, pct, total > 0) };
+    const r = rules.get(g.category);
+    return { ...g, amount, pct, rule: ruleLabel(g.param), rulePct: r?.pct ?? null, status: r?.status ?? null };
   });
   return { rows, total };
 }

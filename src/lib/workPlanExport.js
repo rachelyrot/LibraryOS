@@ -23,17 +23,20 @@ function formSheetRows(plan, items) {
     [`תכנון התקציב של הספרייה לשנת ${plan.year}`],
     [plan.title],
     [],
-    ['פרמטר', 'סה"כ', 'אחוז', 'תקציב עירוני', 'אחוז', 'משרד התרבות', 'אחוז', 'הגבלה', 'עמידה בהגבלה (סה"כ)', 'עמידה בהגבלה (משרד התרבות)'],
+    // עמידה בהגבלה נבדקת פעם אחת, על התכנית כולה ומול הבסיס של ההגבלה
+    // (evaluateRules) — לכן עמודה אחת, ולא אחת לכל מקור
+    ['פרמטר', 'סה"כ', 'אחוז', 'תקציב עירוני', 'אחוז', 'משרד התרבות', 'אחוז', 'הגבלה', 'עמידה בהגבלה', 'אחוז מול בסיס ההגבלה', 'הערה'],
   ];
   for (const r of all.rows) {
     const m = find(mun, r.category);
     const k = find(min, r.category);
     rows.push([
       r.category, round(r.amount), pct1(r.pct), round(m.amount), pct1(m.pct), round(k.amount), pct1(k.pct),
-      r.rule, r.status ? RULE_STATUS_LABELS[r.status] : '', k.status ? RULE_STATUS_LABELS[k.status] : '',
+      r.rule, r.status ? RULE_STATUS_LABELS[r.status] : '', r.status && r.rulePct != null ? pct1(r.rulePct) : '',
+      r.param?.note || '',
     ]);
   }
-  rows.push(['סה"כ', round(all.total), all.total > 0 ? 100 : 0, round(mun.total), mun.total > 0 ? 100 : 0, round(min.total), min.total > 0 ? 100 : 0, '', '', '']);
+  rows.push(['סה"כ', round(all.total), all.total > 0 ? 100 : 0, round(mun.total), mun.total > 0 ? 100 : 0, round(min.total), min.total > 0 ? 100 : 0, '', '', '', '']);
   return rows;
 }
 
@@ -90,7 +93,7 @@ export async function exportWorkPlanExcel(plan, items) {
     utils.book_append_sheet(wb, ws, name.slice(0, 31));
   };
 
-  addSheet(formSheetRows(plan, items), 'תכנון לפי פרמטרים', [46, 14, 8, 14, 8, 14, 8, 18, 20, 24]);
+  addSheet(formSheetRows(plan, items), 'תכנון לפי פרמטרים', [46, 14, 8, 14, 8, 14, 8, 30, 16, 12, 50]);
   for (const v of VIEWS) {
     addSheet(detailSheetRows(plan, items, v.id), `פירוט - ${v.label}`, [40, 30, 36, 16, 16, 12, ...amountColumns(v.id).map(() => 14), 28]);
   }
@@ -124,11 +127,11 @@ export function printWorkPlan(plan, items, view) {
 
   const formRows = form.rows.map(r => `
     <tr>
-      <td>${escapeHtml(r.category)}</td>
+      <td>${escapeHtml(r.category)}${r.param?.note ? `<div class="desc">${escapeHtml(r.param.note)}</div>` : ''}</td>
       <td class="num">${formatMoney(r.amount)}</td>
       <td class="num strong">${formatPct(r.pct)}</td>
       <td class="rule">${escapeHtml(r.rule)}</td>
-      <td class="${r.status === 'ok' ? 'ok' : r.status ? 'bad' : ''}">${r.status ? RULE_STATUS_LABELS[r.status] : ''}</td>
+      <td class="${r.status === 'ok' ? 'ok' : r.status ? 'bad' : ''}">${r.status ? `${RULE_STATUS_LABELS[r.status]} (${formatPct(r.rulePct)})` : ''}</td>
     </tr>`).join('');
 
   const scheduleRows = schedule.groups.map(g => `<tr>
