@@ -1,5 +1,5 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { EMPLOYER_TYPE_LABELS } from '@/lib/staffUtils';
+import { EMPLOYER_TYPE_LABELS, positionTotalPct, formatFte, pctToHours } from '@/lib/staffUtils';
 
 // Fixed categorical order/colors (validated: node scripts/validate_palette.js
 // "#2a78d6,#008300,#e87ba4" --mode light — passes, magenta slot needs the
@@ -26,12 +26,15 @@ const renderLabel = ({ cx, cy, midAngle, outerRadius, percent }) => {
 };
 
 export default function PositionsCategoryChart({ positions }) {
+  // במשרות מלאות (100% = 40 ש'), לא במספר שורות תקן — שני תקנים של 50% הם
+  // משרה אחת
   const counts = { chakal: 0, municipality: 0, other: 0 };
   let unset = 0;
   positions.forEach(p => {
+    const fte = positionTotalPct(p) / 100;
     const cats = p.category || [];
-    if (cats.length === 0) { unset++; return; }
-    cats.forEach(c => { if (counts[c] !== undefined) counts[c]++; });
+    if (cats.length === 0) { unset += fte; return; }
+    cats.forEach(c => { if (counts[c] !== undefined) counts[c] += fte; });
   });
 
   const data = [
@@ -57,7 +60,7 @@ export default function PositionsCategoryChart({ positions }) {
           <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label={renderLabel} labelLine={false}>
             {data.map((entry, i) => <Cell key={i} fill={entry.color} />)}
           </Pie>
-          <Tooltip formatter={(v) => `${v} תקנים`} />
+          <Tooltip formatter={(v) => `${formatFte(v * 100)} · ${pctToHours(v * 100)} ש'`} />
           <Legend />
         </PieChart>
       </ResponsiveContainer>

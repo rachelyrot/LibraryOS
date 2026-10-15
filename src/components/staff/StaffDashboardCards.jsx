@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Users, HeartHandshake, Building2, Briefcase, AlertTriangle, CalendarDays, UserX, Sunrise, Sunset } from 'lucide-react';
-import { getWeekDates, SHIFT_TYPE_LABELS } from '@/lib/staffUtils';
+import { getWeekDates, SHIFT_TYPE_LABELS, positionTotalPct, employeePct, pctToHours, formatFte } from '@/lib/staffUtils';
 import { cn } from '@/lib/utils';
 
 export default function StaffDashboardCards() {
@@ -22,7 +22,9 @@ export default function StaffDashboardCards() {
       const weekDates = getWeekDates(today);
       const weekSchedulesAll = await base44.entities.Schedule.list('date', 500).catch(() => []);
       const weekSchedules = weekSchedulesAll.filter(s => weekDates.includes(s.date));
-      const approved = positions.filter(p => p.status === 'active').reduce((s, p) => s + (p.approved_count || 1), 0);
+      // תקן מול מאויש במשרות מלאות (100% = 40 ש') — ראו staffUtils
+      const approvedPct = positions.filter(p => p.status === 'active').reduce((s, p) => s + positionTotalPct(p), 0);
+      const filledPct = employees.filter(e => e.status === 'active').reduce((s, e) => s + employeePct(e), 0);
       const filled = employees.filter(e => e.status === 'active').length;
       const activeSchedules = schedules.filter(s => s.status !== 'cancelled');
       const morningCount = activeSchedules.filter(s => s.shift_type === 'morning' || s.shift_type === 'full_day').length;
@@ -40,9 +42,8 @@ export default function StaffDashboardCards() {
         activeBranches: activeBranches.length,
         activeEmployees: filled,
         activeVolunteers: volunteers.filter(v => v.status === 'active').length,
-        approvedPositions: approved,
-        filledPositions: filled,
-        positionGap: approved - filled,
+        approvedPct,
+        positionGapPct: approvedPct - filledPct,
         morningToday: morningCount,
         afternoonToday: afternoonCount,
         openShifts: weekSchedules.filter(s => s.status === 'planned').length,
@@ -59,8 +60,12 @@ export default function StaffDashboardCards() {
     { label: 'סניפים פעילים', value: stats.activeBranches, icon: Building2, color: 'text-blue-500', to: '/staff?tab=branches' },
     { label: 'עובדות פעילות', value: stats.activeEmployees, icon: Users, color: 'text-green-500', to: '/staff?tab=employees' },
     { label: 'מתנדבות פעילות', value: stats.activeVolunteers, icon: HeartHandshake, color: 'text-pink-500', to: '/staff?tab=volunteers' },
-    { label: 'תקנים מאושרים', value: stats.approvedPositions, icon: Briefcase, color: 'text-purple-500', to: '/staff?tab=positions' },
-    { label: 'פערי תקן', value: stats.positionGap > 0 ? `חסר ${stats.positionGap}` : stats.positionGap < 0 ? `עודף ${Math.abs(stats.positionGap)}` : 'מאוזן', icon: AlertTriangle, color: stats.positionGap > 0 ? 'text-amber-500' : 'text-green-500', to: '/staff?tab=positions' },
+    { label: `תקן מאושר · ${pctToHours(stats.approvedPct)} ש'`, value: formatFte(stats.approvedPct), icon: Briefcase, color: 'text-purple-500', to: '/staff?tab=positions' },
+    {
+      label: 'פערי תקן',
+      value: stats.positionGapPct > 0.5 ? `חסר ${formatFte(stats.positionGapPct)}` : stats.positionGapPct < -0.5 ? `עודף ${formatFte(-stats.positionGapPct)}` : 'מאוזן',
+      icon: AlertTriangle, color: stats.positionGapPct > 0.5 ? 'text-amber-500' : 'text-green-500', to: '/staff?tab=positions',
+    },
     { label: 'בוקר היום', value: stats.morningToday, icon: Sunrise, color: 'text-yellow-500', to: '/staff?tab=today' },
     { label: 'אחה״צ היום', value: stats.afternoonToday, icon: Sunset, color: 'text-orange-500', to: '/staff?tab=today' },
     { label: 'משמרות פתוחות', value: stats.openShifts, icon: CalendarDays, color: 'text-amber-500', to: '/staff?tab=schedule' },

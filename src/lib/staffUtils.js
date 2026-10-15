@@ -143,6 +143,43 @@ export function formatDate(dateStr) {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('he-IL');
 }
 
+// ── היקף משרה ↔ שעות ─────────────────────────────────────────────────────────
+// 100% משרה = 40 שעות שבועיות. האחוז הוא המקור: השעות תמיד נגזרות ממנו
+// (50% = 20 ש', 25% = 10 ש'), כדי שבשום מקום לא יוצגו אחוז ושעות שלא מסתדרים.
+// רשומה ישנה בלי אחוז נקראת מהשעות שלה. סיכומים — במשרות מלאות (2.5 משרות =
+// 250% = 100 ש'), כי שני תקנים של חצי משרה הם משרה אחת, לא שני אנשים.
+export const FULL_TIME_HOURS = 40;
+const round1 = (n) => Math.round(n * 10) / 10;
+const num = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+
+export const pctToHours = (pct) => round1((num(pct) ?? 0) * FULL_TIME_HOURS / 100);
+export const hoursToPct = (hours) => round1((num(hours) ?? 0) / FULL_TIME_HOURS * 100);
+
+/** אחוז משרה של תקן אחד (בלי approved_count). תקן בלי אחוז ובלי שעות — 100%. */
+export function positionPct(p) {
+  if (num(p?.scope_percentage) != null) return num(p.scope_percentage);
+  if (num(p?.weekly_hours_approved)) return hoursToPct(p.weekly_hours_approved);
+  return 100;
+}
+/** כל התקנים בשורה יחד — אחוז × מספר תקנים. */
+export const positionTotalPct = (p) => positionPct(p) * (num(p?.approved_count) || 1);
+export const positionTotalHours = (p) => pctToHours(positionTotalPct(p));
+
+/** אחוז משרה של עובדת. בלי אחוז — מהשעות שלה; בלי שניהם — 0. */
+export function employeePct(e) {
+  if (num(e?.scope_percentage) != null) return num(e.scope_percentage);
+  return num(e?.weekly_hours) ? hoursToPct(e.weekly_hours) : 0;
+}
+export const employeeHours = (e) => pctToHours(employeePct(e));
+
+/** "50% · 20 ש'" */
+export const formatScope = (pct) => `${round1(pct)}% · ${pctToHours(pct)} ש'`;
+/** סך אחוזים כמשרות מלאות: 250 → "2.5 משרות" */
+export function formatFte(pct) {
+  const fte = Math.round((num(pct) ?? 0) / 100 * 100) / 100;
+  return fte === 1 ? 'משרה אחת' : `${fte.toLocaleString('he-IL')} משרות`;
+}
+
 export function fullName(emp) {
   if (!emp) return '-';
   return `${emp.first_name || ''} ${emp.last_name || ''}`.trim();

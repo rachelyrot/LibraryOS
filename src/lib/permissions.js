@@ -435,6 +435,11 @@ export function canManageBranches(user) {
   return user?.role === ROLES.ADMIN;
 }
 
+/** Admin only — add/edit/delete security & cleaning contractors (migration 0018) */
+export function canManageServiceContracts(user) {
+  return user?.role === ROLES.ADMIN;
+}
+
 /** Admin only — manage approved positions */
 export function canManagePositions(user) {
   return user?.role === ROLES.ADMIN;

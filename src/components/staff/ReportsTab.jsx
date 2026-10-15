@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, FileText } from 'lucide-react';
 import { toast } from 'sonner';
-import { EMPLOYMENT_TYPE_LABELS, EMPLOYER_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, VOLUNTEER_ACTIVITY_LABELS, VOLUNTEER_STATUS_LABELS, SHIFT_TYPE_LABELS, SCHEDULE_STATUS_LABELS, ATTENDANCE_STATUS_LABELS, fullName, getDayName, calcShiftHours, getWeekDates, formatDate } from '@/lib/staffUtils';
+import { EMPLOYMENT_TYPE_LABELS, EMPLOYER_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, VOLUNTEER_ACTIVITY_LABELS, VOLUNTEER_STATUS_LABELS, SHIFT_TYPE_LABELS, SCHEDULE_STATUS_LABELS, ATTENDANCE_STATUS_LABELS, fullName, getDayName, calcShiftHours, getWeekDates, formatDate, positionTotalPct, employeePct, employeeHours, pctToHours } from '@/lib/staffUtils';
 
 export default function ReportsTab({ user, branches, employees }) {
   const [reportType, setReportType] = useState('employees_by_branch');
@@ -48,20 +48,24 @@ export default function ReportsTab({ user, branches, employees }) {
     'שם': fullName(e), 'תפקיד': e.position || '', 'טלפון': e.phone || '',
     'מעסיק': EMPLOYER_TYPE_LABELS[e.employer_type] || '',
     'סטטוס העסקה': EMPLOYMENT_TYPE_LABELS[e.employment_type] || '',
-    'היקף משרה': e.scope_percentage || '', 'שעות שבועיות': e.weekly_hours || '',
+    'היקף משרה': employeePct(e) || '', 'שעות שבועיות': employeePct(e) ? employeeHours(e) : '',
     'סטטוס': EMPLOYEE_STATUS_LABELS[e.status] || '', 'סניף ראשי': e.primary_branch_name || '',
   }));
 
   const report2Data = branches.filter(b => branchFilter === 'all' || b.id === branchFilter).map(b => {
     const bPos = positions.filter(p => p.branch_id === b.id && p.status === 'active');
-    const approved = bPos.reduce((s, p) => s + (p.approved_count || 1), 0);
-    const approvedHours = bPos.reduce((s, p) => s + (p.weekly_hours_approved || 0) * (p.approved_count || 1), 0);
-    const filled = employees.filter(e => e.status === 'active' && e.primary_branch_id === b.id).length;
+    // במשרות מלאות ושעות (100% = 40 ש') — ראו staffUtils
+    const approvedPct = bPos.reduce((s, p) => s + positionTotalPct(p), 0);
+    const emps = employees.filter(e => e.status === 'active' && e.primary_branch_id === b.id);
+    const filledPct = emps.reduce((s, e) => s + employeePct(e), 0);
     const scheduledHours = weekSchedules.filter(s => s.branch_id === b.id && s.status !== 'cancelled').reduce((s, sch) => s + calcShiftHours(sch.start_time, sch.end_time), 0);
+    const fte = (pct) => Math.round(pct) / 100;
     return {
-      'סניף': b.name, 'תקנים מאושרים': approved, 'שעות מאושרות': approvedHours,
-      'מאוישים בפועל': filled, 'שעות משובצות': Math.round(scheduledHours),
-      'פער תקנים': approved - filled, 'פער שעות': Math.round(approvedHours - scheduledHours),
+      'סניף': b.name,
+      'תקן מאושר (משרות)': fte(approvedPct), 'שעות מאושרות': pctToHours(approvedPct),
+      'מאויש (משרות)': fte(filledPct), 'שעות מאוישות': pctToHours(filledPct), 'עובדות': emps.length,
+      'שעות משובצות': Math.round(scheduledHours),
+      'פער (משרות)': fte(approvedPct - filledPct), 'פער שעות תקן-שיבוץ': Math.round(pctToHours(approvedPct) - scheduledHours),
     };
   });
 

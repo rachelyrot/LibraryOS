@@ -6,19 +6,24 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { EMPLOYMENT_TYPE_LABELS, EMPLOYER_TYPE_LABELS, EMPLOYEE_STATUS_LABELS } from '@/lib/staffUtils';
+import { EMPLOYMENT_TYPE_LABELS, EMPLOYER_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, FULL_TIME_HOURS, pctToHours, hoursToPct, employeePct } from '@/lib/staffUtils';
 
-const empty = { first_name: '', last_name: '', id_number: '', phone: '', email: '', address: '', start_date: '', position: '', primary_branch_id: '', additional_branch_ids: [], employer_type: '', employment_type: 'permanent', scope_percentage: 100, weekly_hours: 0, status: 'active', notes: '' };
+const empty = { first_name: '', last_name: '', id_number: '', phone: '', email: '', address: '', start_date: '', position: '', primary_branch_id: '', additional_branch_ids: [], employer_type: '', employment_type: 'permanent', scope_percentage: 100, weekly_hours: FULL_TIME_HOURS, status: 'active', notes: '' };
 
 export default function EmployeeDialog({ open, onOpenChange, initialData, branches, onSave }) {
   const [form, setForm] = useState(empty);
 
   useEffect(() => {
-    if (initialData) setForm({ ...empty, ...initialData, additional_branch_ids: initialData.additional_branch_ids || [] });
-    else setForm(empty);
+    if (!initialData) { setForm(empty); return; }
+    // עובדת ישנה שהאחוז והשעות שלה לא מסתדרים נפתחת לפי האחוז (100% = 40 ש')
+    const pct = employeePct(initialData);
+    setForm({ ...empty, ...initialData, additional_branch_ids: initialData.additional_branch_ids || [], scope_percentage: pct, weekly_hours: pctToHours(pct) });
   }, [initialData, open]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  // היקף ושעות מחוברים: שינוי של אחד מעדכן את השני
+  const setPct = (v) => setForm(f => ({ ...f, scope_percentage: v, weekly_hours: pctToHours(v) }));
+  const setHours = (v) => setForm(f => ({ ...f, weekly_hours: v, scope_percentage: hoursToPct(v) }));
   const toggleBranch = (id) => setForm(f => {
     const ids = f.additional_branch_ids || [];
     return { ...f, additional_branch_ids: ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id] };
@@ -73,8 +78,9 @@ export default function EmployeeDialog({ open, onOpenChange, initialData, branch
               <SelectContent>{Object.entries(EMPLOYEE_STATUS_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div><Label>היקף משרה (%)</Label><Input type="number" min="0" max="100" value={form.scope_percentage ?? ''} onChange={e => set('scope_percentage', parseFloat(e.target.value) || 0)} /></div>
-          <div><Label>שעות שבועיות</Label><Input type="number" min="0" value={form.weekly_hours ?? ''} onChange={e => set('weekly_hours', parseFloat(e.target.value) || 0)} /></div>
+          <div><Label>היקף משרה (%)</Label><Input type="number" min="0" max="100" value={form.scope_percentage ?? ''} onChange={e => setPct(parseFloat(e.target.value) || 0)} /></div>
+          <div><Label>שעות שבועיות</Label><Input type="number" min="0" max={FULL_TIME_HOURS} value={form.weekly_hours ?? ''} onChange={e => setHours(parseFloat(e.target.value) || 0)} /></div>
+          <p className="col-span-2 -mt-1 text-xs text-muted-foreground">100% משרה = {FULL_TIME_HOURS} שעות שבועיות. מספיק למלא אחד מהשדות.</p>
         </div>
         <div>
           <Label>סניפים נוספים</Label>

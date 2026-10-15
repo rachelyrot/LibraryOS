@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { BRANCH_STATUS_LABELS } from '@/lib/staffUtils';
+import { BRANCH_STATUS_LABELS, positionTotalPct, employeePct, pctToHours, formatFte } from '@/lib/staffUtils';
 import { canManageBranches } from '@/lib/permissions';
 import BranchDialog from './BranchDialog';
 
@@ -26,10 +26,12 @@ export default function BranchesTab({ user, branches, employees, onBranchesChang
     const emps = employees.filter(e => e.primary_branch_id === branchId || (e.additional_branch_ids || []).includes(branchId));
     const vols = volunteers.filter(v => v.preferred_branch_id === branchId);
     const pos = positions.filter(p => p.branch_id === branchId && p.status === 'active');
-    const approved = pos.reduce((s, p) => s + (p.approved_count || 1), 0);
+    // במשרות מלאות (100% = 40 ש'). המאויש נספר לפי עובדות שזה הסניף הראשי
+    // שלהן — עובדת שעובדת בכמה סניפים לא נספרת במלואה בכל אחד מהם
+    const approvedPct = pos.reduce((s, p) => s + positionTotalPct(p), 0);
     const activeEmps = emps.filter(e => e.status === 'active').length;
-    const weeklyHours = emps.filter(e => e.status === 'active').reduce((s, e) => s + (e.weekly_hours || 0), 0);
-    return { approved, activeEmps, activeVols: vols.filter(v => v.status === 'active').length, weeklyHours, gap: approved - activeEmps };
+    const filledPct = emps.filter(e => e.status === 'active' && e.primary_branch_id === branchId).reduce((s, e) => s + employeePct(e), 0);
+    return { approvedPct, activeEmps, activeVols: vols.filter(v => v.status === 'active').length, filledPct, gapPct: approvedPct - filledPct };
   };
 
   const handleSave = async (data) => {
@@ -62,7 +64,7 @@ export default function BranchesTab({ user, branches, employees, onBranchesChang
               <th className="text-center p-3 font-medium">תקנים</th>
               <th className="text-center p-3 font-medium">עובדות</th>
               <th className="text-center p-3 font-medium">מתנדבות</th>
-              <th className="text-center p-3 font-medium hidden md:table-cell">שעות/שבוע</th>
+              <th className="text-center p-3 font-medium hidden md:table-cell">שעות מאוישות</th>
               <th className="text-center p-3 font-medium">פער</th>
               <th className="text-center p-3 font-medium">סטטוס</th>
               {canManage && <th className="p-3"></th>}
@@ -76,13 +78,16 @@ export default function BranchesTab({ user, branches, employees, onBranchesChang
                   <td className="p-3 font-medium">{branch.name}</td>
                   <td className="p-3 hidden md:table-cell text-muted-foreground">{branch.address || '-'}</td>
                   <td className="p-3 hidden lg:table-cell text-muted-foreground">{branch.manager_name || '-'}</td>
-                  <td className="p-3 text-center">{s.approved}</td>
+                  <td className="p-3 text-center">
+                    {formatFte(s.approvedPct)}
+                    <span className="block text-[11px] text-muted-foreground">{pctToHours(s.approvedPct)} ש'</span>
+                  </td>
                   <td className="p-3 text-center">{s.activeEmps}</td>
                   <td className="p-3 text-center">{s.activeVols}</td>
-                  <td className="p-3 text-center hidden md:table-cell">{s.weeklyHours}</td>
+                  <td className="p-3 text-center hidden md:table-cell">{pctToHours(s.filledPct)}</td>
                   <td className="p-3 text-center">
-                    <span className={cn('text-xs px-2 py-0.5 rounded font-medium', s.gap > 0 ? 'bg-amber-100 text-amber-700' : s.gap < 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700')}>
-                      {s.gap > 0 ? `חסר ${s.gap}` : s.gap < 0 ? `עודף ${Math.abs(s.gap)}` : 'מאוזן'}
+                    <span className={cn('text-xs px-2 py-0.5 rounded font-medium', s.gapPct > 0.5 ? 'bg-amber-100 text-amber-700' : s.gapPct < -0.5 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700')}>
+                      {s.gapPct > 0.5 ? `חסר ${formatFte(s.gapPct)}` : s.gapPct < -0.5 ? `עודף ${formatFte(-s.gapPct)}` : 'מאוזן'}
                     </span>
                   </td>
                   <td className="p-3 text-center"><span className={cn('text-xs px-2 py-0.5 rounded', branch.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700')}>{BRANCH_STATUS_LABELS[branch.status] || branch.status}</span></td>

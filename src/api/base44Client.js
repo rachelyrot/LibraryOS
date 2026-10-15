@@ -36,6 +36,7 @@ const TABLE_MAP = {
   Volunteer: 'volunteers',
   WorkPlan: 'work_plans',
   WorkPlanItem: 'work_plan_items',
+  ServiceContract: 'service_contracts',
 };
 
 function unwrap({ data, error }) {

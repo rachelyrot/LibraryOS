@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { BRANCH_STATUS_LABELS, EMPLOYER_TYPE_LABELS } from '@/lib/staffUtils';
+import { BRANCH_STATUS_LABELS, EMPLOYER_TYPE_LABELS, positionPct, positionTotalPct, positionTotalHours, employeePct, pctToHours, formatFte } from '@/lib/staffUtils';
 import { canManagePositions } from '@/lib/permissions';
 import PositionDialog from './PositionDialog';
 import PositionsCategoryChart from './PositionsCategoryChart';
@@ -36,12 +36,14 @@ export default function PositionsTab({ user, branches, employees }) {
     catch (e) { toast.error('שגיאה במחיקה'); }
   };
 
+  // הכל במשרות מלאות (100% = 40 ש'): שני תקנים של 50% הם משרה אחת, ועובדת
+  // אחת ב-100% ממלאת אותה — ולא "2 תקנים מול עובדת אחת"
   const branchStats = branches.map(b => {
     const bPos = positions.filter(p => p.branch_id === b.id && p.status === 'active');
-    const approved = bPos.reduce((s, p) => s + (p.approved_count || 1), 0);
-    const hours = bPos.reduce((s, p) => s + (p.weekly_hours_approved || 0) * (p.approved_count || 1), 0);
-    const filled = employees.filter(e => e.status === 'active' && e.primary_branch_id === b.id).length;
-    return { branch: b, approved, hours, filled, gap: approved - filled };
+    const approvedPct = bPos.reduce((s, p) => s + positionTotalPct(p), 0);
+    const emps = employees.filter(e => e.status === 'active' && e.primary_branch_id === b.id);
+    const filledPct = emps.reduce((s, e) => s + employeePct(e), 0);
+    return { branch: b, approvedPct, filledPct, people: emps.length, gapPct: approvedPct - filledPct };
   });
 
   return (
@@ -51,14 +53,15 @@ export default function PositionsTab({ user, branches, employees }) {
         {canManage && <Button onClick={() => { setEditing(null); setDialogOpen(true); }} className="gap-2"><Plus className="w-4 h-4" /> תקן חדש</Button>}
       </div>
       <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-4">
-        {branchStats.map(({ branch, approved, hours, filled, gap }) => (
+        {branchStats.map(({ branch, approvedPct, filledPct, people, gapPct }) => (
           <div key={branch.id} className="bg-card rounded-xl p-4 border border-border">
             <p className="font-medium text-sm">{branch.name}</p>
             <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-              <p>תקנים מאושרים: <span className="font-bold text-foreground">{approved}</span></p>
-              <p>שעות מאושרות: <span className="font-bold text-foreground">{hours}</span></p>
-              <p>מאוישים: <span className="font-bold text-foreground">{filled}</span></p>
-              <p>פער: <span className={cn('font-bold', gap > 0 ? 'text-amber-600' : gap < 0 ? 'text-red-600' : 'text-green-600')}>{gap > 0 ? `חסר ${gap}` : gap < 0 ? `עודף ${Math.abs(gap)}` : 'מאוזן'}</span></p>
+              <p>תקן מאושר: <span className="font-bold text-foreground">{formatFte(approvedPct)}</span> · {pctToHours(approvedPct)} ש'</p>
+              <p>מאויש: <span className="font-bold text-foreground">{formatFte(filledPct)}</span> · {pctToHours(filledPct)} ש' ({people} עובדות)</p>
+              <p>פער: <span className={cn('font-bold', gapPct > 0.5 ? 'text-amber-600' : gapPct < -0.5 ? 'text-red-600' : 'text-green-600')}>
+                {gapPct > 0.5 ? `חסר ${formatFte(gapPct)} (${pctToHours(gapPct)} ש')` : gapPct < -0.5 ? `עודף ${formatFte(-gapPct)} (${pctToHours(-gapPct)} ש')` : 'מאוזן'}
+              </span></p>
             </div>
           </div>
         ))}
@@ -75,7 +78,7 @@ export default function PositionsTab({ user, branches, employees }) {
               <th className="text-right p-3 font-medium">סניף</th>
               <th className="text-right p-3 font-medium">תפקיד</th>
               <th className="text-center p-3 font-medium">תקנים</th>
-              <th className="text-center p-3 font-medium hidden md:table-cell">היקף</th>
+              <th className="text-center p-3 font-medium hidden md:table-cell">היקף לתקן</th>
               <th className="text-center p-3 font-medium">שעות/שבוע</th>
               <th className="text-center p-3 font-medium hidden lg:table-cell">תאריך אישור</th>
               <th className="text-right p-3 font-medium hidden lg:table-cell">קטגוריה</th>
@@ -89,8 +92,11 @@ export default function PositionsTab({ user, branches, employees }) {
                 <td className="p-3">{pos.branch_name || '-'}</td>
                 <td className="p-3 font-medium">{pos.position_name}</td>
                 <td className="p-3 text-center">{pos.approved_count || 1}</td>
-                <td className="p-3 text-center hidden md:table-cell">{pos.scope_percentage ? `${pos.scope_percentage}%` : '-'}</td>
-                <td className="p-3 text-center">{pos.weekly_hours_approved || '-'}</td>
+                <td className="p-3 text-center hidden md:table-cell">{positionPct(pos)}%</td>
+                <td className="p-3 text-center">
+                  {pctToHours(positionPct(pos))}
+                  {(pos.approved_count || 1) > 1 && <span className="block text-[11px] text-muted-foreground">סה"כ {positionTotalHours(pos)}</span>}
+                </td>
                 <td className="p-3 text-center hidden lg:table-cell">{pos.approval_date || '-'}</td>
                 <td className="p-3 hidden lg:table-cell text-muted-foreground">{(pos.category || []).map(c => EMPLOYER_TYPE_LABELS[c]).filter(Boolean).join(', ') || '-'}</td>
                 <td className="p-3 text-center"><span className={cn('text-xs px-2 py-0.5 rounded', pos.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700')}>{BRANCH_STATUS_LABELS[pos.status] || pos.status}</span></td>

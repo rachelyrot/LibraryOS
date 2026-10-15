@@ -1,4 +1,4 @@
-import { calcShiftHours } from './staffUtils';
+import { calcShiftHours, employeeHours, positionTotalHours } from './staffUtils';
 
 function timeOverlap(start1, end1, start2, end2) {
   return start1 < end2 && start2 < end1;
@@ -38,11 +38,13 @@ export function findOverScheduled(schedules, employees) {
   });
   hoursByPerson.forEach((hours, personId) => {
     const emp = empMap.get(personId);
-    if (emp && emp.weekly_hours && hours > emp.weekly_hours) {
+    // השעות של העובדת נגזרות מאחוז המשרה (100% = 40 ש')
+    const allowed = emp ? employeeHours(emp) : 0;
+    if (emp && allowed && hours > allowed) {
       warnings.push({
         type: 'over_scheduled',
         severity: 'warning',
-        message: `${emp.first_name} ${emp.last_name} שובצה ${hours} שעות השבוע, מעבר לתקן השבועי (${emp.weekly_hours} שעות)`,
+        message: `${emp.first_name} ${emp.last_name} שובצה ${hours} שעות השבוע, מעבר להיקף המשרה שלה (${allowed} שעות)`,
       });
     }
   });
@@ -56,7 +58,7 @@ export function findApprovedVsScheduledGap(positions, schedules) {
   const branchApproved = {};
   positions.filter(p => p.status === 'active').forEach(p => {
     if (!branchApproved[p.branch_id]) branchApproved[p.branch_id] = { name: p.branch_name, approved: 0 };
-    branchApproved[p.branch_id].approved += (p.weekly_hours_approved || 0) * (p.approved_count || 1);
+    branchApproved[p.branch_id].approved += positionTotalHours(p);
   });
   const scheduledByBranch = {};
   active.forEach(s => {

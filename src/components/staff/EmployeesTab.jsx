@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { EMPLOYMENT_TYPE_LABELS, EMPLOYER_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, EMPLOYEE_STATUS_COLORS, fullName } from '@/lib/staffUtils';
+import { EMPLOYMENT_TYPE_LABELS, EMPLOYER_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, EMPLOYEE_STATUS_COLORS, fullName, employeePct, employeeHours } from '@/lib/staffUtils';
 import { canManageEmployees, canDeleteEmployee } from '@/lib/permissions';
 import EmployeeDialog from './EmployeeDialog';
 
@@ -88,8 +88,8 @@ export default function EmployeesTab({ user, branches, employees, onEmployeesCha
                 <td className="p-3 hidden lg:table-cell text-muted-foreground">{emp.primary_branch_name || '-'}</td>
                 <td className="p-3 hidden lg:table-cell text-muted-foreground">{EMPLOYER_TYPE_LABELS[emp.employer_type] || '-'}</td>
                 <td className="p-3 hidden md:table-cell">{EMPLOYMENT_TYPE_LABELS[emp.employment_type] || '-'}</td>
-                <td className="p-3 text-center">{emp.scope_percentage ? `${emp.scope_percentage}%` : '-'}</td>
-                <td className="p-3 text-center hidden md:table-cell">{emp.weekly_hours || '-'}</td>
+                <td className="p-3 text-center">{employeePct(emp) ? `${employeePct(emp)}%` : '-'}</td>
+                <td className="p-3 text-center hidden md:table-cell">{employeePct(emp) ? employeeHours(emp) : '-'}</td>
                 <td className="p-3 text-center"><span className={cn('text-xs px-2 py-0.5 rounded', EMPLOYEE_STATUS_COLORS[emp.status] || 'bg-gray-100')}>{EMPLOYEE_STATUS_LABELS[emp.status] || emp.status}</span></td>
                 {canManage && (
                   <td className="p-3"><div className="flex gap-1">
