@@ -73,7 +73,7 @@ function cnUpload(uploading) {
 
 export function fileUrlsColumn(key, name, { width = 70 } = {}) {
   return {
-    key, name, width, resizable: false, editable: false,
+    key, name, width, resizable: false, editable: false, popoverEditor: true,
     renderCell(props) { return <FileUrlsCellButton {...props} />; },
   };
 }
@@ -113,7 +113,7 @@ function TaskPickerCellButton({ row, column, onRowChange, tasks }) {
 
 export function taskPickerColumn(key, name, tasks, { width = 90 } = {}) {
   return {
-    key, name, width, resizable: false, editable: false,
+    key, name, width, resizable: false, editable: false, popoverEditor: true,
     renderCell(props) { return <TaskPickerCellButton {...props} tasks={tasks} />; },
   };
 }
@@ -161,7 +161,7 @@ function TextListCellButton({ row, column, onRowChange, placeholder }) {
 
 export function textListColumn(key, name, { width = 160, placeholder } = {}) {
   return {
-    key, name, width, resizable: true, editable: false,
+    key, name, width, resizable: true, editable: false, popoverEditor: true,
     renderCell(props) { return <TextListCellButton {...props} placeholder={placeholder} />; },
   };
 }
@@ -235,7 +235,7 @@ function BudgetSourcesCellButton({ row, column, onRowChange }) {
 
 export function budgetSourcesColumn(key, name, { width = 130 } = {}) {
   return {
-    key, name, width, resizable: true, editable: false,
+    key, name, width, resizable: true, editable: false, popoverEditor: true,
     renderCell(props) { return <BudgetSourcesCellButton {...props} />; },
   };
 }

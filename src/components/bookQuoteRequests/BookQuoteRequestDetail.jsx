@@ -11,7 +11,7 @@ import { Upload, Send, ShoppingCart, ExternalLink, Mail, FileSpreadsheet, Loader
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
 import StatusBadge from '@/components/StatusBadge';
-import { parseSupplierQuote, sheetToQuoteRows, describePriceColumns, matchQuoteToBook, computeCheapestSuppliers, getEffectivePrice, nylonLabel, normalizeNylon, bindingLabel, isBindingChecked } from '@/lib/bookQuoteExcel';
+import { generateSupplierExcel, downloadBlob, parseSupplierQuote, sheetToQuoteRows, describePriceColumns, matchQuoteToBook, computeCheapestSuppliers, getEffectivePrice, nylonLabel, normalizeNylon, bindingLabel, isBindingChecked } from '@/lib/bookQuoteExcel';
 import * as XLSX from 'xlsx';
 import { canReceiveQuotePrices, canComparePrices, canSelectSuppliers, canCreateOrdersFromQuoteRequest, isAdmin } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
@@ -144,12 +144,20 @@ export function OverviewTab({ req, suppliers }) {
         )}
       </div>
 
-      {req.excel_file_url && (
-        <div className="border border-border rounded-xl p-4">
-          <h3 className="font-bold text-sm mb-2">קובץ Excel שנשלח</h3>
-          <a href={req.excel_file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 flex items-center gap-1.5">
-            <FileSpreadsheet className="w-4 h-4" /> הורד קובץ
-          </a>
+      {/* הקובץ לספקים נוצר מחדש מהספרים של הבקשה בכל לחיצה — כך אפשר להוריד
+          אותו גם אחרי שמירת הבקשה, ולא רק לפניה */}
+      {(req.books || []).length > 0 && (
+        <div className="border border-border rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="font-bold text-sm">קובץ Excel לספקים</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">{(req.books || []).length} הספרים של הבקשה, עם עמודות למחיר עם/בלי ניילון שהספק ממלא ומחזיר</p>
+          </div>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => {
+            const name = req.source_book_list_title || req.title || 'רשימה';
+            downloadBlob(generateSupplierExcel(req.books || []), `בקשת_הצעת_מחיר_${name}.xlsx`);
+          }}>
+            <FileSpreadsheet className="w-4 h-4" /> הורדת קובץ Excel
+          </Button>
         </div>
       )}
 

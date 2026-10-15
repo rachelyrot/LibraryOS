@@ -287,6 +287,7 @@ export default function WorkPlan() {
       });
       pin(created.id);
       setItems(list => [...list, created]);
+      return created;
     } catch (e) {
       toast.error(e?.message || 'שגיאה בהוספת השורה');
       throw e;
@@ -644,7 +645,7 @@ export default function WorkPlan() {
               <span className="text-xs text-muted-foreground">מוצגות רק שורות עם סכום ב{viewLabel}</span>
             )}
             <div className="flex-1" />
-            {canEdit && <span className="text-xs text-muted-foreground">לחצי על תא כדי לערוך · Enter שומר ויורד שורה · Esc מבטל</span>}
+            {canEdit && <span className="text-xs text-muted-foreground">לעריכת שורה לחצי על העיפרון בתחילתה · Enter שומר ויורד שורה · Esc מבטל</span>}
           </div>
 
           {/* Detailed rows by parameter */}

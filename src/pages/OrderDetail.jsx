@@ -7,8 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ArrowRight, Trash2, Plus, Save, CheckCircle, Package, FileText, BookMarked, Truck, AlertCircle, Wallet, Layers, XCircle, RotateCcw, Ban, FolderKanban } from 'lucide-react';
-import StatusBadge from '@/components/StatusBadge';
+import { ArrowRight, Trash2, Plus, Save, CheckCircle, Package, FileText, BookMarked, Truck, AlertCircle, Wallet, Layers, XCircle, RotateCcw, Ban, FolderKanban, FileSpreadsheet } from 'lucide-react';
+import StatusBadge, { useStatusConfig } from '@/components/StatusBadge';
 import GoodsReceiptDialog from '@/components/GoodsReceiptDialog';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
@@ -124,6 +124,41 @@ export default function OrderDetail() {
       const { valid, error } = await validateBudgetSelection({ ...order, budget_category_id: catId, credit_id: '' });
       setValidating(false);
       if (!valid) setFundingError(error);
+    }
+  };
+
+  const statusLabel = useStatusConfig(order.status, 'PurchaseOrder').label;
+  // קובץ Excel של ההזמנה — למשל לשליחה לספק שזכה: פרטי ההזמנה בראש הגיליון,
+  // ואחריהם טבלת הפריטים עם סה"כ. נבנה מהנתונים שעל המסך, גם לפני שמירה.
+  const exportOrderExcel = async () => {
+    try {
+      const { utils, writeFile } = await import('xlsx');
+      const items = order.items || [];
+      const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
+      const rows = [
+        [order.title || 'הזמנת רכש'],
+        ['ספק', order.supplier_name || ''],
+        ['מספר הזמנה', order.order_number || order.id || ''],
+        ['תאריך', new Date().toLocaleDateString('he-IL')],
+        ['סטטוס', statusLabel || ''],
+        [],
+        ['#', 'פריט', 'תיאור', 'ISBN', 'הערות', 'כמות', 'מחיר ליחידה', 'סה"כ'],
+        ...items.map((it, i) => [
+          i + 1, it.name || '', it.description || '', it.isbn || '', it.notes || '',
+          Number(it.quantity) || 0, money(it.unit_price), money(it.total ?? (it.quantity || 0) * (it.unit_price || 0)),
+        ]),
+        [],
+        ['', 'סה"כ להזמנה', '', '', '', items.reduce((s, it) => s + (Number(it.quantity) || 0), 0), '', money(order.total_amount ?? items.reduce((s, it) => s + (Number(it.total) || 0), 0))],
+      ];
+      const ws = utils.aoa_to_sheet(rows);
+      ws['!cols'] = [{ wch: 5 }, { wch: 42 }, { wch: 28 }, { wch: 16 }, { wch: 26 }, { wch: 8 }, { wch: 12 }, { wch: 12 }];
+      const wb = utils.book_new();
+      utils.book_append_sheet(wb, ws, 'הזמנה');
+      wb.Workbook = { Views: [{ RTL: true }] };
+      const name = String(order.supplier_name || order.title || 'הזמנה').replace(/[\\/:*?"<>|]/g, '').slice(0, 60);
+      writeFile(wb, `הזמנת_רכש_${name}.xlsx`);
+    } catch (e) {
+      toast.error('שגיאה ביצירת קובץ Excel');
     }
   };
 
@@ -327,6 +362,11 @@ export default function OrderDetail() {
 
       {/* Action buttons */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
+        {!isNew && (order.items || []).length > 0 && (
+          <Button onClick={exportOrderExcel} variant="outline" className="gap-1.5">
+            <FileSpreadsheet className="w-4 h-4" /> ייצוא ל-Excel
+          </Button>
+        )}
         {order.status === 'draft' && (
           <>
             <Button onClick={submitForApproval} className="gap-1.5 bg-amber-500 text-white border-0 hover:bg-amber-600">

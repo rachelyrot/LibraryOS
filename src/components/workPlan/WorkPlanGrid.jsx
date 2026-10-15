@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Pencil, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { MINISTRY_PARAMETERS, MONTHS, itemMonths, num, formatMoney, parameterAllocations, rowAllocationLimit } from '@/lib/workPlan';
@@ -122,7 +122,9 @@ function AllocationPicker({ item, funder, info, canEdit, onSave, limit }) {
   );
 }
 
-function ItemRow({ item, cols, canEdit, onSave, onDelete, funding }) {
+function ItemRow({ item, cols, canEdit, editing, onToggleEdit, onSave, onDelete, funding }) {
+  // עורכים רק אחרי לחיצה על העיפרון בתחילת השורה — לחיצה על תא לבד לא משנה כלום
+  const editable = canEdit && editing;
   const months = itemMonths(item);
   const start = months[0] ?? null;
   const end = months[months.length - 1] ?? null;
@@ -139,24 +141,33 @@ function ItemRow({ item, cols, canEdit, onSave, onDelete, funding }) {
   const legacyCategory = !MINISTRY_PARAMETERS.some(p => p.name === item.category);
 
   return (
-    <tr className="border-b border-border/40 hover:bg-muted/20 align-top">
+    <tr className={cn('border-b border-border/40 align-top', editing ? 'bg-amber-50/70 shadow-[inset_-3px_0_0_hsl(var(--primary))]' : 'hover:bg-muted/20')}>
+      {canEdit && (
+        <td className="p-1 w-9">
+          <button type="button" onClick={onToggleEdit}
+            className={cn('rounded p-1.5', editing ? 'text-green-600 hover:bg-green-50' : 'text-muted-foreground hover:text-foreground hover:bg-muted')}
+            title={editing ? 'סיום עריכה' : 'עריכת שורה'} aria-label={editing ? 'סיום עריכה' : 'עריכת שורה'}>
+            {editing ? <Check className="w-4 h-4" /> : <Pencil className="w-3.5 h-3.5" />}
+          </button>
+        </td>
+      )}
       <td className="p-1 min-w-[200px]">
-        <Cell col="activity_name" value={item.activity_name} disabled={!canEdit} className="font-medium"
+        <Cell col="activity_name" value={item.activity_name} disabled={!editable} className="font-medium"
           onCommit={v => { if (v.trim()) save({ activity_name: v.trim() }); }} />
-        <Cell col="description" value={item.description} disabled={!canEdit} placeholder={canEdit ? 'תיאור' : ''}
+        <Cell col="description" value={item.description} disabled={!editable} placeholder={editable ? 'תיאור' : ''}
           className="text-xs text-muted-foreground" onCommit={v => save({ description: v })} />
       </td>
-      <td className="p-1 w-28"><MonthSelect col="start" value={start} disabled={!canEdit} allowEmpty onChange={setStart} /></td>
+      <td className="p-1 w-28"><MonthSelect col="start" value={start} disabled={!editable} allowEmpty onChange={setStart} /></td>
       <td className="p-1 w-28">
         {start == null
           ? <span className="block px-1.5 py-1 text-xs text-amber-600">לא נקבע</span>
-          : <MonthSelect col="end" value={end} min={start} disabled={!canEdit} onChange={setEnd} />}
+          : <MonthSelect col="end" value={end} min={start} disabled={!editable} onChange={setEnd} />}
       </td>
       <td className="p-1 hidden md:table-cell min-w-[110px]">
-        <Cell col="target_audience" value={item.target_audience} disabled={!canEdit} onCommit={v => save({ target_audience: v })} />
+        <Cell col="target_audience" value={item.target_audience} disabled={!editable} onCommit={v => save({ target_audience: v })} />
       </td>
       <td className="p-1 hidden lg:table-cell w-24">
-        <Cell col="expected_participants" numeric value={item.expected_participants} disabled={!canEdit}
+        <Cell col="expected_participants" numeric value={item.expected_participants} disabled={!editable}
           format={v => num(v).toLocaleString('he-IL')} onCommit={v => save({ expected_participants: v === '' ? '' : num(v) })} />
       </td>
       {cols.map(c => (
@@ -176,23 +187,23 @@ function ItemRow({ item, cols, canEdit, onSave, onDelete, funding }) {
               };
               return (
                 <>
-                  <Cell col={c.key} numeric value={item[`${c.key}_amount`] ?? 0} disabled={!canEdit}
+                  <Cell col={c.key} numeric value={item[`${c.key}_amount`] ?? 0} disabled={!editable}
                     format={v => formatMoney(v)} onCommit={commit} />
-                  {info && <AllocationPicker item={item} funder={c.key} info={info} canEdit={canEdit} onSave={onSave} limit={limit} />}
+                  {info && <AllocationPicker item={item} funder={c.key} info={info} canEdit={editable} onSave={onSave} limit={limit} />}
                 </>
               );
             })()}
         </td>
       ))}
       <td className="p-1 hidden xl:table-cell min-w-[120px]">
-        <Cell col="notes" value={item.notes} disabled={!canEdit} onCommit={v => save({ notes: v })} />
+        <Cell col="notes" value={item.notes} disabled={!editable} onCommit={v => save({ notes: v })} />
       </td>
       {canEdit && (
         <td className="p-1 w-40">
           <div className="flex items-center gap-0.5">
             {/* העברה לפרמטר אחר — השורה עוברת לטבלה של אותו פרמטר */}
             <select title="העברה לפרמטר אחר" className={cn(cellInput, 'text-xs text-muted-foreground cursor-pointer')}
-              value={item.category} onChange={e => save({ category: e.target.value })}>
+              value={item.category} disabled={!editable} onChange={e => save({ category: e.target.value })}>
               {MINISTRY_PARAMETERS.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
               {legacyCategory && <option value={item.category}>{item.category}</option>}
             </select>
@@ -207,7 +218,7 @@ function ItemRow({ item, cols, canEdit, onSave, onDelete, funding }) {
 }
 
 /** השורה הריקה בסוף הטבלה: הקלדת פירוט יוצרת שורה חדשה בפרמטר. */
-function NewRow({ colSpan, onCreate, focusToken }) {
+function NewRow({ colSpan, onCreate, onCreated, focusToken }) {
   const [value, setValue] = useState('');
   const [saving, setSaving] = useState(false);
   const ref = useRef(null);
@@ -219,8 +230,10 @@ function NewRow({ colSpan, onCreate, focusToken }) {
     if (!name || saving) return;
     setSaving(true);
     try {
-      await onCreate({ activity_name: name });
+      // שורה חדשה נפתחת מיד בעריכה, כדי להמשיך למלא אותה
+      const created = await onCreate({ activity_name: name });
       setValue('');
+      if (created?.id) onCreated?.(created.id);
     } finally {
       setSaving(false);
     }
@@ -248,12 +261,14 @@ function NewRow({ colSpan, onCreate, focusToken }) {
  *   { options: קטגוריות המקור, splits: planAllocationSplits(...) }
  */
 export default function WorkPlanGrid({ items, cols, canEdit, onSave, onCreate, onDelete, focusToken, funding }) {
-  const colSpan = 5 + cols.length + 1 + (canEdit ? 1 : 0);
+  const [editingId, setEditingId] = useState(null);
+  const colSpan = 5 + cols.length + 1 + (canEdit ? 2 : 0);
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-xs text-muted-foreground border-b border-border/60">
+            {canEdit && <th className="w-9" />}
             <th className="text-right font-medium p-2.5">פירוט</th>
             <th className="text-right font-medium p-2.5 whitespace-nowrap">מחודש</th>
             <th className="text-right font-medium p-2.5 whitespace-nowrap">עד חודש</th>
@@ -265,8 +280,11 @@ export default function WorkPlanGrid({ items, cols, canEdit, onSave, onCreate, o
           </tr>
         </thead>
         <tbody>
-          {items.map(i => <ItemRow key={i.id} item={i} cols={cols} canEdit={canEdit} onSave={onSave} onDelete={onDelete} funding={funding} />)}
-          {canEdit && <NewRow colSpan={colSpan} onCreate={onCreate} focusToken={focusToken} />}
+          {items.map(i => (
+            <ItemRow key={i.id} item={i} cols={cols} canEdit={canEdit} onSave={onSave} onDelete={onDelete} funding={funding}
+              editing={editingId === i.id} onToggleEdit={() => setEditingId(id => (id === i.id ? null : i.id))} />
+          ))}
+          {canEdit && <NewRow colSpan={colSpan} onCreate={onCreate} onCreated={setEditingId} focusToken={focusToken} />}
           {!canEdit && items.length === 0 && (
             <tr><td colSpan={colSpan} className="px-4 py-3 text-sm text-muted-foreground">אין עדיין שורות בפרמטר זה</td></tr>
           )}

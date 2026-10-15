@@ -3,7 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Check, Minus, Search, Database, Plus, FileSpreadsheet, Lock } from 'lucide-react';
+import { Check, Minus, Search, Database, Plus, FileSpreadsheet, Lock, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { isNylonChecked, nylonFromChecked, isBindingChecked, bookKey } from '@/lib/bookQuoteExcel';
@@ -128,6 +128,8 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
   const [agronProgress, setAgronProgress] = useState(null);
   // שורת הספר שפילוח הסדרה שלה פתוח מתחתיה
   const [seriesOpen, setSeriesOpen] = useState(null);
+  // השורה שנמצאת בעריכה (כפתור העיפרון) — כמות, ניילון וכריכה נערכים רק בה
+  const [editingIdx, setEditingIdx] = useState(null);
   const [addBookOpen, setAddBookOpen] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -135,6 +137,9 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
   useEffect(() => { setBooks([...(bookList.books || [])]); }, [bookList]);
 
   const canMark = canMarkBooksForOrder(user, bookList);
+  // מי שיכולה לערוך את הרשימה או לסמן בה ספרים — כמות הייתה פתוחה לשתיהן גם קודם
+  const canEditRows = canEditBookList(user, bookList) || canMark;
+  const totalCols = 11 + (canEditRows ? 1 : 0);
   const canCreateQuoteReq = canCreateBookQuoteRequest(user);
   const canEdit = canEditBookList(user, bookList);
 
@@ -314,6 +319,7 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/50 z-10">
             <tr className="border-b border-border">
+              {canEditRows && <th className="p-2 w-9" title="עריכת שורה" />}
               <th className="p-2 w-10 text-center">
                 <div className="flex flex-col items-center gap-1">
                   <span className="text-xs">מעניין</span>
@@ -348,15 +354,26 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
           </thead>
           <tbody>
             {filteredBooks.length === 0 ? (
-              <tr><td colSpan={11} className="text-center py-12 text-muted-foreground">אין ספרים ברשימה</td></tr>
+              <tr><td colSpan={totalCols} className="text-center py-12 text-muted-foreground">אין ספרים ברשימה</td></tr>
             ) : (
               filteredBooks.map((book) => {
                 const idx = books.indexOf(book);
                 const sent = isSent(book);
                 const series = book.agron_series || [];
+                const rowEditing = editingIdx === idx;
                 return (
                   <Fragment key={idx}>
-                  <tr className={cn('border-b border-border/50 hover:bg-muted/30 transition-colors', sent && 'bg-muted/20', !sent && book.selected_for_quote && 'bg-indigo-50/50', !sent && book.marked_for_order && !book.selected_for_quote && 'bg-green-50/30')}>
+                  <tr className={cn('border-b border-border/50 transition-colors', rowEditing ? 'bg-amber-50/70 shadow-[inset_-3px_0_0_hsl(var(--primary))]' : 'hover:bg-muted/30', !rowEditing && sent && 'bg-muted/20', !rowEditing && !sent && book.selected_for_quote && 'bg-indigo-50/50', !rowEditing && !sent && book.marked_for_order && !book.selected_for_quote && 'bg-green-50/30')}>
+                    {/* כמות, ניילון וכריכה נערכים רק אחרי לחיצה על העיפרון */}
+                    {canEditRows && (
+                      <td className="p-1 text-center">
+                        <button type="button" onClick={() => setEditingIdx(rowEditing ? null : idx)}
+                          className={cn('rounded p-1.5', rowEditing ? 'text-green-600 hover:bg-green-50' : 'text-muted-foreground hover:text-foreground hover:bg-muted')}
+                          title={rowEditing ? 'סיום עריכה' : 'עריכת שורה'} aria-label={rowEditing ? 'סיום עריכה' : 'עריכת שורה'}>
+                          {rowEditing ? <Check className="w-4 h-4" /> : <Pencil className="w-3.5 h-3.5" />}
+                        </button>
+                      </td>
+                    )}
                     {/* אין יותר מצב "קפוא" אחרי העברה לבקשה — הרשימה היא מאגר
                         שאפשר לחזור אליו ולשלוח ממנו מחזור נוסף. */}
                     <td className="p-2 text-center">
@@ -393,7 +410,7 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
                     <td className="p-2 hidden md:table-cell text-center">
                       <Checkbox
                         checked={isNylonChecked(book.nylon_required)}
-                        disabled={!canEdit}
+                        disabled={!canEdit || !rowEditing}
                         aria-label={`ניילון — ${book.title || ''}`}
                         onCheckedChange={c => saveBooks(books.map((b, i) => (
                           i === idx ? { ...b, nylon_required: nylonFromChecked(c === true) } : b
@@ -403,7 +420,7 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
                     <td className="p-2 hidden md:table-cell text-center">
                       <Checkbox
                         checked={isBindingChecked(book.binding_required)}
-                        disabled={!canEdit}
+                        disabled={!canEdit || !rowEditing}
                         aria-label={`כריכה — ${book.title || ''}`}
                         onCheckedChange={c => saveBooks(books.map((b, i) => (
                           i === idx ? { ...b, binding_required: c === true } : b
@@ -413,7 +430,8 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
                     <td className="p-2 text-center">
                       <Input
                         type="number" min="0"
-                        className="h-7 w-16 text-xs text-center px-1"
+                        className="h-7 w-16 text-xs text-center px-1 disabled:opacity-100 disabled:border-transparent disabled:bg-transparent"
+                        disabled={!rowEditing}
                         value={book.requested_quantity ?? 0}
                         onChange={e => {
                           const updated = books.map((b, i) => i === idx ? { ...b, requested_quantity: parseInt(e.target.value) || 0 } : b);
@@ -456,7 +474,7 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
                   {/* פילוח הסדרה באגרון: כל ספר עם העותקים שלו, ולא רק סך הסדרה */}
                   {seriesOpen === idx && series.length > 0 && (
                     <tr className="border-b border-border/50">
-                      <td colSpan={11} className="p-3 bg-muted/20">
+                      <td colSpan={totalCols} className="p-3 bg-muted/20">
                         <SeriesBreakdown book={book} series={series} onClose={() => setSeriesOpen(null)} />
                       </td>
                     </tr>

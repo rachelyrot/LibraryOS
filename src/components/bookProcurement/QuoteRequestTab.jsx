@@ -45,16 +45,27 @@ export default function QuoteRequestTab({ bookList, sentBookKeys, quoteRequests 
 
   const toggleSupplier = (id) => setSelectedSupplierIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
+  // יוצר את קובץ ה-Excel לספקים, מוריד אותו ושומר עותק (הקישור נשמר בבקשה).
+  // מחזיר את הקישור, או '' אם ההעלאה נכשלה — ההורדה עצמה כבר קרתה.
+  const createExcel = async () => {
+    const blob = generateSupplierExcel(selectedBooks);
+    const filename = `בקשת_הצעת_מחיר_${bookList.title || 'רשימה'}.xlsx`;
+    downloadBlob(blob, filename);
+    try {
+      const file = new File([blob], filename, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      setExcelUrl(file_url);
+      return file_url;
+    } catch {
+      return '';
+    }
+  };
+
   const handleGenerateExcel = async () => {
     if (selectedBooks.length === 0) { toast.error('אין ספרים מסומנים'); return; }
     setGenerating(true);
     try {
-      const blob = generateSupplierExcel(selectedBooks);
-      const filename = `בקשת_הצעת_מחיר_${bookList.title || 'רשימה'}.xlsx`;
-      downloadBlob(blob, filename);
-      const file = new File([blob], filename, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
-      setExcelUrl(file_url);
+      await createExcel();
       toast.success('קובץ Excel נוצר והורד');
     } catch (e) { toast.error('שגיאה ביצירת קובץ Excel'); }
     setGenerating(false);
@@ -64,6 +75,8 @@ export default function QuoteRequestTab({ bookList, sentBookKeys, quoteRequests 
     if (selectedSupplierIds.length === 0) { toast.error('יש לבחור לפחות ספק אחד'); return; }
     setSaving(true);
     try {
+      // שמירה בלי קובץ — הקובץ נוצר ויורד עכשיו, כדי שלא יישארו בלי קובץ לשלוח
+      const fileUrl = excelUrl || await createExcel();
       const selectedSuppliers = suppliers.filter(s => selectedSupplierIds.includes(s.id));
       const books = selectedBooks.map(b => ({
         title: b.title || '', author: b.author || '', publisher: b.publisher || '', isbn: b.isbn || '',
@@ -77,7 +90,7 @@ export default function QuoteRequestTab({ bookList, sentBookKeys, quoteRequests 
         title: `בקשת הצעת מחיר - ${bookList.title}`, source_book_list_id: bookList.id, source_book_list_title: bookList.title,
         status: 'draft', supplier_ids: selectedSupplierIds,
         supplier_names: selectedSuppliers.map(s => s.name),
-        excel_file_url: excelUrl || '', created_by: user?.full_name || user?.email || '',
+        excel_file_url: fileUrl || '', created_by: user?.full_name || user?.email || '',
         books, linked_order_ids: [],
       };
       const created = await base44.entities.BookQuoteRequest.create(data);
@@ -96,7 +109,7 @@ export default function QuoteRequestTab({ bookList, sentBookKeys, quoteRequests 
         status: 'transferred_to_quote',
         books: updatedBooks,
       });
-      toast.success('בקשת הצעת מחיר נוצרה!');
+      toast.success('בקשת הצעת מחיר נוצרה', { description: 'קובץ ה-Excel לספקים הורד. אפשר להוריד אותו שוב בכל זמן מכרטיס המחזור.' });
       onQuoteRequestCreated(created, updatedBooks);
     } catch (e) { toast.error('שגיאה בשמירת הבקשה'); }
     setSaving(false);
@@ -173,7 +186,7 @@ export default function QuoteRequestTab({ bookList, sentBookKeys, quoteRequests 
           <div className="flex justify-end gap-2 pt-2 border-t border-border">
             <Button onClick={handleSave} disabled={saving || selectedSupplierIds.length === 0} className="gap-1.5">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-              {saving ? 'שומר...' : 'שמור בקשה'}
+              {saving ? 'שומר...' : excelUrl ? 'שמור בקשה' : 'שמור בקשה והורד Excel'}
             </Button>
           </div>
         </>
