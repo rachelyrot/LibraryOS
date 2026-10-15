@@ -11,7 +11,7 @@ import { Upload, Send, ShoppingCart, ExternalLink, Mail, FileSpreadsheet, Loader
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
 import StatusBadge from '@/components/StatusBadge';
-import { generateSupplierExcel, downloadBlob, parseSupplierQuote, sheetToQuoteRows, describePriceColumns, matchQuoteToBook, computeCheapestSuppliers, getEffectivePrice, nylonLabel, normalizeNylon, bindingLabel, isBindingChecked } from '@/lib/bookQuoteExcel';
+import { generateSupplierExcel, supplierExcelName, downloadBlob, parseSupplierQuote, sheetToQuoteRows, describePriceColumns, matchQuoteToBook, computeCheapestSuppliers, getEffectivePrice, nylonLabel, normalizeNylon, bindingLabel, isBindingChecked } from '@/lib/bookQuoteExcel';
 import * as XLSX from 'xlsx';
 import { canReceiveQuotePrices, canComparePrices, canSelectSuppliers, canCreateOrdersFromQuoteRequest, isAdmin } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
@@ -147,17 +147,23 @@ export function OverviewTab({ req, suppliers }) {
       {/* הקובץ לספקים נוצר מחדש מהספרים של הבקשה בכל לחיצה — כך אפשר להוריד
           אותו גם אחרי שמירת הבקשה, ולא רק לפניה */}
       {(req.books || []).length > 0 && (
-        <div className="border border-border rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="border border-border rounded-xl p-4 space-y-2">
           <div>
             <h3 className="font-bold text-sm">קובץ Excel לספקים</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">{(req.books || []).length} הספרים של הבקשה, עם עמודות למחיר עם/בלי ניילון שהספק ממלא ומחזיר</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {(req.books || []).length} הספרים של הבקשה, בפורמט של הספקים (שם כותר, מחבר/ת, הו"ל, ניילון/למינציה, כמות, מק"ט, מחיר, סה"כ לשורה). קובץ נפרד לכל ספק — שם הספק מופיע בכותרות.
+            </p>
           </div>
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => {
-            const name = req.source_book_list_title || req.title || 'רשימה';
-            downloadBlob(generateSupplierExcel(req.books || []), `בקשת_הצעת_מחיר_${name}.xlsx`);
-          }}>
-            <FileSpreadsheet className="w-4 h-4" /> הורדת קובץ Excel
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {(selectedSuppliers.length ? selectedSuppliers : [{ id: '__none', name: '' }]).map(s => (
+              <Button key={s.id} size="sm" variant="outline" className="gap-1.5" onClick={() => {
+                const list = req.source_book_list_title || req.title;
+                downloadBlob(generateSupplierExcel(req.books || [], s.name), supplierExcelName(list, s.name));
+              }}>
+                <FileSpreadsheet className="w-4 h-4" /> {s.name ? `הורדה ל${s.name}` : 'הורדת קובץ Excel'}
+              </Button>
+            ))}
+          </div>
         </div>
       )}
 

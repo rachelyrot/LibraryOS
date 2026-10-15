@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { FileSpreadsheet, Loader2, AlertCircle } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
-import { generateSupplierExcel, downloadBlob, nylonLabel, bindingLabel, isBindingChecked, bookKey } from '@/lib/bookQuoteExcel';
+import { generateSupplierExcel, supplierExcelName, downloadBlob, nylonLabel, bindingLabel, isBindingChecked, bookKey } from '@/lib/bookQuoteExcel';
 import { canCreateBookQuoteRequest } from '@/lib/permissions';
 import { OverviewTab } from '@/components/bookQuoteRequests/BookQuoteRequestDetail';
 
@@ -45,12 +45,16 @@ export default function QuoteRequestTab({ bookList, sentBookKeys, quoteRequests 
 
   const toggleSupplier = (id) => setSelectedSupplierIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
-  // יוצר את קובץ ה-Excel לספקים, מוריד אותו ושומר עותק (הקישור נשמר בבקשה).
-  // מחזיר את הקישור, או '' אם ההעלאה נכשלה — ההורדה עצמה כבר קרתה.
+  // יוצר את קבצי ה-Excel לספקים בפורמט שלהם — קובץ לכל ספק שנבחר, כי שם הספק
+  // חלק מהכותרות (בלי ספק נבחר — קובץ כללי) — ומוריד אותם. עותק כללי נשמר
+  // והקישור אליו נשמר בבקשה. מחזיר את הקישור, או '' אם ההעלאה נכשלה.
   const createExcel = async () => {
+    const chosen = suppliers.filter(s => selectedSupplierIds.includes(s.id));
+    for (const s of (chosen.length ? chosen : [{ name: '' }])) {
+      downloadBlob(generateSupplierExcel(selectedBooks, s.name), supplierExcelName(bookList.title, s.name));
+    }
     const blob = generateSupplierExcel(selectedBooks);
-    const filename = `בקשת_הצעת_מחיר_${bookList.title || 'רשימה'}.xlsx`;
-    downloadBlob(blob, filename);
+    const filename = supplierExcelName(bookList.title, '');
     try {
       const file = new File([blob], filename, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const { file_url } = await base44.integrations.Core.UploadFile({ file });
@@ -179,7 +183,7 @@ export default function QuoteRequestTab({ bookList, sentBookKeys, quoteRequests 
           <div className="flex items-center gap-2 flex-wrap">
             <Button variant="outline" onClick={handleGenerateExcel} disabled={generating || selectedBooks.length === 0} className="gap-1.5">
               {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-              {generating ? 'יוצר...' : 'צור והורד קובץ Excel'}
+              {generating ? 'יוצר...' : selectedSupplierIds.length > 1 ? `צור והורד ${selectedSupplierIds.length} קבצי Excel (קובץ לכל ספק)` : 'צור והורד קובץ Excel'}
             </Button>
             {excelUrl && <span className="text-xs text-green-600 flex items-center gap-1"><FileSpreadsheet className="w-3 h-3" /> קובץ מוכן</span>}
           </div>

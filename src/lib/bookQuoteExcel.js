@@ -88,31 +88,45 @@ export function getEffectivePrice(book, quote) {
 }
 
 /**
- * Generate an Excel file for sending to suppliers (empty price columns for them to fill).
+ * The Excel file sent to a supplier, in the exact format the book suppliers
+ * already use for their quotes (taken from real returned files):
+ *   שם כותר | מחבר/ת | הו"ל | ניילון/למינציה | מחיר למינציה | כמות |
+ *   מק"ט פנימי <ספק> | מחיר <ספק> כולל כריכה וניילון כולל מע"מ | סה"כ לשורה <ספק>
+ * The supplier's name is part of the last three headers, so each supplier gets
+ * their own file. The supplier fills the catalog number and the price; the
+ * line total is a formula (quantity × price). parseSupplierQuote reads this
+ * format back as is (title from "שם כותר", price from the column with prices).
+ * Without a supplier name the headers just drop it.
  * Returns a Blob.
  */
-export function generateSupplierExcel(books) {
-  const rows = books.map(b => ({
-    'שם ספר': b.title || '',
-    'מחבר': b.author || '',
-    'הוצאה לאור': b.publisher || '',
-    'ISBN': b.isbn || '',
-    'ניילון נדרש': nylonLabel(b.nylon_required),
-    'כריכה נדרשת': bindingLabel(b.binding_required),
-    'הערות': b.notes || '',
-    'מחיר עם ניילון': '',
-    'מחיר בלי ניילון': '',
-    'זמינות': '',
-    'זמן אספקה': '',
-    'הערות ספק': '',
-  }));
-  const ws = XLSX.utils.json_to_sheet(rows);
-  // Set RTL
-  if (!ws['!cols']) ws['!cols'] = [];
+export function generateSupplierExcel(books, supplierName = '') {
+  const s = String(supplierName || '').trim();
+  const withName = (base, rest = '') => [base, s, rest].filter(Boolean).join(' ');
+  const header = [
+    'שם כותר', 'מחבר/ת', 'הו"ל', 'ניילון/למינציה', 'מחיר למינציה', 'כמות',
+    withName('מק"ט פנימי'), withName('מחיר', 'כולל כריכה וניילון כולל מע"מ'), withName('סה"כ לשורה'),
+  ];
+  const rows = books.map(b => [
+    b.title || '', b.author || '', b.publisher || '',
+    normalizeNylon(b.nylon_required) === 'with_nylon' ? 'ניילון' : '',
+    '', Number(b.requested_quantity) || 1, '', '', '',
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  // סה"כ לשורה = כמות × מחיר, ומתעדכן לבד כשהספק ממלא מחיר
+  // (תא נוסחה בלי ערך שמור לא נכתב לקובץ — הערך הריק תואם לתוצאה כשאין מחיר)
+  rows.forEach((_, i) => { ws[`I${i + 2}`] = { t: 's', v: '', f: `IF(H${i + 2}="","",F${i + 2}*H${i + 2})` }; });
+  ws['!cols'] = [{ wch: 44 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 7 }, { wch: 16 }, { wch: 22 }, { wch: 16 }];
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'בקשת הצעת מחיר');
+  XLSX.utils.book_append_sheet(wb, ws, 'הצעת מחיר');
+  wb.Workbook = { Views: [{ RTL: true }] };
   const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+/** File name for a supplier's quote file: "הצעת_מחיר_<רשימה>_<ספק>.xlsx". */
+export function supplierExcelName(listTitle, supplierName) {
+  const clean = (x) => String(x || '').replace(/[\\/:*?"<>|]/g, '').trim();
+  return `הצעת_מחיר_${[clean(listTitle) || 'רשימה', clean(supplierName)].filter(Boolean).join('_')}.xlsx`;
 }
 
 /**
