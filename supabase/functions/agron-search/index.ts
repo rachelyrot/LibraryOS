@@ -49,6 +49,8 @@ const AGRON_URL = 'https://agron.libnet.co.il/api/WebServiceLoans/GetMainSearchR
 const MAX_BOOKS = 40;
 const CONCURRENCY = 4;
 const MAX_MATCHES = 3;
+// Volumes listed in a series breakdown — "ילדי שי" alone runs past 30.
+const MAX_SERIES = 60;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -96,21 +98,69 @@ function splitBookTitle(title: unknown) {
   return { head, tail: rest.join(' ') };
 }
 
-// Volumes: the catalog writes "ב", "ג'"; lists write 2, 3. "א"/1 means "no
-// volume" in practice, so it is ignored. Numbers ≥ 1000 are years, not volumes.
-const VOLUME_LETTERS: Record<string, string> = {
-  'ב': '2', 'ג': '3', 'ד': '4', 'ה': '5', 'ו': '6',
-  'ז': '7', 'ח': '8', 'ט': '9', 'י': '10',
+// Volumes: the catalog writes "ב", "ג'", "כ"א"; lists write 2, 3, 21. "א"/1
+// means "no volume" in practice, so it is ignored. Numbers ≥ 1000 are years.
+//
+// Series run past 10 ("עשרים ואחד בבית אחד" כ"א, "ילדי שי" ט"ו), so letters are
+// read as Hebrew numerals (gematria). A multi-letter token counts only when it
+// is written as a numeral — with gershayim (כ"א) — or right after "חלק"/"כרך"/
+// "ספר"/"מס". Bare letter groups are ordinary words far too often ("שי" would
+// be 310, "לב" 32, "יד" 14). Capped at 120: no series runs longer, and it keeps
+// abbreviations that happen to read as numbers (ת"א, ש"ס) out.
+const GEMATRIA: Record<string, number> = {
+  'א': 1, 'ב': 2, 'ג': 3, 'ד': 4, 'ה': 5, 'ו': 6, 'ז': 7, 'ח': 8, 'ט': 9,
+  'י': 10, 'כ': 20, 'ך': 20, 'ל': 30, 'מ': 40, 'ם': 40, 'נ': 50, 'ן': 50, 'ס': 60,
+  'ע': 70, 'פ': 80, 'ף': 80, 'צ': 90, 'ץ': 90, 'ק': 100, 'ר': 200, 'ש': 300, 'ת': 400,
 };
-const volumes = (s: unknown) => new Set(normalize(s).split(' ')
-  .map((t) => (/^\d+$/.test(t) ? String(Number(t)) : VOLUME_LETTERS[t]))
-  .filter((n) => n && n !== '1' && Number(n) < 1000));
+const VOLUME_MARKERS = new Set(['חלק', 'כרך', 'ספר', 'מס', 'מספר']);
+const MAX_VOLUME = 120;
+
+// A Hebrew numeral: letters in non-increasing value (טו/טז stand in for the
+// avoided יה/יו). Returns the number, or null.
+function hebrewNumeral(t: string): number | null {
+  if (!t || t.length > 3 || [...t].some((c) => !GEMATRIA[c])) return null;
+  const vals = [...t].map((c) => GEMATRIA[c]);
+  const ordered = vals.every((v, k) => k === 0 || v <= vals[k - 1]) || t === 'טו' || t === 'טז';
+  const n = vals.reduce((s, v) => s + v, 0);
+  return ordered && n <= MAX_VOLUME ? n : null;
+}
+
+// כ"א / כ״א / ט'ו → 21 / 15, before normalize() strips the quote marks and the
+// numeral becomes indistinguishable from a word.
+const numeralsToDigits = (s: unknown) => String(s ?? '').replace(
+  /(^|[\s(\-–—:/,])([א-ת]{1,2})["״'׳]([א-ת])(?=$|[\s).,:\-–—/])/g,
+  (m, pre, a, b) => {
+    const n = hebrewNumeral(a + b);
+    return n == null ? m : `${pre}${n}`;
+  },
+);
+
+// Splits a title into comparison words and volume numbers. Volume tokens are
+// removed from the words, so "בבית אחד 21" and "בבית אחד כ"א" compare equal.
+function parseTitle(s: unknown) {
+  const tokens = normalize(numeralsToDigits(s)).split(' ').filter(Boolean);
+  const words: string[] = [];
+  const vols = new Set<string>();
+  tokens.forEach((t, k) => {
+    let n: number | null = null;
+    if (/^\d+$/.test(t)) n = Number(t);
+    else if (t.length === 1 && t !== 'א' && (GEMATRIA[t] ?? 99) <= 10) n = GEMATRIA[t]; // ב..י, as before
+    else if (VOLUME_MARKERS.has(tokens[k - 1] ?? '')) n = hebrewNumeral(t);
+    if (n != null) {
+      if (n !== 1 && n < 1000) vols.add(String(n));
+      return;
+    }
+    if (t === 'א') return;
+    const w = compact(t);
+    if (w) words.push(w);
+  });
+  return { words, vols };
+}
+
+const volumes = (s: unknown) => parseTitle(s).vols;
 
 // Title words for comparison, without volume markers, in compact form.
-const titleWords = (s: unknown) => normalize(s).split(' ')
-  .filter((w) => w && !/^\d+$/.test(w) && !VOLUME_LETTERS[w] && w !== 'א')
-  .map(compact)
-  .filter(Boolean);
+const titleWords = (s: unknown) => parseTitle(s).words;
 
 // Search fragment for a word: its longest stretch without ו/י, which is spelled
 // the same in ktiv male and haser ("כאלוקינו" → "כאל", "ניקרגואה" → "קרג").
@@ -130,7 +180,16 @@ function searchTerms(s: unknown, count: number) {
 // Order-insensitive, so "חנה ורטהימר" meets "ורטהימר, חנה".
 const authorTokens = (s: unknown) => new Set(normalize(s).split(' ').map(compact).filter((w) => w.length >= 2));
 
-type ParsedBook = { head: string; author: string; authorGuess: string };
+type ParsedBook = { head: string; tail: string; author: string; authorGuess: string };
+// member: a catalog title that *starts* with the list title and goes on
+// ("ילדי שי" → "ילדי שי במשבר") — a volume of the series the list names.
+type Match = { kind: 'exact' | 'near'; specific: boolean; member?: boolean };
+
+// The catalog subtitle — the part after the main title ("ילדי שי : הסוד במערה").
+const subtitleOf = (s: unknown) => {
+  const full = String(s ?? '');
+  return full.slice(mainTitle(full).length);
+};
 
 // ── Matching ─────────────────────────────────────────────────────────────────
 // exact: every word of the list title appears in the catalog title, every word
@@ -138,10 +197,48 @@ type ParsedBook = { head: string; author: string; authorGuess: string };
 //   the author doesn't contradict.
 // near ("possible", shown for manual review): same title but volume or author
 //   disagrees, or one title contains the other and the author agrees.
-function classify(book: ParsedBook, row: CatalogRow): 'exact' | 'near' | null {
+//
+// Series. Supplier lists name a volume of a series either by number ("עשרים
+// ואחד בבית אחד 3") or by name after a dash ("ילדי שי - הסוד במערה"). The
+// catalog keeps each volume as its own title, the volume name as subtitle. The
+// dash text used to be taken as an author guess only, so every volume of the
+// series matched the bare main title and their copies were summed. Now:
+//   - dash text found in the catalog title → that volume, `specific`
+//   - dash text matching the catalog author → still the author, as before
+//   - otherwise, if the catalog row has a subtitle, it is a *different* volume
+//     of the series → near, not exact
+//   - an agreeing volume number is also `specific`
+// checkBook keeps only the specific matches when there are any, and reports a
+// series breakdown when the list names the series but not the volume.
+//
+// The real catalog often writes a volume with no separator at all — "ילדי שי
+// במשבר", not "ילדי שי : במשבר" — so the rules above never see a subtitle. Two
+// more, on whole words in order:
+//   - the catalog title starts with the list title and goes on → `member` of
+//     the series (near; checkBook turns 2+ members into a series breakdown).
+//     Checked before the short-title noise rule, since series names are short.
+//   - the list title ends with a catalog title of 2+ words ("עשרים ואחד בבית
+//     אחד טסים לאנגליה" vs "טסים לאנגליה") → that volume, `specific`.
+function classify(book: ParsedBook, row: CatalogRow): Match | null {
   const bookWords = titleWords(book.head);
   const rowMainWords = titleWords(mainTitle(row.titleName));
   if (bookWords.length === 0 || rowMainWords.length === 0) return null;
+
+  const rowAllWords = titleWords(row.titleName);
+  // dash text that is the author ("ילדי שי - חיים לוי") names no volume
+  const rowAuthor = authorTokens(row.authorName);
+  const tailNamesVolume = titleWords(book.tail).length > 0
+    && ![...authorTokens(book.tail)].some((t) => rowAuthor.has(t));
+  const noVolume = volumes(book.head).size === 0 && !tailNamesVolume;
+  // a one short word is the start of too many unrelated titles ("הבית ...")
+  const seriesLike = bookWords.length >= 2 || bookWords.join('').length >= 6;
+  if (noVolume && seriesLike && rowAllWords.length > bookWords.length && bookWords.every((w, k) => rowAllWords[k] === w)) {
+    return { kind: 'near', specific: false, member: true };
+  }
+  if (rowAllWords.length >= 2 && rowAllWords.length < bookWords.length
+    && rowAllWords.every((w, k) => bookWords[bookWords.length - rowAllWords.length + k] === w)) {
+    return { kind: 'exact', specific: true };
+  }
 
   const rowFull = compact(row.titleName);
   const bookFull = compact(book.head);
@@ -157,7 +254,11 @@ function classify(book: ParsedBook, row: CatalogRow): 'exact' | 'near' | null {
   // since subtitles are full of unrelated numbers ("בת 12 נפשות").
   const bookVols = volumes(book.head);
   const rowVols = volumes(row.titleName);
-  const rowKeyVols = new Set([...volumes(mainTitle(row.titleName)), ...volumes(normalize(row.titleName).split(' ').pop())]);
+  const rowKeyVols = new Set([
+    ...volumes(mainTitle(row.titleName)),
+    // last word only, read after the gershayim → digits step so "כ"א" counts
+    ...volumes(normalize(numeralsToDigits(row.titleName)).split(' ').pop()),
+  ]);
   const volumesAgree = [...bookVols].every((n) => rowVols.has(n)) && [...rowKeyVols].every((n) => bookVols.has(n));
 
   // Only a real conflict counts against a match: a missing or initials-only
@@ -169,11 +270,21 @@ function classify(book: ParsedBook, row: CatalogRow): 'exact' | 'near' | null {
   const authorConflict = a.size > 0 && b.size > 0 && !authorMatch;
   const guessMatch = !!book.authorGuess && [...authorTokens(book.authorGuess)].some((t) => b.has(t));
 
+  const near: Match = { kind: 'near', specific: false };
   const sameTitle = coversBook && coversRow;
-  if (sameTitle && volumesAgree && !authorConflict) return 'exact';
-  if (sameTitle) return 'near';
+  if (sameTitle && volumesAgree && !authorConflict) {
+    // The dash text names the volume when it is not the author (see header).
+    const tailWords = titleWords(book.tail);
+    const tailIsAuthor = tailWords.length > 0 && [...authorTokens(book.tail)].some((t) => b.has(t));
+    if (tailWords.length > 0 && !tailIsAuthor) {
+      if (tailWords.every((w) => rowFull.includes(w))) return { kind: 'exact', specific: true };
+      if (titleWords(subtitleOf(row.titleName)).length > 0) return near; // another volume
+    }
+    return { kind: 'exact', specific: bookVols.size > 0 };
+  }
+  if (sameTitle) return near;
   if (authorConflict) return null;
-  return authorMatch || guessMatch ? 'near' : null;
+  return authorMatch || guessMatch ? near : null;
 }
 
 // ── Upstream ─────────────────────────────────────────────────────────────────
@@ -206,18 +317,22 @@ async function checkBook(book: BookIn, cache: Map<string, Promise<CatalogRow[]>>
 
   const { head, tail } = splitBookTitle(book.title);
   const author = String(book.author ?? '').trim();
-  const parsed: ParsedBook = { head, author, authorGuess: author ? '' : tail };
+  const parsed: ParsedBook = { head, tail, author, authorGuess: author ? '' : tail };
 
   const queries: ['title' | 'author', string][] = [
     ...searchTerms(mainTitle(head), 2).map((t) => ['title', t] as ['title', string]),
     ...searchTerms(author || tail, 1).map((t) => ['author', t] as ['author', string]),
   ];
 
-  const hits = new Map<number, { row: CatalogRow; kind: 'exact' | 'near' }>();
+  const hits = new Map<number, { row: CatalogRow } & Match>();
+  // every row the searches returned — the series breakdown is drawn from these,
+  // not only from rows that matched the list title
+  const seen = new Map<number, CatalogRow>();
   for (const [filterBy, text] of queries) {
     for (const row of await searchAgron(filterBy, text, cache)) {
-      const kind = classify(parsed, row);
-      if (kind && hits.get(row.titleNo)?.kind !== 'exact') hits.set(row.titleNo, { row, kind });
+      seen.set(row.titleNo, row);
+      const m = classify(parsed, row);
+      if (m && hits.get(row.titleNo)?.kind !== 'exact') hits.set(row.titleNo, { row, ...m });
     }
     if ([...hits.values()].some((h) => h.kind === 'exact')) break;
   }
@@ -231,19 +346,55 @@ async function checkBook(book: BookIn, cache: Map<string, Promise<CatalogRow[]>>
     copies: r.countCopies ?? 0,
     available: r.countAvailable ?? 0,
   });
-  const exact = [...hits.values()].filter((h) => h.kind === 'exact').map((h) => h.row);
-  const near = [...hits.values()].filter((h) => h.kind === 'near').map((h) => h.row);
+  const all = [...hits.values()];
+  const specific = all.filter((h) => h.kind === 'exact' && h.specific).map((h) => h.row);
+  const exact = specific.length > 0 ? specific : all.filter((h) => h.kind === 'exact').map((h) => h.row);
+  const near = all.filter((h) => h.kind === 'near' && !h.member).map((h) => h.row);
+  const members = all.filter((h) => h.member).map((h) => h.row);
+
+  // The volumes of the series in the catalog — every row whose title starts
+  // with the series name (the list's main title, before any dash), with or
+  // without a separator after it — for the per-book breakdown on screen.
+  const headWords = titleWords(head);
+  const inSeries = (r: CatalogRow) => {
+    const w = titleWords(r.titleName);
+    return w.length >= headWords.length && headWords.every((x, k) => w[k] === x);
+  };
+  const seriesRows = (rows: CatalogRow[]) => rows
+    .filter(inSeries)
+    .sort((x, y) => String(x.titleName).localeCompare(String(y.titleName), 'he', { numeric: true }))
+    .slice(0, MAX_SERIES)
+    .map(summarize);
+  const seriesResult = (rows: CatalogRow[]) => ({
+    status: 'series' as const,
+    copies: rows.reduce((s, r) => s + (r.countCopies ?? 0), 0),
+    available: rows.reduce((s, r) => s + (r.countAvailable ?? 0), 0),
+    matches: seriesRows(rows),
+  });
 
   if (exact.length > 0) {
-    // Several catalog titles can be the same book (editions, reprints) — sum them.
+    // Several catalog titles can be the same book (editions, reprints) — sum
+    // them. But when the list names only the series and the catalog holds
+    // several *different* volumes under it, summing would answer "how many
+    // books of the series" instead of "this book": report the series instead.
+    const distinctBooks = new Set(exact.map((r) => compact(r.titleName)));
+    if (specific.length === 0 && distinctBooks.size > 1) return seriesResult([...exact, ...members]);
+    const exactNos = new Set(exact.map((r) => r.titleNo));
     return {
       status: 'found' as const,
       copies: exact.reduce((s, r) => s + (r.countCopies ?? 0), 0),
       available: exact.reduce((s, r) => s + (r.countAvailable ?? 0), 0),
       matches: exact.slice(0, MAX_MATCHES).map(summarize),
+      series: seriesRows([...seen.values()].filter((r) => !exactNos.has(r.titleNo))),
     };
   }
-  if (near.length > 0) return { status: 'possible' as const, matches: near.slice(0, MAX_MATCHES).map(summarize) };
+  // The list names only the series ("ילדי שי") and the catalog has its volumes
+  // as continuing titles ("ילדי שי במשבר", "ילדי שי בסכנה"...).
+  if (members.length >= 2) return seriesResult(members);
+  const candidates = [...near, ...members];
+  if (candidates.length > 0) {
+    return { status: 'possible' as const, matches: candidates.slice(0, MAX_MATCHES).map(summarize), series: seriesRows(candidates) };
+  }
   return { status: 'not_found' as const };
 }
 

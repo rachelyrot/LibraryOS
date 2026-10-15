@@ -48,7 +48,26 @@ const formatMatch = (m) => `"${m.title}"${m.author ? ` (${m.author})` : ''}`;
 export function applyAgronResult(book, result) {
   if (!result || result.status === 'error') return book;
 
-  const base = { ...book, agron_checked_at: new Date().toISOString(), agron_matches: result.matches || [] };
+  const base = {
+    ...book,
+    agron_checked_at: new Date().toISOString(),
+    agron_status: result.status,
+    agron_matches: result.matches || [],
+    // פילוח הסדרה: כל ספר בסדרה עם העותקים שלו (status 'series' — matches הם
+    // הספרים עצמם; אחרת — שאר הספרים בסדרה מלבד זה שנמצא)
+    agron_series: result.status === 'series' ? (result.matches || []) : (result.series || []),
+  };
+
+  if (result.status === 'series') {
+    const count = (result.matches || []).length;
+    return {
+      ...base,
+      existing_in_agron: false,
+      existing_copies: 0,
+      system_recommendation: 'דורש בדיקה ידנית',
+      recommendation_reason: `זו סדרה — באגרון ${count} ספרים ממנה (${result.copies || 0} עותקים בסך הכל). כדי לבדוק ספר מסוים, הוסיפו לשם את מספר הכרך או את שם הספר`,
+    };
+  }
 
   if (result.status === 'no_title') {
     return {
@@ -108,7 +127,8 @@ export function applyAgronResult(book, result) {
 
 /** טקסט ל-tooltip של עמודת אגרון בטבלה. */
 export function agronTooltip(book) {
-  const matches = book?.agron_matches || [];
-  if (matches.length === 0) return undefined;
-  return matches.map(m => `${formatMatch(m)} · ${m.copies} עותקים, ${m.available} זמינים`).join('\n');
+  const matches = book?.agron_status === 'series' ? [] : (book?.agron_matches || []);
+  const lines = matches.map(m => `${formatMatch(m)} · ${m.copies} עותקים, ${m.available} זמינים`);
+  if (book?.agron_series?.length) lines.push(`בסדרה באגרון ${book.agron_series.length} ספרים — לחצו לפילוח`);
+  return lines.length ? lines.join('\n') : undefined;
 }

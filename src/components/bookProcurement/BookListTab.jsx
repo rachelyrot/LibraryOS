@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { Fragment, useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,6 +37,87 @@ function SelectAllBox({ state, onClick, disabled, color }) {
   );
 }
 
+// שם הספר בתוך הסדרה: מה שאחרי שם הסדרה ("ילדי שי : המטמון האבוד" → "המטמון
+// האבוד"). כשאין המשך — הכרך הוא סוף השם ("עשרים ואחד בבית אחד ג" → "ג").
+function volumeName(title, seriesTitle) {
+  const t = String(title || '').trim();
+  const sub = t.split(/\s[:\-–—/]\s|:/).slice(1).join(' · ').trim();
+  if (sub) return sub;
+  // ההמשך אחרי שם הסדרה ("ילדי שי במשבר" → "במשבר"); מספר או אותיות-מספר
+  // ("ג", "21", "כ"א") — "כרך ..."
+  const base = String(seriesTitle || '').split(/\s[-–—]\s/)[0].replace(/[\s\d]+$/, '').trim();
+  if (base && t.startsWith(base) && t.length > base.length) {
+    const rest = t.slice(base.length).trim();
+    return /^(\d+|[א-ת]["״'׳]?|[א-ת]{1,2}["״'׳][א-ת])$/.test(rest) ? `כרך ${rest}` : rest;
+  }
+  return t;
+}
+
+const copiesTone = (n) => (n === 0
+  ? 'bg-red-50 text-red-700 border-red-200'
+  : n === 1 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200');
+
+/**
+ * פילוח סדרה באגרון: סיכום, ואז כל ספר בסדרה בכרטיס קטן עם העותקים שלו.
+ * כשנמצא ספר מסוים — הוא מוצג ראשון ומסומן, ושאר הסדרה אחריו.
+ */
+function SeriesBreakdown({ book, series, onClose }) {
+  const isSeries = book.agron_status === 'series';
+  const found = isSeries ? [] : (book.agron_matches || []);
+  const all = [...found, ...series];
+  const copies = all.reduce((s, m) => s + (m.copies || 0), 0);
+  const available = all.reduce((s, m) => s + (m.available || 0), 0);
+  const seriesTitle = String(book.title || '').split(/\s[-–—]\s/)[0];
+
+  const Card = ({ m, highlight }) => (
+    <div className={cn('flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2',
+      highlight ? 'border-green-400 ring-1 ring-green-200' : 'border-border')}>
+      <div className="min-w-0">
+        {highlight && <p className="text-[10px] font-semibold text-green-700">הספר מהרשימה</p>}
+        <p className="text-sm font-medium truncate" title={m.title}>{volumeName(m.title, seriesTitle)}</p>
+        {m.author && <p className="text-[11px] text-muted-foreground truncate">{m.author}</p>}
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <span className={cn('text-sm font-bold rounded-md border px-2 py-0.5', copiesTone(m.copies || 0))}>
+          {m.copies || 0} <span className="text-[10px] font-normal">עותקים</span>
+        </span>
+        <span className="text-[11px] text-muted-foreground w-14 text-left">{m.available || 0} זמינים</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="rounded-xl border border-purple-200 bg-card p-3 max-w-4xl">
+      <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+        <div>
+          <p className="font-bold text-purple-800">הסדרה "{seriesTitle}" באגרון</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {all.length} ספרים · {copies} עותקים · {available} זמינים
+          </p>
+        </div>
+        <button onClick={onClose} className="text-xs text-muted-foreground hover:text-foreground">סגירה ✕</button>
+      </div>
+
+      {isSeries && (
+        <p className="text-xs text-purple-800 bg-purple-50 rounded-lg px-3 py-2 mb-3">
+          ברשימה כתוב רק שם הסדרה, ולכן אי אפשר לדעת איזה ספר מתוכה. כדי לבדוק ספר מסוים, הוסיפו לשם את מספר הכרך
+          (למשל "{seriesTitle} 3") או את שם הספר (למשל "{seriesTitle} - שם הספר").
+        </p>
+      )}
+
+      {found.length > 0 && (
+        <div className="grid gap-2 sm:grid-cols-2 mb-3">
+          {found.map(m => <Card key={m.title_no} m={m} highlight />)}
+        </div>
+      )}
+      {found.length > 0 && <p className="text-xs font-semibold text-muted-foreground mb-1.5">שאר הספרים בסדרה</p>}
+      <div className="grid gap-2 sm:grid-cols-2">
+        {series.map(m => <Card key={m.title_no} m={m} />)}
+      </div>
+    </div>
+  );
+}
+
 export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onStatusChange }) {
   const [books, setBooks] = useState([]);
   const booksRef = useRef(books);
@@ -45,6 +126,8 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
   const [user, setUser] = useState(null);
   const [checkingAgron, setCheckingAgron] = useState(false);
   const [agronProgress, setAgronProgress] = useState(null);
+  // שורת הספר שפילוח הסדרה שלה פתוח מתחתיה
+  const [seriesOpen, setSeriesOpen] = useState(null);
   const [addBookOpen, setAddBookOpen] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -270,8 +353,10 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
               filteredBooks.map((book) => {
                 const idx = books.indexOf(book);
                 const sent = isSent(book);
+                const series = book.agron_series || [];
                 return (
-                  <tr key={idx} className={cn('border-b border-border/50 hover:bg-muted/30 transition-colors', sent && 'bg-muted/20', !sent && book.selected_for_quote && 'bg-indigo-50/50', !sent && book.marked_for_order && !book.selected_for_quote && 'bg-green-50/30')}>
+                  <Fragment key={idx}>
+                  <tr className={cn('border-b border-border/50 hover:bg-muted/30 transition-colors', sent && 'bg-muted/20', !sent && book.selected_for_quote && 'bg-indigo-50/50', !sent && book.marked_for_order && !book.selected_for_quote && 'bg-green-50/30')}>
                     {/* אין יותר מצב "קפוא" אחרי העברה לבקשה — הרשימה היא מאגר
                         שאפשר לחזור אליו ולשלוח ממנו מחזור נוסף. */}
                     <td className="p-2 text-center">
@@ -337,11 +422,27 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
                       />
                     </td>
                     <td className="p-2 text-center" title={agronTooltip(book)}>
-                      {book.existing_in_agron
-                        ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{book.existing_copies || 0}</span>
-                        : book.agron_matches?.length > 0
-                          ? <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded cursor-help">?</span>
-                          : <span className="text-xs text-muted-foreground">-</span>}
+                      <div className="flex flex-col items-center gap-0.5">
+                        {book.agron_status === 'series'
+                          ? (
+                            <button onClick={() => setSeriesOpen(o => (o === idx ? null : idx))}
+                              className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full whitespace-nowrap hover:bg-purple-200">
+                              סדרה · {series.length} ספרים {seriesOpen === idx ? '▴' : '▾'}
+                            </button>
+                          )
+                          : book.existing_in_agron
+                            ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{book.existing_copies || 0}</span>
+                            : book.agron_matches?.length > 0
+                              ? <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded cursor-help">?</span>
+                              : <span className="text-xs text-muted-foreground">-</span>}
+                        {/* ספר מסוים שנמצא — שאר הספרים בסדרה, לפילוח */}
+                        {book.agron_status !== 'series' && series.length > 0 && (
+                          <button onClick={() => setSeriesOpen(o => (o === idx ? null : idx))}
+                            className="text-[10px] text-purple-700 bg-purple-50 rounded-full px-1.5 hover:bg-purple-100 whitespace-nowrap">
+                            עוד {series.length} בסדרה {seriesOpen === idx ? '▴' : '▾'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="p-2 hidden md:table-cell">
                       {book.system_recommendation ? (
@@ -352,6 +453,15 @@ export default function BookListTab({ bookList, sentBookKeys, onBooksChange, onS
                       ) : <span className="text-xs text-muted-foreground">-</span>}
                     </td>
                   </tr>
+                  {/* פילוח הסדרה באגרון: כל ספר עם העותקים שלו, ולא רק סך הסדרה */}
+                  {seriesOpen === idx && series.length > 0 && (
+                    <tr className="border-b border-border/50">
+                      <td colSpan={11} className="p-3 bg-muted/20">
+                        <SeriesBreakdown book={book} series={series} onClose={() => setSeriesOpen(null)} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })
             )}
