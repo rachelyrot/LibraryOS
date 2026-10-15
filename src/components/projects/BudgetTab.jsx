@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Wallet, ShoppingCart, TrendingDown, TrendingUp, CheckCircle, Download, Plus, Trash2 } from 'lucide-react';
+import { Wallet, ShoppingCart, TrendingDown, TrendingUp, CheckCircle, Download, Plus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
@@ -11,6 +10,7 @@ import StatusBadge from '@/components/StatusBadge';
 import { formatCurrency, formatDate } from '@/lib/projectUtils';
 import { canViewProjectBudget, canManageProjectBudget } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
+import ProjectBudgetSourceRow from './ProjectBudgetSourceRow';
 
 function sumSources(sources, field) {
   return (sources || []).reduce((sum, s) => sum + (Number(s[field]) || 0), 0);
@@ -45,14 +45,9 @@ export default function BudgetTab({ project, user, purchaseOrders, credits, onLo
     }
   };
 
-  // Typing updates local state immediately (responsive), but only persists to
-  // the server on blur — matches the grid's onBlur-commit convention elsewhere
-  // in this module rather than firing a request per keystroke.
-  const updateSourceLocal = (i, field, value) => {
-    setSources((prev) => prev.map((s, idx) => (idx === i ? { ...s, [field]: value } : s)));
-  };
-  const commitSources = () => persistSources(sources);
-  const addSource = () => persistSources([...sources, { name: '', planned: 0, approved: 0, used: 0 }]);
+  // ProjectBudgetSourceRow שומר מספרים רק ביציאה מהשדה, ובודק שהסכום לא עובר את
+  // הפנוי בקטגוריות שנבחרו — כאן רק שומרים את מה שהיא מחזירה.
+  const addSource = () => persistSources([...sources, { source_id: null, name: '', allocation_ids: [], planned: 0, approved: 0, used: 0 }]);
   const removeSource = (i) => persistSources(sources.filter((_, idx) => idx !== i));
 
   if (!canViewBudget) {
@@ -113,28 +108,13 @@ export default function BudgetTab({ project, user, purchaseOrders, credits, onLo
           {sources.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">אין מקורות תקציב</p>}
           {sources.map((s, i) => (
             canManageBudget ? (
-              <div key={i} className="space-y-1.5 border-b border-border pb-3 last:border-0 last:pb-0">
-                <div className="flex gap-2 items-center">
-                  <Input value={s.name || ''} onChange={(e) => updateSourceLocal(i, 'name', e.target.value)} onBlur={commitSources} placeholder="שם מקור" className="h-8 text-sm flex-1" />
-                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeSource(i)}>
-                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                  </Button>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="text-[10px] text-muted-foreground">מתוכנן</label>
-                    <Input type="number" value={s.planned ?? 0} onChange={(e) => updateSourceLocal(i, 'planned', Number(e.target.value) || 0)} onBlur={commitSources} className="h-8 text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-muted-foreground">מאושר</label>
-                    <Input type="number" value={s.approved ?? 0} onChange={(e) => updateSourceLocal(i, 'approved', Number(e.target.value) || 0)} onBlur={commitSources} className="h-8 text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-muted-foreground">נוצל</label>
-                    <Input type="number" value={s.used ?? 0} onChange={(e) => updateSourceLocal(i, 'used', Number(e.target.value) || 0)} onBlur={commitSources} className="h-8 text-sm" />
-                  </div>
-                </div>
-              </div>
+              <ProjectBudgetSourceRow
+                key={i}
+                value={s}
+                takenIds={sources.map(x => x.source_id).filter(Boolean)}
+                onChange={(next) => persistSources(sources.map((x, idx) => (idx === i ? next : x)))}
+                onRemove={() => removeSource(i)}
+              />
             ) : (
               <div key={i} className="flex justify-between text-sm border-b border-border/50 pb-1 last:border-0">
                 <span>{s.name || '(ללא שם)'}</span>

@@ -175,36 +175,156 @@ function findKey(row, field) {
 }
 
 /**
- * Parse an uploaded supplier quote file (array of row objects from ExtractDataFromUploadedFile)
- * into quote entries. Returns array of { title, author, publisher, isbn, price_with_nylon,
- * price_without_nylon, availability, delivery_time, notes }.
+ * A price cell as a number. Handles "₪ 45.90", "45,90" (decimal comma) and
+ * "1,234.50" (thousands comma) — stripping every non-digit used to turn
+ * "45,90" into 4590.
+ */
+export function parsePrice(v) {
+  if (v == null || v === '') return undefined;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+  let s = String(v).replace(/[^\d.,-]/g, '');
+  if (s.includes(',') && s.includes('.')) s = s.replace(/,/g, '');          // 1,234.50
+  else if (/,\d{1,2}$/.test(s)) s = s.replace(',', '.');                     // 45,90
+  else s = s.replace(/,/g, '');                                              // 1,234
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+// A supplier's own file usually has one price column, not our two nylon
+// columns: "מחיר", "מחיר נטו", "מחיר ליחידה", "מחיר דני ספרים כולל כריכה
+// וניילון...". Totals and list prices are skipped — they are not the per-copy
+// price we compare.
+//
+// The *name* alone can't pick the column: a real supplier file has both
+// "מחיר למינציה" (a lamination surcharge, mostly empty) and the real price, and
+// the surcharge came first. So among the price-like columns the one with the
+// most numeric values wins, and a net / per-unit name only breaks ties.
+const GENERIC_PRICE = /מחיר|price|עלות/i;
+const NOT_UNIT_PRICE = /סה"?כ|סה״כ|total|מחירון|לפני הנחה|כמות/i;
+const PREFERRED_PRICE = /נטו|אחרי הנחה|לאחר הנחה|ליחידה|net/i;
+function findGenericPriceKey(keys, rows = []) {
+  const candidates = keys.filter(k => GENERIC_PRICE.test(cleanKey(k)) && !NOT_UNIT_PRICE.test(cleanKey(k)));
+  const filled = (k) => rows.filter(r => parsePrice(r[k]) != null).length;
+  const score = (k) => filled(k) * 2 + (PREFERRED_PRICE.test(cleanKey(k)) ? 1 : 0);
+  return candidates.sort((a, b) => score(b) - score(a))[0] || null;
+}
+
+const TITLE_COL = 'שם ספר';
+const PRICE_COL = 'מחיר';
+const QTY_COL = 'כמות';
+const hasLetters = (v) => /[\p{L}]{2,}/u.test(String(v ?? '')) && parsePrice(v) == null;
+
+/**
+ * A sheet with no header row at all (a real supplier file: catalog no., title,
+ * nylon, lamination, qty, "₪ 136.95", "₪ 2,738.96"). Columns are recognized
+ * from their contents:
+ *   - title: the column with the most longish text cells
+ *   - price × qty = total: the triple of numeric columns where that holds for
+ *     most rows gives price and qty — which tells the per-copy price apart from
+ *     the line total and the catalog number without guessing
+ *   - failing that, the numeric column with ₪ / decimals and the lowest median
+ * Returns rows keyed by the names parseSupplierQuote already knows, or [].
+ */
+function inferHeaderless(grid) {
+  const data = grid.filter(r => r.filter(c => String(c).trim() !== '').length >= 3);
+  if (data.length === 0) return [];
+  const width = Math.max(...data.map(r => r.length));
+  const col = (i) => data.map(r => r[i]);
+  const share = (i, pred) => col(i).filter(pred).length / data.length;
+
+  let titleIdx = -1;
+  let best = 0;
+  for (let i = 0; i < width; i++) {
+    const texts = col(i).filter(hasLetters);
+    const score = (texts.length / data.length) * (texts.reduce((s, t) => s + String(t).trim().length, 0) / (texts.length || 1));
+    if (score > best) { best = score; titleIdx = i; }
+  }
+  if (titleIdx < 0) return [];
+
+  const numeric = [];
+  for (let i = 0; i < width; i++) if (i !== titleIdx && share(i, v => parsePrice(v) != null) >= 0.6) numeric.push(i);
+  let priceIdx = -1;
+  let qtyIdx = -1;
+  let bestFit = 0.6;
+  for (const p of numeric) for (const q of numeric) for (const t of numeric) {
+    if (p === q || p === t || q === t) continue;
+    const fit = data.filter(r => {
+      const P = parsePrice(r[p]); const Q = parsePrice(r[q]); const T = parsePrice(r[t]);
+      return P != null && Q != null && T != null && Q > 0 && Q < 1000 && Math.abs(P * Q - T) <= Math.max(1, T * 0.01);
+    }).length / data.length;
+    if (fit > bestFit) { bestFit = fit; priceIdx = p; qtyIdx = q; }
+  }
+  if (priceIdx < 0) {
+    const median = (i) => { const v = col(i).map(parsePrice).filter(n => n != null).sort((a, b) => a - b); return v[Math.floor(v.length / 2)] ?? Infinity; };
+    const moneyLike = numeric.filter(i => share(i, v => /₪|\.\d{1,2}\b/.test(String(v))) >= 0.5);
+    priceIdx = moneyLike.sort((a, b) => median(a) - median(b))[0] ?? -1;
+  }
+  if (priceIdx < 0) return [];
+  return data.map(r => ({ [TITLE_COL]: r[titleIdx], [PRICE_COL]: r[priceIdx], [QTY_COL]: qtyIdx >= 0 ? r[qtyIdx] : '' }));
+}
+
+/**
+ * Rows of a supplier's sheet as objects keyed by its header row — which is not
+ * always the first row: suppliers put a logo, title or date above it, and some
+ * files have no header row at all (then see inferHeaderless). The header is the
+ * first of the top rows that has a title-like column and a price-like column.
+ */
+export function sheetToQuoteRows(ws) {
+  const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  const isHeader = (row) => {
+    const cells = row.map(c => cleanKey(c));
+    const hasTitle = cells.some(c => QUOTE_COLUMN_MAP.title.some(t => c === cleanKey(t) || (c.length >= 4 && c.includes(cleanKey(t)))));
+    const hasPrice = cells.some(c => GENERIC_PRICE.test(c));
+    return hasTitle && hasPrice;
+  };
+  const headerIdx = grid.slice(0, 20).findIndex(isHeader);
+  if (headerIdx < 0) return inferHeaderless(grid);
+  const header = (grid[headerIdx] || []).map((h, i) => String(h || '').trim() || `__col${i}`);
+  return grid.slice(headerIdx + 1)
+    .filter(r => r.some(c => String(c).trim() !== ''))
+    .map(r => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ''])));
+}
+
+/**
+ * Parse supplier quote rows (see sheetToQuoteRows) into quote entries:
+ * { title, author, publisher, isbn, price_with_nylon, price_without_nylon,
+ *   availability, delivery_time, notes }.
+ * With no nylon columns, a single price column fills both prices — the
+ * supplier quoted one price for the book. Nylon columns found by name but left
+ * empty don't count, so the generic price is used instead.
  */
 export function parseSupplierQuote(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return [];
-  const firstRow = rows[0];
-  console.log('[parseSupplierQuote] First row keys:', Object.keys(firstRow));
-  console.log('[parseSupplierQuote] First row values:', firstRow);
+  const keys = Object.keys(rows[0]);
+  const hasValues = (k) => k && rows.some(r => parsePrice(r[k]) != null);
+  const withKey = hasValues(findKey(rows[0], 'price_with_nylon')) ? findKey(rows[0], 'price_with_nylon') : null;
+  const withoutKey = hasValues(findKey(rows[0], 'price_without_nylon')) ? findKey(rows[0], 'price_without_nylon') : null;
+  const genericKey = !withKey && !withoutKey ? findGenericPriceKey(keys, rows) : null;
   return rows.map(row => {
     const g = (f) => { const k = findKey(row, f); return k ? row[k] : undefined; };
-    const pNum = (v) => {
-      if (v == null) return undefined;
-      const n = parseFloat(String(v).replace(/[^0-9.-]/g, ''));
-      return isNaN(n) ? undefined : n;
-    };
-    const result = {
+    const generic = genericKey ? parsePrice(row[genericKey]) : undefined;
+    return {
       title: String(g('title') || '').trim(),
       author: String(g('author') || '').trim(),
       publisher: String(g('publisher') || '').trim(),
       isbn: String(g('isbn') || '').trim(),
-      price_with_nylon: pNum(g('price_with_nylon')),
-      price_without_nylon: pNum(g('price_without_nylon')),
+      price_with_nylon: withKey ? parsePrice(row[withKey]) : generic,
+      price_without_nylon: withoutKey ? parsePrice(row[withoutKey]) : generic,
       availability: String(g('availability') || '').trim(),
       delivery_time: String(g('delivery_time') || '').trim(),
       notes: String(g('notes') || '').trim(),
     };
-    console.log('[parseSupplierQuote] Parsed row:', { title: result.title, price_with_nylon: result.price_with_nylon, price_without_nylon: result.price_without_nylon });
-    return result;
   }).filter(r => r.title || r.isbn);
+}
+
+/** Which price columns a supplier file was read with — for the upload message. */
+export function describePriceColumns(rows) {
+  if (!rows?.length) return null;
+  const hasValues = (k) => k && rows.some(r => parsePrice(r[k]) != null);
+  const w = findKey(rows[0], 'price_with_nylon');
+  const wo = findKey(rows[0], 'price_without_nylon');
+  if (hasValues(w) || hasValues(wo)) return [w, wo].filter(hasValues).join(' / ');
+  return findGenericPriceKey(Object.keys(rows[0]), rows);
 }
 
 /**
@@ -232,9 +352,35 @@ export function bookKey(book) {
  * 2. title + author + publisher match
  * 3. no confident match → matched: false
  */
+// Volume numbers in a title, so "\u05D4\u05D7\u05D5\u05E7\u05E8\u05D9\u05DD 8" never takes the price of "\u05D4\u05D7\u05D5\u05E7\u05E8\u05D9\u05DD
+// 10": digits, a standalone volume letter (\u05D1..\u05D9), and \u05D7"\u05D0 / \u05D7\u05DC\u05E7 \u05D1 / \u05DB\u05E8\u05DA \u05D2.
+// 1 / \u05D0 counts as "no volume" \u2014 lists write "\u05D0\u05D9\u05E9 \u05E1\u05D5\u05D3 1" for "\u05D0\u05D9\u05E9 \u05E1\u05D5\u05D3 \u05D0" or
+// just "\u05D0\u05D9\u05E9 \u05E1\u05D5\u05D3". Years (\u2265 1000) are not volumes.
+const VOLUME_LETTER = { '\u05D0': 1, '\u05D1': 2, '\u05D2': 3, '\u05D3': 4, '\u05D4': 5, '\u05D5': 6, '\u05D6': 7, '\u05D7': 8, '\u05D8': 9, '\u05D9': 10 };
+function titleVolumes(s) {
+  const text = String(s || '')
+    .replace(/(^|\s)\u05D7["\u05F4']([\u05D0-\u05D9])(?=\s|$)/g, (_, pre, l) => `${pre}${VOLUME_LETTER[l]} `)
+    .replace(/(\u05D7\u05DC\u05E7|\u05DB\u05E8\u05DA)\s+([\u05D0-\u05D9])['\u05F3]?(?=\s|$)/g, (_, __, l) => ` ${VOLUME_LETTER[l]} `);
+  const out = new Set();
+  for (const t of text.replace(/["'.,!?()\-:]/g, ' ').split(/\s+/)) {
+    let n = null;
+    if (/^\d+$/.test(t)) n = Number(t);
+    else if (t.length === 1 && VOLUME_LETTER[t]) n = VOLUME_LETTER[t];
+    if (n != null && n !== 1 && n < 1000) out.add(n);
+  }
+  return out;
+}
+const sameVolumes = (a, b) => {
+  const x = titleVolumes(a); const y = titleVolumes(b);
+  return x.size === y.size && [...x].every(n => y.has(n));
+};
+
 export function matchQuoteToBook(quote, books) {
   const norm = (s) => (s || '').trim().toLowerCase().replace(/[\u0591-\u05C7]/g, '').replace(/["'.,!?()\-:]/g, '').replace(/\s+/g, ' ').trim();
-  const tokens = (s) => norm(s).split(' ').filter(t => t.length >= 2);
+  // \u05DE\u05E1\u05E4\u05E8\u05D9\u05DD \u05E0\u05E9\u05DE\u05E8\u05D9\u05DD \u05D2\u05DD \u05DB\u05E9\u05D4\u05DD \u05E1\u05E4\u05E8\u05D4 \u05D0\u05D7\u05EA \u2014 \u05D0\u05D7\u05E8\u05EA "\u05D4\u05D7\u05D5\u05E7\u05E8\u05D9\u05DD 8" \u05D5"\u05D4\u05D7\u05D5\u05E7\u05E8\u05D9\u05DD 10" \u05E0\u05E8\u05D0\u05D9\u05DD \u05D6\u05D4\u05D9\u05DD
+  const tokens = (s) => norm(s).split(' ').filter(t => t.length >= 2 || /^\d$/.test(t));
+  // \u05DB\u05DC \u05D4\u05D4\u05EA\u05D0\u05DE\u05D5\u05EA \u05DC\u05E4\u05D9 \u05E9\u05DD (\u05DC\u05D0 ISBN) \u05D3\u05D5\u05E8\u05E9\u05D5\u05EA \u05E9\u05DE\u05E1\u05E4\u05E8\u05D9 \u05D4\u05DB\u05E8\u05DB\u05D9\u05DD \u05D9\u05D4\u05D9\u05D5 \u05D6\u05D4\u05D9\u05DD
+  books = books.map(b => (sameVolumes(quote.title, b.title) ? b : { ...b, title: '' }));
 
   // ISBN match
   if (quote.isbn) {
@@ -286,13 +432,15 @@ export function matchQuoteToBook(quote, books) {
     }
   }
 
-  // 4. First-token match — first word of quote title matches first word of book title
+  // 4. Leading-words match — the first two words agree. One shared first word
+  //    used to be enough, which put a supplier's price on the wrong book
+  //    whenever two titles opened alike ("סיפורי...", "ילדי...").
   for (let i = 0; i < books.length; i++) {
     const b = books[i];
     if (!qt || !b.title) continue;
-    const qFirst = qTokens[0];
-    const bFirst = tokens(b.title)[0];
-    if (qFirst && bFirst && qFirst === bFirst && qFirst.length >= 3) {
+    const bTokens = tokens(b.title);
+    if (qTokens.length < 2 || bTokens.length < 2) continue;
+    if (qTokens[0] === bTokens[0] && qTokens[1] === bTokens[1]) {
       const authorOk = !quote.author || !b.author || norm(quote.author) === norm(b.author);
       if (authorOk) return { matched: true, bookIndex: i };
     }

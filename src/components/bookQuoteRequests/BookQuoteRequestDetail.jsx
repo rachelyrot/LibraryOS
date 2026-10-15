@@ -11,7 +11,7 @@ import { Upload, Send, ShoppingCart, ExternalLink, Mail, FileSpreadsheet, Loader
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
 import StatusBadge from '@/components/StatusBadge';
-import { parseSupplierQuote, matchQuoteToBook, computeCheapestSuppliers, getEffectivePrice, nylonLabel, normalizeNylon, bindingLabel, isBindingChecked } from '@/lib/bookQuoteExcel';
+import { parseSupplierQuote, sheetToQuoteRows, describePriceColumns, matchQuoteToBook, computeCheapestSuppliers, getEffectivePrice, nylonLabel, normalizeNylon, bindingLabel, isBindingChecked } from '@/lib/bookQuoteExcel';
 import * as XLSX from 'xlsx';
 import { canReceiveQuotePrices, canComparePrices, canSelectSuppliers, canCreateOrdersFromQuoteRequest, isAdmin } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
@@ -194,22 +194,27 @@ export function ReceiveQuotesTab({ req, suppliers, updateBooks, updateReq, onRef
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-      console.log('[QuoteUpload] Raw rows from Excel:', rows);
-      console.log('[QuoteUpload] Raw row keys (headers):', rows.length > 0 ? Object.keys(rows[0]) : 'no rows');
+      // שורת הכותרות לא תמיד ראשונה (לוגו / כותרת מעליה) — sheetToQuoteRows מוצאת אותה
+      const rows = sheetToQuoteRows(ws);
       const quotes = parseSupplierQuote(rows);
-      console.log('[QuoteUpload] Parsed quotes:', quotes);
-      console.log('[QuoteUpload] Books in request:', (req.books || []).map(b => ({ title: b.title, isbn: b.isbn })));
-      if (quotes.length === 0) { toast.error('לא זוהו ספרים בקובץ'); setParsing(false); return; }
+      if (quotes.length === 0) { toast.error('לא זוהו ספרים בקובץ', { description: 'צריך עמודה של שם ספר או ISBN' }); setParsing(false); return; }
+      const priceColumn = describePriceColumns(rows);
+      if (!priceColumn) {
+        toast.error('לא נמצאה בקובץ עמודת מחיר', { description: `עמודות בקובץ: ${Object.keys(rows[0]).join(', ')}` });
+        setParsing(false);
+        e.target.value = '';
+        return;
+      }
 
       const supplier = suppliers.find(s => s.id === selectedSupplierId);
       const books = [...(req.books || [])];
       let matchedCount = 0;
       let unmatchedCount = 0;
+      let pricedCount = 0;
       for (const q of quotes) {
         const { matched, bookIndex } = matchQuoteToBook(q, books);
-        console.log('[QuoteUpload] Matching:', { quoteTitle: q.title, quoteIsbn: q.isbn, matched, bookIndex: bookIndex != null ? books[bookIndex]?.title : null });
         if (matched && bookIndex != null) {
+          if (q.price_with_nylon != null || q.price_without_nylon != null) pricedCount++;
           const existingQuotes = books[bookIndex].supplier_quotes || [];
           const filtered = existingQuotes.filter(sq => sq.supplier_id !== selectedSupplierId);
           books[bookIndex] = {
@@ -240,13 +245,11 @@ export function ReceiveQuotesTab({ req, suppliers, updateBooks, updateReq, onRef
       else if (suppliersWithQuotes.size > 0) newStatus = 'partial_quotes';
       await updateBooks(withCheapest, { status: newStatus });
       if (matchedCount === 0) {
-        toast.error('לא נמצאו התאמות לספרים בקובץ. ודא ששמות הספרים או ה-ISBN תואמים לרשימת הבקשה.', { description: `${unmatchedCount} שורות התקבלו ללא התאמה` });
+        toast.error('לא נמצאו התאמות לספרים בקובץ. ודאי ששמות הספרים או ה-ISBN תואמים לרשימת הבקשה.', { description: `${unmatchedCount} שורות התקבלו ללא התאמה` });
       } else {
-        const priceSummary = quotes.filter(q => {
-          const m = matchQuoteToBook(q, (req.books || []));
-          return m.matched;
-        }).map(q => `${q.title}: עם=${q.price_with_nylon ?? '-'}, בלי=${q.price_without_nylon ?? '-'}`).join(' | ');
-        toast.success(`הוצעות מחיר נקלטו: ${matchedCount} התאמות`, { description: priceSummary || 'ללא מחירים' });
+        toast.success(`נקלטה הצעה מ${supplier?.name || 'הספק'}: ${matchedCount} ספרים, ${pricedCount} עם מחיר`, {
+          description: `עמודת מחיר: ${priceColumn}${unmatchedCount ? ` · ${unmatchedCount} שורות בקובץ לא הותאמו לספר` : ''}`,
+        });
       }
       onRefresh?.();
     } catch (e) {
@@ -304,9 +307,14 @@ export function ReceiveQuotesTab({ req, suppliers, updateBooks, updateReq, onRef
 
 // ── Comparison Tab ────────────────────────────────────────────
 export function ComparisonTab({ req, canSelect, updateBooks, updateReq }) {
-  const books = req.books || [];
+  // הזול ביותר מחושב כאן מהמחירים בכל רינדור, ולא נקרא מ-cheapest_supplier_id
+  // שנשמר בקליטת ההצעה — זה התיישן כשמשנים דרישת ניילון או קולטים קובץ שוב,
+  // ואז "בחר זול ביותר" בחר לפי ערך ישן או לא בחר כלום.
+  const books = computeCheapestSuppliers(req.books || []);
   const supplierIds = req.supplier_ids || [];
   const [reasonModal, setReasonModal] = useState(null); // { bookIndex, supplierId }
+  const quotedCount = books.filter(b => (b.supplier_quotes || []).some(q => q.matched)).length;
+  const pricedCount = books.filter(b => b.cheapest_supplier_id).length;
 
   const handleSelectSupplier = (bookIndex, supplierId) => {
     const book = books[bookIndex];
@@ -330,30 +338,47 @@ export function ComparisonTab({ req, canSelect, updateBooks, updateReq }) {
     setReasonModal(null);
   };
 
+  // בוחר את הזול ביותר לכל ספר שיש לו מחיר. ספר בלי מחיר שומר את הבחירה שהייתה
+  // לו (במקום שהיא תימחק), והסטטוס מתקדם רק כשבאמת נבחר משהו.
   const autoSelectAll = () => {
-    const updated = books.map(b => ({
+    if (pricedCount === 0) {
+      toast.error('אין עדיין מחירים להשוואה', { description: 'קלטי קודם את קבצי הספקים בשלב "קליטת הצעות"' });
+      return;
+    }
+    const updated = books.map(b => (b.cheapest_supplier_id ? {
       ...b,
-      selected_supplier_id: b.cheapest_supplier_id || '',
+      selected_supplier_id: b.cheapest_supplier_id,
       selected_supplier_name: getSupplierName(req, b.cheapest_supplier_id),
       selection_reason: '',
-      selected_for_order: !!b.cheapest_supplier_id,
-    }));
+      selected_for_order: true,
+    } : b));
     updateBooks(updated, { status: 'suppliers_selected' });
-    toast.success('נבחר הספק הזול ביותר לכל ספר');
+    const missing = books.length - pricedCount;
+    toast.success(`נבחר הספק הזול ביותר ל-${pricedCount} ספרים`, missing ? { description: `ל-${missing} ספרים אין עדיין מחיר מאף ספק` } : undefined);
   };
 
   if (books.length === 0) return <p className="text-center py-12 text-muted-foreground">אין ספרים בבקשה</p>;
 
   return (
     <div className="space-y-3 p-2" dir="rtl">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">ברירת מחדל: הספק הזול ביותר לפי העדפת ניילון. ניתן לבחור ספק אחר ידנית (חובה לציין סיבה).</p>
         {canSelect && (
-          <Button onClick={autoSelectAll} size="sm" variant="outline" className="gap-1.5">
-            <Check className="w-3.5 h-3.5" /> בחר זול ביותר להכל
+          <Button onClick={autoSelectAll} size="sm" variant="outline" className="gap-1.5 shrink-0" disabled={pricedCount === 0}>
+            <Check className="w-3.5 h-3.5" /> בחר זול ביותר להכל ({pricedCount})
           </Button>
         )}
       </div>
+      {pricedCount < books.length && (
+        <div className="flex items-start gap-2 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2">
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>
+            {quotedCount === 0
+              ? 'עדיין לא נקלטה הצעת מחיר אף ספק לבקשה הזו. בשלב "קליטת הצעות" בוחרים ספק ומעלים את קובץ ה-Excel שלו.'
+              : `ל-${books.length - pricedCount} מתוך ${books.length} ספרים אין עדיין מחיר מאף ספק — הם לא ייבחרו אוטומטית.`}
+          </span>
+        </div>
+      )}
 
       <div className="overflow-x-auto border border-border rounded-xl">
         <table className="w-full text-xs" dir="rtl">
@@ -418,10 +443,10 @@ export function ComparisonTab({ req, canSelect, updateBooks, updateReq }) {
                     return (
                       <Fragment key={sid}>
                         <td className={cn('p-2 text-center font-mono', isCheapest && nylon === 'with_nylon' && 'bg-green-100 text-green-700 font-bold', isCheapest && nylon === 'any' && 'bg-green-50 text-green-600')}>
-                          {q?.price_with_nylon != null ? `₪${q.price_with_nylon}` : '-'}
+                          {q?.price_with_nylon != null ? `₪${q.price_with_nylon}` : q ? <span className="text-[10px] text-muted-foreground font-sans">אין מחיר</span> : '-'}
                         </td>
                         <td className={cn('p-2 text-center font-mono', isCheapest && nylon === 'without_nylon' && 'bg-green-100 text-green-700 font-bold', isCheapest && nylon === 'any' && 'bg-green-50 text-green-600')}>
-                          {q?.price_without_nylon != null ? `₪${q.price_without_nylon}` : '-'}
+                          {q?.price_without_nylon != null ? `₪${q.price_without_nylon}` : q ? <span className="text-[10px] text-muted-foreground font-sans">אין מחיר</span> : '-'}
                         </td>
                       </Fragment>
                     );

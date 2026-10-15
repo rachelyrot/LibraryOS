@@ -14,7 +14,7 @@ import WorkPlanGrid from '@/components/workPlan/WorkPlanGrid';
 import { canViewWorkPlan, canEditWorkPlan, canViewBudgets } from '@/lib/permissions';
 import {
   PLAN_STATUSES, VIEWS, MONTHS, RULE_STATUS_LABELS, amountColumns, itemsForView, groupByCategory,
-  groupAmount, planTotals, parameterRows, monthlySchedule, YEAR_PCT_LABELS, planAllocationSplits, plannedByAllocation, sourceLedger, formatMoney, formatPct, num,
+  groupAmount, planTotals, parameterRows, monthlySchedule, YEAR_PCT_LABELS, planAllocationSplits, plannedByAllocation, projectCommitments, mergeCommitments, sourceLedger, formatMoney, formatPct, num,
   linkedSourceIds, budgetActuals,
 } from '@/lib/workPlan';
 import { exportWorkPlanExcel, printWorkPlan } from '@/lib/workPlanExport';
@@ -86,7 +86,10 @@ export default function WorkPlan() {
       setBudgetSources([]);
       setAllocations([]);
     }
+    // פרויקטים שיורדים מאותם מקורות — לאותו חשבון כמו במקורות תקציב
+    base44.entities.Project.list('-created_date', 500).then(setProjects).catch(() => setProjects([]));
   };
+  const [projects, setProjects] = useState([]);
 
   useEffect(() => {
     base44.auth.me().then(u => {
@@ -134,8 +137,11 @@ export default function WorkPlan() {
   const plannedAll = useMemo(() => {
     const byPlan = new Map(otherItems);
     if (activePlanId) byPlan.set(activePlanId, items);
-    return plannedByAllocation(plans, byPlan, budgetSources, allocations);
-  }, [otherItems, items, activePlanId, plans, budgetSources, allocations]);
+    return mergeCommitments(
+      plannedByAllocation(plans, byPlan, budgetSources, allocations),
+      projectCommitments(projects, budgetSources, allocations),
+    );
+  }, [otherItems, items, activePlanId, plans, budgetSources, allocations, projects]);
 
   // שורה שנערכה או נוספה בתצוגה של גורם מממן אחד נשארת גלויה גם כשהסכום שלה שם
   // עדיין/כבר 0, כדי שלא תיעלם מתחת ליד באמצע עריכה. מתאפס במעבר תצוגה.

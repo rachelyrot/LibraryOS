@@ -16,7 +16,7 @@ import BudgetTable from '@/components/budget/BudgetTable';
 import BudgetSourceDialog from '@/components/budget/BudgetSourceDialog';
 import SupplierCreditDialog from '@/components/budget/SupplierCreditDialog';
 import { recalcBudgetSource } from '@/lib/budgetUpdater';
-import { plannedByAllocation, allocationCommitted } from '@/lib/workPlan';
+import { plannedByAllocation, allocationCommitted, projectCommitments, mergeCommitments } from '@/lib/workPlan';
 
 /** פס סגול של תכנית העבודה: מאושר (יורד מהיתרה) ומוגש (מתוכנן בלבד). */
 function PlanStrip({ approved, submitted, leftInPlan, allocated, plans, className }) {
@@ -24,9 +24,9 @@ function PlanStrip({ approved, submitted, leftInPlan, allocated, plans, classNam
   const over = approved + submitted - allocated;
   return (
     <div className={cn('flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs bg-violet-50 text-violet-700 rounded-lg px-2.5 py-1.5', className)}>
-      {approved > 0.005 && <span>תכנית שאושרה — נוצל ₪{approved.toLocaleString('he-IL')}</span>}
-      {submitted > 0.005 && <span>תכנית שהוגשה למשרד — משוריין ₪{submitted.toLocaleString('he-IL')}</span>}
-      <span>נשאר בתכניות להזמנות <b>₪{leftInPlan.toLocaleString('he-IL')}</b></span>
+      {approved > 0.005 && <span>תכניות ופרויקטים שאושרו — נוצל ₪{approved.toLocaleString('he-IL')}</span>}
+      {submitted > 0.005 && <span>תכניות שהוגשו ופרויקטים בתכנון — משוריין ₪{submitted.toLocaleString('he-IL')}</span>}
+      <span>נשאר בהם להזמנות <b>₪{leftInPlan.toLocaleString('he-IL')}</b></span>
       {over > 0.005 && <span className="font-semibold text-red-600">תוכנן ₪{over.toLocaleString('he-IL')} מעבר לתקציב</span>}
       {plans?.length > 0 && <span className="text-violet-400 w-full">{plans.join(', ')}</span>}
     </div>
@@ -122,15 +122,24 @@ export default function Credits() {
 
   // כמה מתוכנן מכל קטגוריה בתכניות העבודה שמקושרות למקורות — לתצוגה בלבד.
   // נטען אחרי שאר הנתונים ולא חוסם אותם; כשל כאן פשוט לא מציג את המספר.
+  // גם פרויקטים שבחרו מקור וקטגוריות יורדים מהקטגוריות (projectCommitments).
+  // כל חלק נטען לבד, כדי שכשל באחד (למשל תכניות, שהן לאדמין בלבד) לא יסתיר
+  // את השני.
   const loadPlanned = async (srcs, cats) => {
-    try {
-      const plans = (await base44.entities.WorkPlan.list('-created_date', 50))
-        .filter(p => p.municipal_budget_source_id || p.ministry_budget_source_id);
-      const lists = await Promise.all(plans.map(p => base44.entities.WorkPlanItem.filter({ work_plan_id: p.id }, 'sort_order', 2000)));
-      setPlanned(plannedByAllocation(plans, new Map(plans.map((p, k) => [p.id, lists[k]])), srcs, cats));
-    } catch {
-      setPlanned(new Map());
-    }
+    const fromPlans = async () => {
+      try {
+        const plans = (await base44.entities.WorkPlan.list('-created_date', 50))
+          .filter(p => p.municipal_budget_source_id || p.ministry_budget_source_id);
+        const lists = await Promise.all(plans.map(p => base44.entities.WorkPlanItem.filter({ work_plan_id: p.id }, 'sort_order', 2000)));
+        return plannedByAllocation(plans, new Map(plans.map((p, k) => [p.id, lists[k]])), srcs, cats);
+      } catch { return new Map(); }
+    };
+    const fromProjects = async () => {
+      try { return projectCommitments(await base44.entities.Project.list('-created_date', 500), srcs, cats); }
+      catch { return new Map(); }
+    };
+    const [a, b] = await Promise.all([fromPlans(), fromProjects()]);
+    setPlanned(mergeCommitments(a, b));
   };
 
   useEffect(() => {

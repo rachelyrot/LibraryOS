@@ -7,6 +7,7 @@ import { Paperclip, Plus, Trash2, Upload, Loader2, ListTodo, Wallet } from 'luci
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
 import { formatCurrency } from '@/lib/projectUtils';
+import ProjectBudgetSourceRow from '../ProjectBudgetSourceRow';
 
 // Cell renderers for jsonb array columns. These are NOT edit-cells in react-data-grid's
 // sense (no renderEditCell/onClose dance) — they're plain renderCell buttons that open
@@ -190,10 +191,7 @@ function BudgetSourcesCellButton({ row, column, onRowChange }) {
     });
   };
 
-  const update = (i, field, value) => {
-    commit(sources.map((s, idx) => (idx === i ? { ...s, [field]: value } : s)));
-  };
-  const add = () => commit([...sources, { name: '', planned: 0, approved: 0, used: 0 }]);
+  const add = () => commit([...sources, { source_id: null, name: '', allocation_ids: [], planned: 0, approved: 0, used: 0 }]);
   const removeAt = (i) => commit(sources.filter((_, idx) => idx !== i));
 
   return (
@@ -210,28 +208,14 @@ function BudgetSourcesCellButton({ row, column, onRowChange }) {
           <p className="text-sm font-medium">מקורות תקציב</p>
           {sources.length === 0 && <p className="text-xs text-muted-foreground">אין מקורות תקציב</p>}
           {sources.map((s, i) => (
-            <div key={i} className="space-y-1.5 border-b border-border pb-2 last:border-0 last:pb-0">
-              <div className="flex gap-2 items-center">
-                <Input value={s.name || ''} onChange={(e) => update(i, 'name', e.target.value)} placeholder="שם מקור" className="h-8 text-sm flex-1" />
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeAt(i)}>
-                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                </Button>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                <div>
-                  <label className="text-[10px] text-muted-foreground">מתוכנן</label>
-                  <Input type="number" value={s.planned ?? 0} onChange={(e) => update(i, 'planned', Number(e.target.value) || 0)} className="h-7 text-xs" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-muted-foreground">מאושר</label>
-                  <Input type="number" value={s.approved ?? 0} onChange={(e) => update(i, 'approved', Number(e.target.value) || 0)} className="h-7 text-xs" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-muted-foreground">נוצל</label>
-                  <Input type="number" value={s.used ?? 0} onChange={(e) => update(i, 'used', Number(e.target.value) || 0)} className="h-7 text-xs" />
-                </div>
-              </div>
-            </div>
+            <ProjectBudgetSourceRow
+              key={i}
+              compact
+              value={s}
+              takenIds={sources.map(x => x.source_id).filter(Boolean)}
+              onChange={(next) => commit(sources.map((x, idx) => (idx === i ? next : x)))}
+              onRemove={() => removeAt(i)}
+            />
           ))}
           <Button type="button" variant="outline" size="sm" onClick={add} className="gap-1 w-full">
             <Plus className="w-3.5 h-3.5" /> הוסף מקור

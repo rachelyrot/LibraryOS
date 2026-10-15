@@ -449,6 +449,59 @@ export function plannedByAllocation(plans, itemsByPlan, sources, allocations) {
 }
 
 /**
+ * כמה יורד מכל קטגוריה בגלל פרויקטים — באותה צורה כמו plannedByAllocation, כדי
+ * לאחד את שניהם (mergeCommitments) ולהציג במקורות תקציב חשבון אחד.
+ * לכל מקור בפרויקט (projects.budget_source_names) נבחרו מקור וקטגוריות; הסכום
+ * ממלא את הקטגוריות לפי הסדר. במקור בלי קטגוריות (0015) — הקטגוריה היחידה.
+ *   פרויקט בטיוטה או מבוטל — לא יורד כלום
+ *   תקציב הפרויקט לא אושר — הסכום המתוכנן, כ"משוריין" (submitted)
+ *   תקציב הפרויקט אושר (budget_is_approved) — הסכום המאושר, כ"נוצל" (approved)
+ */
+export function projectCommitments(projects, sources, allocations) {
+  const out = new Map();
+  for (const p of projects) {
+    if (p.status === 'draft' || p.status === 'cancelled') continue;
+    const bucket = p.budget_is_approved ? 'approved' : 'submitted';
+    const title = `פרויקט: ${p.name}`;
+    for (const s of p.budget_source_names || []) {
+      let left = num(p.budget_is_approved ? s.approved : s.planned);
+      if (!s.source_id || left <= 0) continue;
+      const allocs = allocations.filter(a => a.budget_source_id === s.source_id);
+      const source = sources.find(x => x.id === s.source_id);
+      const ids = source?.uses_categories === false ? allocs.slice(0, 1).map(a => a.id) : (s.allocation_ids || []);
+      for (const id of ids) {
+        const a = allocs.find(x => x.id === id);
+        if (!a || left <= 0.005) continue;
+        // הקטגוריה האחרונה לוקחת את כל השארית, גם מעבר לסכום שלה — כדי שהחריגה
+        // תיראה במקורות תקציב ולא תיעלם
+        const take = id === ids[ids.length - 1] ? left : Math.min(left, num(a.allocated_amount));
+        const e = out.get(id) || { approved: 0, submitted: 0, plans: [] };
+        e[bucket] += take;
+        if (!e.plans.includes(title)) e.plans.push(title);
+        out.set(id, e);
+        left -= take;
+      }
+    }
+  }
+  return out;
+}
+
+/** מאחד כמה מפות של plannedByAllocation / projectCommitments למפה אחת. */
+export function mergeCommitments(...maps) {
+  const out = new Map();
+  for (const m of maps) {
+    for (const [id, e] of m) {
+      const t = out.get(id) || { approved: 0, submitted: 0, plans: [] };
+      t.approved += e.approved;
+      t.submitted += e.submitted;
+      for (const p of e.plans) if (!t.plans.includes(p)) t.plans.push(p);
+      out.set(id, t);
+    }
+  }
+  return out;
+}
+
+/**
  * כמה יורד מקטגוריה לפי סטטוס התכניות: טיוטה — כלום; הוגשה למשרד — משוריין;
  * אושרה — נוצל. הזמנות של הפעילויות יורדות מתוך התכנית ולא פעם נוספת, ולכן
  * הסך שיורד הוא הגבוה מבין סכום התכניות לבין מה שההזמנות שריינו/ניצלו; הזמנה
