@@ -112,12 +112,19 @@ export function generateSupplierExcel(books, supplierName = '') {
     '', Number(b.requested_quantity) || 1, '', '', '',
   ]);
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  // סה"כ לשורה = כמות × מחיר, ומתעדכן לבד כשהספק ממלא מחיר
-  // (תא נוסחה בלי ערך שמור לא נכתב לקובץ — הערך הריק תואם לתוצאה כשאין מחיר)
-  rows.forEach((_, i) => { ws[`I${i + 2}`] = { t: 's', v: '', f: `IF(H${i + 2}="","",F${i + 2}*H${i + 2})` }; });
-  ws['!cols'] = [{ wch: 44 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 7 }, { wch: 16 }, { wch: 22 }, { wch: 16 }];
+  // כמו בקובץ הכללי של דני ספרים (xlsx/קובץ-כללי-להצעה-דני-ספרים.xlsx):
+  // סה"כ לשורה = כמות × מחיר, 0 כשאין עדיין מחיר. נוסחה צריכה ערך שמור, אחרת
+  // היא לא נכתבת לקובץ.
+  rows.forEach((_, i) => {
+    const r = i + 2;
+    ws[`I${r}`] = { t: 'n', v: 0, f: `F${r}*H${r}` };
+  });
+  // רוחבי העמודות כמו בקובץ של דני ספרים
+  ws['!cols'] = [{ wch: 50 }, { wch: 15.67 }, { wch: 3.33 }, { wch: 10 }, { wch: 10.17 }, { wch: 3.67 }, { wch: 17 }, { wch: 33.5 }, { wch: 17.83 }];
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'הצעת מחיר');
+  // שם הגיליון הוא שם הספק, כמו אצלם (עד 31 תווים, בלי תווים שאקסל אוסר)
+  const sheetName = (s.replace(/[\\/?*[\]:]/g, '').slice(0, 31)) || 'הצעת מחיר';
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
   wb.Workbook = { Views: [{ RTL: true }] };
   const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

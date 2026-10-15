@@ -1,4 +1,43 @@
 import { base44, supabase } from '@/api/base44Client';
+import { plannedByAllocation, projectCommitments, mergeCommitments, allocationCommitted } from '@/lib/workPlan';
+
+/**
+ * כמה תכניות עבודה ופרויקטים לוקחים מכל קטגוריית תקציב — אותו חשבון שמסך
+ * מקורות תקציב מציג, במקום אחד, כדי שכל מסך שמציג יתרה (מקורות תקציב, הזמנה)
+ * יראה את אותו מספר. כל חלק נטען לבד: כשל בתכניות (שהן לאדמין בלבד) לא מסתיר
+ * את הפרויקטים.
+ * @returns {Promise<Map<string, {approved, submitted, plans}>>} לפי budget_allocations.id
+ */
+export async function loadBudgetCommitments(sources, allocations) {
+  const fromPlans = async () => {
+    try {
+      const plans = (await base44.entities.WorkPlan.list('-created_date', 50))
+        .filter(p => p.municipal_budget_source_id || p.ministry_budget_source_id);
+      const lists = await Promise.all(plans.map(p => base44.entities.WorkPlanItem.filter({ work_plan_id: p.id }, 'sort_order', 2000)));
+      return plannedByAllocation(plans, new Map(plans.map((p, k) => [p.id, lists[k]])), sources, allocations);
+    } catch { return new Map(); }
+  };
+  const fromProjects = async () => {
+    try { return projectCommitments(await base44.entities.Project.list('-created_date', 500), sources, allocations); }
+    catch { return new Map(); }
+  };
+  const [a, b] = await Promise.all([fromPlans(), fromProjects()]);
+  return mergeCommitments(a, b);
+}
+
+/**
+ * מצב קטגוריה לבחירה בהזמנה, באותו חשבון כמו במקורות תקציב:
+ *   balance    — היתרה שמוצגת במקורות תקציב (אחרי תכניות ופרויקטים)
+ *   leftInPlan — מה שתכניות/פרויקטים שמרו בה ועוד לא הוזמן
+ *   orderable  — כמה הזמנה יכולה לקחת: balance + leftInPlan, כי הזמנה של
+ *                פעילות מתוכננת יורדת מתוך התכנית ולא פעם נוספת
+ */
+export function allocationStanding(cat, commitments) {
+  const e = commitments?.get(cat.id);
+  const c = allocationCommitted(cat, e?.approved || 0, e?.submitted || 0);
+  const balance = Math.max(0, (Number(cat.allocated_amount) || 0) - c.committed);
+  return { balance, leftInPlan: c.leftInPlan, orderable: allocationRemaining(cat), plans: e?.plans || [] };
+}
 
 /**
  * Update budget category (BudgetAllocation) or supplier credit when an order's
@@ -78,8 +117,10 @@ export function allocationRemaining(cat) {
  * — pickers use this to say so instead of offering it as "יתרה ₪0".
  */
 export function budgetSourceOptions(budgetSources, allCategories, fundingType) {
-  return budgetSources
-    .filter(bs => bs.funding_source_type === fundingType)
+  // מקורות שנשמרו בלי סוג מימון (או עם סוג אחר) לא הופיעו בכלל והרשימה נשארה
+  // ריקה. כמו בתכנית העבודה: אין מקור מהסוג — מציגים את כולם.
+  const matching = budgetSources.filter(bs => bs.funding_source_type === fundingType);
+  return (matching.length ? matching : budgetSources)
     .map(bs => {
       const cats = allCategories.filter(c => c.budget_source_id === bs.id);
       return { ...bs, hasCategories: cats.length > 0, remaining: cats.reduce((s, c) => s + allocationRemaining(c), 0) };

@@ -14,17 +14,11 @@ import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import useCategories from '@/hooks/useCategories';
 import { cn } from '@/lib/utils';
-import { handleBudgetOnStatusChange, validateBudgetSelection, allocationRemaining, allocationLabel, budgetSourceOptions, singleAllocationFor } from '@/lib/budgetUpdater';
+import { handleBudgetOnStatusChange, validateBudgetSelection, allocationLabel, singleAllocationFor, loadBudgetCommitments, allocationStanding } from '@/lib/budgetUpdater';
 import { canApproveOrders, canRejectOrders, canCancelOrders, canReceiveGoods, canDeleteMasterData, canAccessPage } from '@/lib/permissions';
 
-const FUNDING_TYPES = [
-  { value: 'municipal', label: 'תקציב עירוני' },
-  { value: 'culture_ministry', label: 'תקציב משרד התרבות' },
-  { value: 'mifal_hapais', label: 'מפעל הפיס' },
-  { value: 'kol_kore', label: 'קול קורא / תמיכה' },
-  { value: 'supplier_credit', label: 'זיכוי ספק' },
-  { value: 'other', label: 'אחר' },
-];
+// מקור המימון נבחר מרשימה אחת: מקורות התקציב, ועוד זיכוי ספק (ראו fundingChoices)
+const CREDIT_CHOICE = '__supplier_credit';
 
 const EMPTY_ORDER = {
   title: '', supplier_id: '', supplier_name: '', supplier_contact: '', order_type: 'books',
@@ -93,9 +87,60 @@ export default function OrderDetail() {
       })
     : [];
 
+  // מה שתכניות ופרויקטים לוקחים מכל קטגוריה — כדי שהיתרה בבחירת קטגוריה תהיה
+  // אותה יתרה שמוצגת במקורות תקציב
+  const [commitments, setCommitments] = useState(() => new Map());
+  useEffect(() => {
+    if (!budgetSources.length || !allCategories.length) return;
+    loadBudgetCommitments(budgetSources, allCategories).then(setCommitments).catch(() => {});
+  }, [budgetSources, allCategories]);
+
+  // הזמנה ששויכה לפרויקט מקבלת ממנו את מקור התקציב והקטגוריה (מה שנבחר בתקציב
+  // הפרויקט), אם עוד לא נבחר לה מימון — כך ההזמנה יורדת מאותו מקום כמו הפרויקט
+  const handleProjectSelect = (projectId) => {
+    const proj = projects.find(p => p.id === projectId);
+    setOrder(o => {
+      const next = { ...o, project_id: projectId, project_name: proj?.name || '' };
+      if (!proj || o.budget_category_id || o.credit_id) return next;
+      const ps = (proj.budget_source_names || []).find(s => s.source_id && budgetSources.some(b => b.id === s.source_id));
+      if (!ps) return next;
+      const src = budgetSources.find(b => b.id === ps.source_id);
+      const cat = singleAllocationFor(src, allCategories)
+        || allCategories.find(c => c.id === (ps.allocation_ids || [])[0]);
+      return {
+        ...next,
+        funding_source_type: src.funding_source_type || o.funding_source_type,
+        budget_source_id: src.id, budget_source_name: src.name,
+        budget_category_id: cat?.id || '', budget_category_name: cat ? allocationLabel(cat) : '',
+      };
+    });
+    if (proj && !order.budget_category_id && !order.credit_id && (proj.budget_source_names || []).some(s => s.source_id)) {
+      toast.success('מקור התקציב נלקח מהפרויקט', { description: 'אפשר לשנות אותו בחלק "מקור מימון"' });
+    }
+  };
+
+  // בחירה אחת של מקור מימון, כמו בתכנית העבודה: כל המקורות שבמקורות תקציב (בלי
+  // סינון לפי "סוג מימון" — מקור שנשמר בלי סוג או עם סוג אחר לא הופיע בכלל),
+  // ועוד "זיכוי ספק". סוג המימון של ההזמנה נלקח מהמקור.
+  const fundingChoices = budgetSources.map(src => {
+    const cats = allCategories.filter(c => c.budget_source_id === src.id);
+    const balance = cats.reduce((s, c) => s + allocationStanding(c, commitments).balance, 0);
+    return { ...src, hasCategories: cats.length > 0, balance };
+  });
+  const handleFundingPick = (value) => {
+    if (value === CREDIT_CHOICE) { handleFundingChange('supplier_credit'); return; }
+    const src = budgetSources.find(s => s.id === value);
+    if (!src) return;
+    setOrder(o => ({
+      ...o,
+      funding_source_type: src.funding_source_type && src.funding_source_type !== 'supplier_credit' ? src.funding_source_type : 'other',
+      credit_id: '',
+    }));
+    handleBudgetSourceSelect(value);
+  };
+
   const sourceCategories = allCategories.filter(c => c.budget_source_id === order.budget_source_id);
   const singleAllocation = singleAllocationFor(budgetSources.find(s => s.id === order.budget_source_id), allCategories);
-  const sourceOptions = budgetSourceOptions(budgetSources, allCategories, order.funding_source_type);
   // Approval reserves against a category or a credit — without one it can only fail.
   const fundingIncomplete = !order.budget_category_id && !order.credit_id;
   const canManageBudgets = canAccessPage(user, '/credits');
@@ -121,7 +166,9 @@ export default function OrderDetail() {
     setFundingError(null);
     if (catId) {
       setValidating(true);
-      const { valid, error } = await validateBudgetSelection({ ...order, budget_category_id: catId, credit_id: '' });
+      // הסוג נקבע יחד עם בחירת המקור, ובקריאה הזו order עוד לא מעודכן — הבדיקה
+      // היא על הקטגוריה, לא על הסוג
+      const { valid, error } = await validateBudgetSelection({ ...order, funding_source_type: order.funding_source_type || 'other', budget_category_id: catId, credit_id: '' });
       setValidating(false);
       if (!valid) setFundingError(error);
     }
@@ -310,8 +357,9 @@ export default function OrderDetail() {
   };
 
   const OrderFormProps = { order, setOrder, save, saving, suppliers, mains, getSubcategories, updateItem, addItem, removeItem,
-    sourceOptions, sourceCategories, filteredCredits, fundingError, validating, canManageBudgets,
-    handleFundingChange, handleBudgetSourceSelect, handleBudgetCategorySelect, handleCreditSelect, projects };
+    sourceCategories, singleAllocation, filteredCredits, fundingError, validating, canManageBudgets,
+    handleBudgetCategorySelect, handleCreditSelect, projects,
+    commitments, handleProjectSelect, fundingChoices, handleFundingPick };
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
   if (isNew) {
@@ -511,8 +559,9 @@ export default function OrderDetail() {
 }
 
 function OrderForm({ order, setOrder, save, saving, suppliers, isReceived, mains, getSubcategories, updateItem, addItem, removeItem,
-  sourceOptions, sourceCategories, filteredCredits, fundingError, validating, canManageBudgets,
-  handleFundingChange, handleBudgetSourceSelect, handleBudgetCategorySelect, handleCreditSelect, projects }) {
+  sourceCategories, singleAllocation, filteredCredits, fundingError, validating, canManageBudgets,
+  handleBudgetCategorySelect, handleCreditSelect, projects,
+  commitments, handleProjectSelect, fundingChoices, handleFundingPick }) {
   const disabled = isReceived;
 
   return (
@@ -548,10 +597,7 @@ function OrderForm({ order, setOrder, save, saving, suppliers, isReceived, mains
         </div>
         <div className="space-y-1.5">
           <Label>פרויקט קשור</Label>
-          <Select value={order.project_id || 'none'} onValueChange={v => {
-            const proj = projects.find(p => p.id === v);
-            setOrder(o => ({ ...o, project_id: v === 'none' ? '' : v, project_name: proj?.name || '' }));
-          }} disabled={disabled}>
+          <Select value={order.project_id || 'none'} onValueChange={v => handleProjectSelect(v === 'none' ? '' : v)} disabled={disabled}>
             <SelectTrigger><SelectValue placeholder="ללא פרויקט" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="none">ללא פרויקט</SelectItem>
@@ -566,10 +612,24 @@ function OrderForm({ order, setOrder, save, saving, suppliers, isReceived, mains
         <h3 className="font-bold text-sm flex items-center gap-2"><Wallet className="w-4 h-4 text-primary" /> מקור מימון</h3>
 
         <div className="space-y-1.5">
-          <Label>סוג מקור מימון</Label>
-          <Select value={order.funding_source_type || ''} onValueChange={handleFundingChange} disabled={disabled}>
-            <SelectTrigger><SelectValue placeholder="בחר סוג מימון" /></SelectTrigger>
-            <SelectContent>{FUNDING_TYPES.map(ft => <SelectItem key={ft.value} value={ft.value}>{ft.label}</SelectItem>)}</SelectContent>
+          <Label>מקור מימון</Label>
+          <Select
+            value={order.funding_source_type === 'supplier_credit' ? CREDIT_CHOICE : (order.budget_source_id || '')}
+            onValueChange={handleFundingPick}
+            disabled={disabled}
+          >
+            <SelectTrigger><SelectValue placeholder="בחרי מקור תקציב" /></SelectTrigger>
+            <SelectContent>
+              {fundingChoices.length === 0 && (
+                <div className="px-2 py-3 text-sm text-muted-foreground text-center">אין מקורות תקציב פעילים</div>
+              )}
+              {fundingChoices.map(bs => (
+                <SelectItem key={bs.id} value={bs.id} disabled={!bs.hasCategories}>
+                  {bs.name}{bs.year ? ` · ${bs.year}` : ''} · {bs.hasCategories ? `יתרה ₪${bs.balance.toLocaleString('he-IL')}` : 'טרם חולק לקטגוריות'}
+                </SelectItem>
+              ))}
+              <SelectItem value={CREDIT_CHOICE}>זיכוי ספק</SelectItem>
+            </SelectContent>
           </Select>
         </div>
 
@@ -590,30 +650,18 @@ function OrderForm({ order, setOrder, save, saving, suppliers, isReceived, mains
               </SelectContent>
             </Select>
           </div>
-        ) : order.funding_source_type ? (
+        ) : order.budget_source_id ? (
           <>
-            <div className="space-y-1.5">
-              <Label>מקור תקציב</Label>
-              <Select value={order.budget_source_id || ''} onValueChange={handleBudgetSourceSelect} disabled={disabled}>
-                <SelectTrigger><SelectValue placeholder="בחר מקור תקציב" /></SelectTrigger>
-                <SelectContent>
-                  {sourceOptions.length === 0 ? (
-                    <div className="px-2 py-3 text-sm text-muted-foreground text-center">אין מקורות תקציב מסוג זה</div>
-                  ) : (
-                    sourceOptions.map(bs => (
-                      <SelectItem key={bs.id} value={bs.id} disabled={!bs.hasCategories}>
-                        {bs.name} · {bs.hasCategories ? `יתרה ₪${bs.remaining.toLocaleString('he-IL')}` : 'טרם חולק לקטגוריות'}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-            {singleAllocation && (
-              <p className="text-xs text-muted-foreground">
-                מקור ללא חלוקה לקטגוריות{singleAllocation.category_number ? ` · מספר קטגוריה ${singleAllocation.category_number}` : ''} · יתרה ₪{allocationRemaining(singleAllocation).toLocaleString('he-IL')}
-              </p>
-            )}
+            {singleAllocation && (() => {
+              const st = allocationStanding(singleAllocation, commitments);
+              return (
+                <p className="text-xs text-muted-foreground">
+                  מקור ללא חלוקה לקטגוריות{singleAllocation.category_number ? ` · מספר קטגוריה ${singleAllocation.category_number}` : ''}
+                  {' · '}יתרה ₪{st.balance.toLocaleString('he-IL')}
+                  {st.leftInPlan > 0.005 && ` · ועוד ₪${st.leftInPlan.toLocaleString('he-IL')} ששמורים לתכניות ופרויקטים`}
+                </p>
+              );
+            })()}
             {order.budget_source_id && !singleAllocation && sourceCategories.length > 0 && (
               <div className="space-y-1.5">
                 <Label>קטגוריית תקציב</Label>
@@ -621,9 +669,17 @@ function OrderForm({ order, setOrder, save, saving, suppliers, isReceived, mains
                   <SelectTrigger><SelectValue placeholder={validating ? 'בודק...' : 'בחר קטגוריית תקציב'} /></SelectTrigger>
                   <SelectContent>
                     {sourceCategories.map(cat => {
-                      const rem = allocationRemaining(cat);
-                      const insufficient = order.total_amount > rem;
-                      return <SelectItem key={cat.id} value={cat.id} disabled={insufficient}>{allocationLabel(cat)} · יתרה ₪{rem.toLocaleString('he-IL')}{insufficient ? ' (אין מספיק)' : ''}</SelectItem>;
+                      // אותה יתרה כמו במקורות תקציב; הזמנה יכולה לקחת גם ממה
+                      // ששמור לתכנית או לפרויקט, כי היא יורדת מתוכם
+                      const st = allocationStanding(cat, commitments);
+                      const insufficient = order.total_amount > st.orderable;
+                      return (
+                        <SelectItem key={cat.id} value={cat.id} disabled={insufficient}>
+                          {allocationLabel(cat)} · יתרה ₪{st.balance.toLocaleString('he-IL')}
+                          {st.leftInPlan > 0.005 ? ` · שמור לתכניות/פרויקטים ₪${st.leftInPlan.toLocaleString('he-IL')}` : ''}
+                          {insufficient ? ' (אין מספיק)' : ''}
+                        </SelectItem>
+                      );
                     })}
                   </SelectContent>
                 </Select>

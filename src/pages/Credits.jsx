@@ -15,8 +15,8 @@ import BudgetBarChart from '@/components/budget/BudgetBarChart';
 import BudgetTable from '@/components/budget/BudgetTable';
 import BudgetSourceDialog from '@/components/budget/BudgetSourceDialog';
 import SupplierCreditDialog from '@/components/budget/SupplierCreditDialog';
-import { recalcBudgetSource } from '@/lib/budgetUpdater';
-import { plannedByAllocation, allocationCommitted, projectCommitments, mergeCommitments } from '@/lib/workPlan';
+import { recalcBudgetSource, loadBudgetCommitments } from '@/lib/budgetUpdater';
+import { allocationCommitted } from '@/lib/workPlan';
 
 /** פס סגול של תכנית העבודה: מאושר (יורד מהיתרה) ומוגש (מתוכנן בלבד). */
 function PlanStrip({ approved, submitted, leftInPlan, allocated, plans, className }) {
@@ -125,22 +125,7 @@ export default function Credits() {
   // גם פרויקטים שבחרו מקור וקטגוריות יורדים מהקטגוריות (projectCommitments).
   // כל חלק נטען לבד, כדי שכשל באחד (למשל תכניות, שהן לאדמין בלבד) לא יסתיר
   // את השני.
-  const loadPlanned = async (srcs, cats) => {
-    const fromPlans = async () => {
-      try {
-        const plans = (await base44.entities.WorkPlan.list('-created_date', 50))
-          .filter(p => p.municipal_budget_source_id || p.ministry_budget_source_id);
-        const lists = await Promise.all(plans.map(p => base44.entities.WorkPlanItem.filter({ work_plan_id: p.id }, 'sort_order', 2000)));
-        return plannedByAllocation(plans, new Map(plans.map((p, k) => [p.id, lists[k]])), srcs, cats);
-      } catch { return new Map(); }
-    };
-    const fromProjects = async () => {
-      try { return projectCommitments(await base44.entities.Project.list('-created_date', 500), srcs, cats); }
-      catch { return new Map(); }
-    };
-    const [a, b] = await Promise.all([fromPlans(), fromProjects()]);
-    setPlanned(mergeCommitments(a, b));
-  };
+  const loadPlanned = async (srcs, cats) => setPlanned(await loadBudgetCommitments(srcs, cats));
 
   useEffect(() => {
     const init = async () => {
