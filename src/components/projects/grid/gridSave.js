@@ -30,12 +30,13 @@ export function makeGridSaveHandler(entityApi, setRows, { pairedFields = {}, com
     const row = rows[idx];
     const key = column.key;
 
-    setRows((prev) => prev.map((r) => (r.id === row.id ? row : r)));
-
     const payload = { [key]: row[key] };
     const pairedKey = pairedFields[key];
     if (pairedKey) payload[pairedKey] = row[pairedKey];
     if (computeExtra[key]) Object.assign(payload, computeExtra[key](row));
+
+    // the local row gets the derived fields too, so what's shown matches what's saved
+    setRows((prev) => prev.map((r) => (r.id === row.id ? { ...row, ...payload } : r)));
 
     entityApi.update(row.id, payload).catch(() => {
       toast.error('שגיאה בשמירה');

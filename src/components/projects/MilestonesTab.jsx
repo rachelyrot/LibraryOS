@@ -1,6 +1,7 @@
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
-import { MILESTONE_STATUS_LABELS, MILESTONE_STATUS_COLORS } from '@/lib/projectUtils';
+import { CheckCircle2 } from 'lucide-react';
+import { MILESTONE_STATUS_LABELS, MILESTONE_STATUS_COLORS, taskMilestones, formatDate } from '@/lib/projectUtils';
 import { canCreateTasks } from '@/lib/permissions';
 import ProjectDataGrid from './grid/ProjectDataGrid';
 import { textColumn, dateColumn, enumColumn, numberColumn, booleanColumn } from './grid/columnHelpers';
@@ -9,15 +10,6 @@ import { makeGridSaveHandler } from './grid/gridSave';
 
 export default function MilestonesTab({ project, user, milestones, setMilestones, tasks, onLoad }) {
   const canManage = canCreateTasks(user);
-
-  const handleAdd = async () => {
-    try {
-      await base44.entities.ProjectMilestone.create({
-        project_id: project.id, project_name: project.name, name: 'אבן דרך חדשה', status: 'not_started',
-      });
-      onLoad();
-    } catch (e) { toast.error('שגיאה בהוספה'); }
-  };
 
   const handleDelete = async (ms) => {
     if (!confirm('למחוק אבן דרך זו?')) return;
@@ -62,22 +54,63 @@ export default function MilestonesTab({ project, user, milestones, setMilestones
     textColumn('notes', 'הערות', { editable: canManage, width: 160 }),
   ];
 
+  // אבני הדרך נגזרות מהמשימות: כל משימה שהושלמה היא אבן דרך שהושגה
+  const achieved = taskMilestones(tasks);
+
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="text-lg font-semibold">אבני דרך ({milestones.length})</h3>
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <div>
+          <h3 className="text-lg font-semibold">אבני דרך ({achieved.length})</h3>
+          <p className="text-xs text-muted-foreground">כל משימה שמגיעה ל"הושלם" מופיעה כאן לבד. כדי להוסיף אבן דרך — מסמנים משימה כ"הושלם" בלשונית המשימות.</p>
+        </div>
+        {achieved.length === 0 ? (
+          <p className="text-sm text-muted-foreground border border-dashed border-border rounded-xl px-4 py-6 text-center">עדיין אין משימות שהושלמו</p>
+        ) : (
+          <div className="overflow-x-auto border border-border rounded-xl">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-muted-foreground bg-muted/40 border-b border-border">
+                  <th className="text-right font-medium p-2.5">אבן דרך</th>
+                  <th className="text-right font-medium p-2.5 whitespace-nowrap">תחום</th>
+                  <th className="text-right font-medium p-2.5 whitespace-nowrap">אחראית</th>
+                  <th className="text-right font-medium p-2.5 whitespace-nowrap">תאריך יעד</th>
+                  <th className="text-right font-medium p-2.5 whitespace-nowrap">הושלם ב</th>
+                </tr>
+              </thead>
+              <tbody>
+                {achieved.map(m => (
+                  <tr key={m.id} className="border-b border-border/40">
+                    <td className="p-2.5">
+                      <span className="inline-flex items-center gap-1.5 font-medium"><CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />{m.name}</span>
+                      {m.notes && <p className="text-xs text-muted-foreground mt-0.5 mr-6">{m.notes}</p>}
+                    </td>
+                    <td className="p-2.5 text-xs">{m.related_domain || '-'}</td>
+                    <td className="p-2.5 text-xs">{m.responsible || '-'}</td>
+                    <td className="p-2.5 text-xs whitespace-nowrap">{formatDate(m.target_date) || '-'}</td>
+                    <td className="p-2.5 text-xs whitespace-nowrap text-green-700 font-medium">{formatDate(m.completed_date) || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      <ProjectDataGrid
-        rows={milestones}
-        columns={columns}
-        onRowsChange={handleRowsChange}
-        readOnly={!canManage}
-        onAddRow={handleAdd}
-        addLabel="אבן דרך חדשה"
-        onDeleteRow={handleDelete}
-        emptyMessage="אין אבני דרך"
-      />
+      {/* אבני דרך שהוזנו ידנית לפני שהן נגזרו מהמשימות — נשארות כדי לא לאבד אותן */}
+      {milestones.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-base font-semibold text-muted-foreground">אבני דרך שהוזנו ידנית ({milestones.length})</h3>
+          <ProjectDataGrid
+            rows={milestones}
+            columns={columns}
+            onRowsChange={handleRowsChange}
+            readOnly={!canManage}
+            onDeleteRow={handleDelete}
+            emptyMessage="אין אבני דרך"
+          />
+        </div>
+      )}
     </div>
   );
 }

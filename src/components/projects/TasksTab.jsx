@@ -58,6 +58,12 @@ export default function TasksTab({ project, user, tasks, setTasks, onLoad, proje
 
   const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectTask, setTasks, {
     pairedFields: { depends_on_task_id: 'depends_on_task_name', domain: 'sub_domain', sub_domain: 'domain' },
+    // משימה שהושלמה היא אבן דרך שהושגה (taskMilestones) — התאריך נשמר כאן
+    computeExtra: {
+      status: (row) => ({
+        completed_date: row.status === 'completed' ? (row.completed_date || new Date().toISOString().split('T')[0]) : null,
+      }),
+    },
     onError: onLoad,
   });
 

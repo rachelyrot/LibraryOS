@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowRight, LayoutGrid, ListTodo, Flag, Wallet, FileText, BarChart3, Layers, UserCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
-import { PROJECT_TYPE_LABELS, PROJECT_STATUS_LABELS, PROJECT_STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS, formatDate, daysUntil } from '@/lib/projectUtils';
+import { PROJECT_TYPE_LABELS, PROJECT_STATUS_LABELS, PROJECT_STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS, formatDate, daysUntil, taskMilestones } from '@/lib/projectUtils';
 import { canViewProjectBudget, canViewProjectReports } from '@/lib/permissions';
 import OverviewTab from '@/components/projects/OverviewTab';
 import TasksTab from '@/components/projects/TasksTab';
@@ -118,7 +118,7 @@ export default function ProjectDetail() {
           {canViewReports && <TabsTrigger value="reports" className="flex items-center gap-1.5 py-2.5"><BarChart3 className="w-4 h-4" /><span className="hidden lg:inline">דוחות</span></TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="overview"><OverviewTab project={project} tasks={tasks} milestones={milestones} domains={domains} contacts={contacts} purchaseOrders={purchaseOrders} /></TabsContent>
+        <TabsContent value="overview"><OverviewTab project={project} tasks={tasks} milestones={[...taskMilestones(tasks), ...milestones]} domains={domains} contacts={contacts} purchaseOrders={purchaseOrders} /></TabsContent>
         <TabsContent value="domains"><DomainTab project={project} user={user} domains={domains} setDomains={setDomains} onLoad={load} /></TabsContent>
         <TabsContent value="tasks"><TasksTab project={project} user={user} tasks={tasks} setTasks={setTasks} onLoad={load} projects={[project]} domains={domains} /></TabsContent>
         <TabsContent value="milestones"><MilestonesTab project={project} user={user} milestones={milestones} setMilestones={setMilestones} tasks={tasks} onLoad={load} /></TabsContent>

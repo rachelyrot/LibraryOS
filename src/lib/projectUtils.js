@@ -159,6 +159,32 @@ export function formatCurrency(amount) {
   return '₪' + Number(amount).toLocaleString('he-IL');
 }
 
+/**
+ * אבני הדרך שנגזרות מהמשימות: כל משימה שהגיעה ל"הושלם" היא אבן דרך שהושגה
+ * (מיגרציה 0025). באותה צורה כמו שורת project_milestones, כדי שכל מקום שמציג
+ * אבני דרך יציג גם אותן; from_task מסמן שהיא נגזרת ולא נערכת ישירות.
+ * החדשות קודם.
+ */
+export function taskMilestones(tasks) {
+  return (tasks || [])
+    .filter(t => t.status === 'completed')
+    .map(t => ({
+      id: `task-${t.id}`,
+      from_task: true,
+      task_id: t.id,
+      name: t.task_description,
+      related_domain: [t.domain, t.sub_domain].filter(Boolean).join(' · '),
+      responsible: t.assignee || '',
+      target_date: t.due_date || null,
+      completed_date: t.completed_date || (t.updated_date ? String(t.updated_date).slice(0, 10) : null),
+      status: 'completed',
+      is_completed: true,
+      progress_percentage: 100,
+      notes: t.notes || '',
+    }))
+    .sort((a, b) => String(b.completed_date || '').localeCompare(String(a.completed_date || '')));
+}
+
 export function calcProgress(tasks) {
   if (!tasks || tasks.length === 0) return 0;
   const total = tasks.reduce((sum, t) => sum + (t.progress_percentage || 0), 0);

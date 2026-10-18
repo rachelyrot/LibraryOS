@@ -124,6 +124,8 @@ export default function ImportTasksDialog({ open, onOpenChange, projects, defaul
           project_id: selectedProjectId,
           project_name: projectName,
           progress_percentage: task.status === 'completed' ? 100 : 0,
+          // משימה שהושלמה היא אבן דרך — עם תאריך השלמה
+          ...(task.status === 'completed' ? { completed_date: new Date().toISOString().split('T')[0] } : {}),
         });
         success++;
       } catch (e) { /* continue on error */ }
