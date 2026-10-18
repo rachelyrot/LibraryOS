@@ -83,7 +83,7 @@ export default function QuoteRequestTab({ bookList, sentBookKeys, quoteRequests 
       const fileUrl = excelUrl || await createExcel();
       const selectedSuppliers = suppliers.filter(s => selectedSupplierIds.includes(s.id));
       const books = selectedBooks.map(b => ({
-        title: b.title || '', author: b.author || '', publisher: b.publisher || '', isbn: b.isbn || '',
+        title: b.title || '', author: b.author || '', publisher: b.publisher || '', isbn: b.isbn || '', notes: b.notes || '',
         category: b.category || bookList.category || '', requested_quantity: b.requested_quantity || b.recommended_quantity || 1,
         nylon_required: b.nylon_required || 'any', binding_required: isBindingChecked(b.binding_required),
         existing_in_agron: b.existing_in_agron || false, existing_copies: b.existing_copies || 0,

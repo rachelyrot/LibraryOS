@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ArrowRight, Trash2, Plus, Save, CheckCircle, Package, FileText, BookMarked, Truck, AlertCircle, Wallet, Layers, XCircle, RotateCcw, Ban, FolderKanban, FileSpreadsheet } from 'lucide-react';
 import StatusBadge, { useStatusConfig } from '@/components/StatusBadge';
+import { generateSupplierExcel, downloadBlob } from '@/lib/bookQuoteExcel';
 import GoodsReceiptDialog from '@/components/GoodsReceiptDialog';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
@@ -178,9 +179,33 @@ export default function OrderDetail() {
   // קובץ Excel של ההזמנה — למשל לשליחה לספק שזכה: פרטי ההזמנה בראש הגיליון,
   // ואחריהם טבלת הפריטים עם סה"כ. נבנה מהנתונים שעל המסך, גם לפני שמירה.
   const exportOrderExcel = async () => {
+    const items = order.items || [];
+    // הזמנת ספרים — באותו פורמט כמו קובץ הבקשה לספק (שם כותר, ניילון, כריכה,
+    // מק"ט, מחיר...), עם המחירים של ההזמנה. בהזמנות ישנות ניילון/כריכה/מחבר/הוצאה
+    // נשמרו רק כטקסט בהערות ובתיאור של הפריט — קוראים אותם משם.
+    if (order.order_type === 'books' || order.category === 'ספרים') {
+      const lines = items.map(it => {
+        const notes = String(it.notes || '');
+        const [descAuthor, descPublisher] = String(it.description || '').split(' · ');
+        return {
+          title: it.name || '',
+          author: it.author ?? descAuthor ?? '',
+          publisher: it.publisher ?? descPublisher ?? '',
+          isbn: it.isbn || '',
+          nylon_required: it.nylon_required
+            || (notes.includes('בלי ניילון') ? 'without_nylon' : notes.includes('עם ניילון') ? 'with_nylon' : 'any'),
+          binding_required: it.binding_required ?? notes.includes('עם כריכה'),
+          requested_quantity: Number(it.quantity) || 0,
+          sku: it.sku || '',
+          price: it.unit_price ?? '',
+        };
+      });
+      const name = String(order.supplier_name || order.title || 'הזמנה').replace(/[\\/:*?"<>|]/g, '').slice(0, 60);
+      downloadBlob(generateSupplierExcel(lines, order.supplier_name || ''), `הזמנת_רכש_${name}.xlsx`);
+      return;
+    }
     try {
       const { utils, writeFile } = await import('xlsx');
-      const items = order.items || [];
       const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
       const rows = [
         [order.title || 'הזמנת רכש'],

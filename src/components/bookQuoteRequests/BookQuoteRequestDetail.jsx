@@ -241,6 +241,7 @@ export function ReceiveQuotesTab({ req, suppliers, updateBooks, updateReq, onRef
               availability: q.availability || '',
               delivery_time: q.delivery_time || '',
               notes: q.notes || '',
+              sku: q.sku || '',
               matched: true,
             }],
           };
@@ -561,6 +562,12 @@ export function OrdersTab({ req, canCreateOrders, admin, updateReq, onRefresh })
             total: unitPrice * qty,
             isbn: b.isbn || '',
             notes: `${nylonLabel(b.nylon_required)} · ${bindingLabel(b.binding_required)}`,
+            // השדות של קובץ הספק, כדי שייצוא ההזמנה ל-Excel יהיה באותו פורמט
+            author: b.author || '',
+            publisher: b.publisher || '',
+            nylon_required: b.nylon_required || 'any',
+            binding_required: isBindingChecked(b.binding_required),
+            sku: q?.sku || '',
           };
         });
         const total = items.reduce((s, i) => s + i.total, 0);

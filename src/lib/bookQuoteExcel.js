@@ -88,39 +88,48 @@ export function getEffectivePrice(book, quote) {
 }
 
 /**
- * The Excel file sent to a supplier, in the exact format the book suppliers
- * already use for their quotes (taken from real returned files):
- *   שם כותר | מחבר/ת | הו"ל | ניילון/למינציה | מחיר למינציה | כמות |
- *   מק"ט פנימי <ספק> | מחיר <ספק> כולל כריכה וניילון כולל מע"מ | סה"כ לשורה <ספק>
+ * The Excel file for a book supplier — the quote request we send, and the
+ * purchase order export — in the format the suppliers use for their quotes
+ * (xlsx/קובץ-כללי-להצעה-דני-ספרים.xlsx), with every field the library sends
+ * from its book list (ISBN, nylon, binding, notes) as its own column:
+ *   שם כותר | מחבר/ת | הו"ל | ISBN | ניילון/למינציה | כריכה | מחיר למינציה |
+ *   כמות | הערות | מק"ט פנימי <ספק> | מחיר <ספק> כולל כריכה וניילון כולל מע"מ |
+ *   סה"כ לשורה <ספק>
  * The supplier's name is part of the last three headers, so each supplier gets
- * their own file. The supplier fills the catalog number and the price; the
- * line total is a formula (quantity × price). parseSupplierQuote reads this
- * format back as is (title from "שם כותר", price from the column with prices).
- * Without a supplier name the headers just drop it.
+ * their own file. In a quote request the supplier fills the catalog number and
+ * the price; in an order export they are filled. The line total is a formula
+ * (quantity × price), 0 while there is no price. parseSupplierQuote reads this
+ * file back as is: title from "שם כותר", ISBN, and the price from the price
+ * column that actually has prices.
+ *
+ * lines: [{ title, author, publisher, isbn, nylon_required, binding_required,
+ *           requested_quantity, notes, sku?, price? }]
  * Returns a Blob.
  */
-export function generateSupplierExcel(books, supplierName = '') {
+export function generateSupplierExcel(lines, supplierName = '') {
   const s = String(supplierName || '').trim();
   const withName = (base, rest = '') => [base, s, rest].filter(Boolean).join(' ');
   const header = [
-    'שם כותר', 'מחבר/ת', 'הו"ל', 'ניילון/למינציה', 'מחיר למינציה', 'כמות',
+    'שם כותר', 'מחבר/ת', 'הו"ל', 'ISBN', 'ניילון/למינציה', 'כריכה', 'מחיר למינציה', 'כמות', 'הערות',
     withName('מק"ט פנימי'), withName('מחיר', 'כולל כריכה וניילון כולל מע"מ'), withName('סה"כ לשורה'),
   ];
-  const rows = books.map(b => [
-    b.title || '', b.author || '', b.publisher || '',
-    normalizeNylon(b.nylon_required) === 'with_nylon' ? 'ניילון' : '',
-    '', Number(b.requested_quantity) || 1, '', '', '',
+  const rows = lines.map(b => [
+    b.title || '', b.author || '', b.publisher || '', b.isbn || '',
+    nylonLabel(b.nylon_required), bindingLabel(b.binding_required), '',
+    Number(b.requested_quantity) || 1, b.notes || '',
+    b.sku || '', b.price != null && b.price !== '' ? Number(b.price) : '', '',
   ]);
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  // כמו בקובץ הכללי של דני ספרים (xlsx/קובץ-כללי-להצעה-דני-ספרים.xlsx):
-  // סה"כ לשורה = כמות × מחיר, 0 כשאין עדיין מחיר. נוסחה צריכה ערך שמור, אחרת
-  // היא לא נכתבת לקובץ.
-  rows.forEach((_, i) => {
+  // סה"כ לשורה = כמות (H) × מחיר (K). נוסחה צריכה ערך שמור, אחרת היא לא נכתבת
+  rows.forEach((row, i) => {
     const r = i + 2;
-    ws[`I${r}`] = { t: 'n', v: 0, f: `F${r}*H${r}` };
+    const v = (Number(row[7]) || 0) * (Number(row[10]) || 0);
+    ws[`L${r}`] = { t: 'n', v, f: `H${r}*K${r}` };
   });
-  // רוחבי העמודות כמו בקובץ של דני ספרים
-  ws['!cols'] = [{ wch: 50 }, { wch: 15.67 }, { wch: 3.33 }, { wch: 10 }, { wch: 10.17 }, { wch: 3.67 }, { wch: 17 }, { wch: 33.5 }, { wch: 17.83 }];
+  ws['!cols'] = [
+    { wch: 50 }, { wch: 16 }, { wch: 12 }, { wch: 15 }, { wch: 13 }, { wch: 11 }, { wch: 10 },
+    { wch: 6 }, { wch: 20 }, { wch: 17 }, { wch: 33.5 }, { wch: 17.83 },
+  ];
   const wb = XLSX.utils.book_new();
   // שם הגיליון הוא שם הספק, כמו אצלם (עד 31 תווים, בלי תווים שאקסל אוסר)
   const sheetName = (s.replace(/[\\/?*[\]:]/g, '').slice(0, 31)) || 'הצעת מחיר';
@@ -321,6 +330,12 @@ export function parseSupplierQuote(rows) {
   const withKey = hasValues(findKey(rows[0], 'price_with_nylon')) ? findKey(rows[0], 'price_with_nylon') : null;
   const withoutKey = hasValues(findKey(rows[0], 'price_without_nylon')) ? findKey(rows[0], 'price_without_nylon') : null;
   const genericKey = !withKey && !withoutKey ? findGenericPriceKey(keys, rows) : null;
+  // מק"ט של הספק — עמודת מק"ט שיש בה הכי הרבה ערכים (אצל אור החיים המק"ט
+  // בעמודה הראשונה ו"מק"ט פנימי" ריקה; אצל דני ספרים להפך)
+  const skuKey = keys
+    .filter(k => /מק["״']?ט|sku/i.test(k))
+    .map(k => ({ k, n: rows.filter(r => String(r[k] ?? '').trim() !== '').length }))
+    .sort((a, b) => b.n - a.n)[0]?.k || null;
   return rows.map(row => {
     const g = (f) => { const k = findKey(row, f); return k ? row[k] : undefined; };
     const generic = genericKey ? parsePrice(row[genericKey]) : undefined;
@@ -334,6 +349,7 @@ export function parseSupplierQuote(rows) {
       availability: String(g('availability') || '').trim(),
       delivery_time: String(g('delivery_time') || '').trim(),
       notes: String(g('notes') || '').trim(),
+      sku: skuKey ? String(row[skuKey] ?? '').trim() : '',
     };
   }).filter(r => r.title || r.isbn);
 }
