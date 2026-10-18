@@ -20,6 +20,7 @@ const MAIN_CATEGORIES = [
   { id: 'cultural_activities', name: 'פעילות תרבות' },
   { id: 'maintenance', name: 'תחזוקה' },
   { id: 'general_services', name: 'שירותים כלליים' },
+  { id: 'materials', name: 'חומרים' },
   { id: 'other', name: 'אחר' },
 ];
 
