@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import useCategories from '@/hooks/useCategories';
 import { cn } from '@/lib/utils';
 import { EMPTY_BOOK, FIELD_LABELS, validateBooks, importBookFiles } from '@/lib/bookListImport';
-import { isNylonChecked, nylonFromChecked, isBindingChecked } from '@/lib/bookQuoteExcel';
+import { isNylonChecked, nylonFromChecked, isBindingChecked, normalizeNylon } from '@/lib/bookQuoteExcel';
 
 const EMPTY = { title: '', supplier_id: '', supplier_name: '', received_date: '', category: 'ספרים', notes: '' };
 
@@ -84,10 +84,10 @@ export default function BookListForm({ open, onOpenChange, editing, suppliers, o
   const recalcErrors = () => setErrors(validateBooks(books));
 
   const handleSave = async () => {
-    // Normalize unknown nylon to 'any' before saving
+    // ניילון שלא נבחר נשמר כ"בלי ניילון"
     const valid = books.filter(b => b.title).map(b => ({
       ...b,
-      nylon_required: b.nylon_required === 'unknown' ? 'any' : (b.nylon_required || 'any'),
+      nylon_required: normalizeNylon(b.nylon_required),
       binding_required: isBindingChecked(b.binding_required),
     }));
     if (valid.length === 0) { toast.error('אין ספרים תקינים לשמירה'); return; }

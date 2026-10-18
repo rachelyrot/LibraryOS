@@ -9,37 +9,32 @@ export const NYLON_VALUES = {
 };
 
 export function nylonLabel(val) {
-  return NYLON_VALUES[normalizeNylon(val)] || NYLON_VALUES.any;
+  return NYLON_VALUES[normalizeNylon(val)] || NYLON_VALUES.without_nylon;
 }
 
+// Nylon is yes or no. A book with nothing chosen — and the old "לא משנה / לפי
+// הזול" ('any') and "דורש בדיקה" ('unknown') values — is without nylon: the
+// admin wants an unticked box to mean ללא, not "whichever is cheaper".
 export function normalizeNylon(val) {
-  if (val == null || val === '' || val === 'any') return 'any';
   if (val === 'with_nylon') return 'with_nylon';
-  if (val === 'without_nylon') return 'without_nylon';
-  if (val === 'unknown') return 'unknown';
+  if (val == null || val === '' || val === 'any' || val === 'unknown' || val === 'without_nylon') return 'without_nylon';
   // Numeric: any non-zero number → with_nylon (some Excel files use 1/true for nylon)
-  if (typeof val === 'number') return val !== 0 ? 'with_nylon' : 'any';
+  if (typeof val === 'number') return val !== 0 ? 'with_nylon' : 'without_nylon';
   if (val === true) return 'with_nylon';
   if (val === false) return 'without_nylon';
   const s = String(val).trim().toLowerCase();
-  if (!s || s === '0') return 'any';
+  if (!s || s === '0') return 'without_nylon';
   if (s.includes('בלי') || s.includes('ללא') || s.includes('without') || s === 'לא' || s === 'no') return 'without_nylon';
-  if (s.includes('לא משנה') || s.includes('זול') || s.includes('any') || s.includes('לפי')) return 'any';
+  if (s.includes('לא משנה') || s.includes('זול') || s.includes('any') || s.includes('לפי') || s.includes('בדיקה')) return 'without_nylon';
   // Any other non-empty string (ניילון, ניילן, עם ניילון, כן, yes, 1, etc.) → with_nylon
   return 'with_nylon';
 }
 
 // ── ניילון as a checkbox ──────────────────────────────────────
 //
-// The stored field stays the four-value string it has always been, because the
-// supplier price comparison genuinely needs three states: price_with_nylon,
-// price_without_nylon, and 'any' meaning "whichever is cheaper" (see
-// getEffectivePrice). The *editor* is a checkbox, so these two helpers are the
-// bridge between the two shapes.
-//
-// A legacy 'any'/'unknown' row shows unchecked, and stays 'any' in storage until
-// someone actually toggles the box — flipping it on load would silently rewrite
-// "לפי הזול" rows into "בלי ניילון" and change which supplier wins.
+// The editor is a checkbox: checked = with_nylon, unchecked = without_nylon.
+// Old rows stored as 'any'/'unknown' read as without nylon (normalizeNylon), so
+// the comparison prices them by the without-nylon price.
 
 /** Should the ניילון checkbox be checked for this stored value? */
 export function isNylonChecked(val) {
@@ -120,8 +115,8 @@ export function generateSupplierExcel(lines, supplierName = '') {
     b.title || '', b.author || '', b.publisher || '', b.isbn || '',
     // כריכה: תמיד "כן" — הספרייה כורכת כל ספר, גם כשבספר שמור "בלי" מברירת
     // המחדל הישנה
-    // ניילון: "כן" / "לא" כשנקבע לספר; "לא משנה" — תא ריק
-    { with_nylon: 'כן', without_nylon: 'לא' }[normalizeNylon(b.nylon_required)] || '', 'כן', '',
+    // ניילון: "כן" / "לא" — לא נבחר = לא
+    normalizeNylon(b.nylon_required) === 'with_nylon' ? 'כן' : 'לא', 'כן', '',
     Number(b.requested_quantity) || 1, b.notes || '',
     b.sku || '', b.price != null && b.price !== '' ? Number(b.price) : '', '',
   ]);

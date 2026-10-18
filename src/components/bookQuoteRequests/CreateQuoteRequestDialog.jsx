@@ -7,7 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { FileSpreadsheet, Loader2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
-import { generateSupplierExcel, downloadBlob, nylonLabel, bindingLabel, isBindingChecked } from '@/lib/bookQuoteExcel';
+import { generateSupplierExcel, downloadBlob, nylonLabel, normalizeNylon, bindingLabel, isBindingChecked } from '@/lib/bookQuoteExcel';
 
 export default function CreateQuoteRequestDialog({ open, onOpenChange, bookList, suppliers, onCreated }) {
   const [user, setUser] = useState(null);
@@ -73,7 +73,7 @@ export default function CreateQuoteRequestDialog({ open, onOpenChange, bookList,
         isbn: b.isbn || '',
         category: b.category || bookList.category || '',
         requested_quantity: quantities[i] ?? b.requested_quantity ?? 1,
-        nylon_required: b.nylon_required || 'any',
+        nylon_required: normalizeNylon(b.nylon_required),
         binding_required: isBindingChecked(b.binding_required),
         existing_in_agron: b.existing_in_agron || false,
         existing_copies: b.existing_copies || 0,

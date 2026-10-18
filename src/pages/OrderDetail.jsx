@@ -193,7 +193,7 @@ export default function OrderDetail() {
           publisher: it.publisher ?? descPublisher ?? '',
           isbn: it.isbn || '',
           nylon_required: it.nylon_required
-            || (notes.includes('בלי ניילון') ? 'without_nylon' : notes.includes('עם ניילון') ? 'with_nylon' : 'any'),
+            || (notes.includes('בלי ניילון') ? 'without_nylon' : notes.includes('עם ניילון') ? 'with_nylon' : 'without_nylon'),
           // כריכה תמיד, אלא אם ההזמנה אומרת במפורש "בלי כריכה"
           binding_required: it.binding_required ?? !notes.includes('בלי כריכה'),
           requested_quantity: Number(it.quantity) || 0,

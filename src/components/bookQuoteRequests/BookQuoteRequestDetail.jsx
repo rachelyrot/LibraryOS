@@ -565,7 +565,7 @@ export function OrdersTab({ req, canCreateOrders, admin, updateReq, onRefresh })
             // השדות של קובץ הספק, כדי שייצוא ההזמנה ל-Excel יהיה באותו פורמט
             author: b.author || '',
             publisher: b.publisher || '',
-            nylon_required: b.nylon_required || 'any',
+            nylon_required: normalizeNylon(b.nylon_required),
             binding_required: isBindingChecked(b.binding_required),
             sku: q?.sku || '',
           };

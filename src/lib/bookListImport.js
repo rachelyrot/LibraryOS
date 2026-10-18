@@ -75,7 +75,7 @@ export const EMPTY_BOOK = {
   title: '', author: '', publisher: '', isbn: '', category: '',
   supplier_price: 0, discounted_price: 0, recommended_quantity: 0, requested_quantity: 0,
   // ספרים תמיד צריכים כריכה — מסומן כברירת מחדל, ואפשר לבטל לספר מסוים
-  nylon_required: 'any', binding_required: true, notes: '',
+  nylon_required: 'without_nylon', binding_required: true, notes: '',
   existing_in_agron: false, existing_copies: 0, system_recommendation: 'לבדיקה', recommendation_reason: '',
   marked_for_order: false, status: 'חדש',
 };

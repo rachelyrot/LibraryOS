@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { FileSpreadsheet, Loader2, AlertCircle } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
-import { generateSupplierExcel, supplierExcelName, downloadBlob, nylonLabel, bindingLabel, isBindingChecked, bookKey } from '@/lib/bookQuoteExcel';
+import { generateSupplierExcel, supplierExcelName, downloadBlob, nylonLabel, normalizeNylon, bindingLabel, isBindingChecked, bookKey } from '@/lib/bookQuoteExcel';
 import { canCreateBookQuoteRequest } from '@/lib/permissions';
 import { OverviewTab } from '@/components/bookQuoteRequests/BookQuoteRequestDetail';
 
@@ -85,7 +85,7 @@ export default function QuoteRequestTab({ bookList, sentBookKeys, quoteRequests 
       const books = selectedBooks.map(b => ({
         title: b.title || '', author: b.author || '', publisher: b.publisher || '', isbn: b.isbn || '', notes: b.notes || '',
         category: b.category || bookList.category || '', requested_quantity: b.requested_quantity || b.recommended_quantity || 1,
-        nylon_required: b.nylon_required || 'any', binding_required: isBindingChecked(b.binding_required),
+        nylon_required: normalizeNylon(b.nylon_required), binding_required: isBindingChecked(b.binding_required),
         existing_in_agron: b.existing_in_agron || false, existing_copies: b.existing_copies || 0,
         system_recommendation: b.system_recommendation || '', selected_for_quote: true, book_status: 'נבחר לבקשה',
         supplier_quotes: [], selected_for_order: false,
