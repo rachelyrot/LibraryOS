@@ -135,6 +135,19 @@ async function logout() {
   await supabase.auth.signOut();
 }
 
+// A file name usable as a Storage key: unchanged when it is plain ASCII,
+// otherwise "b64-<base64url of the name without extension>.<ext>".
+const SAFE_KEY = /^[\w!\-.*'() &$@=;:+,]+$/;
+function storageSafeName(name) {
+  if (SAFE_KEY.test(name)) return name;
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot + 1).replace(/[^\w]/g, '') : '';
+  const bytes = new TextEncoder().encode(base);
+  const b64 = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `b64-${b64}${ext ? `.${ext}` : ''}`;
+}
+
 export const base44 = {
   entities,
   auth: {
@@ -146,8 +159,12 @@ export const base44 = {
       // Supabase Storage — single public bucket (see supabase/migrations/0002_storage.sql).
       // Path is uuid-prefixed to avoid collisions without needing a lookup; call sites
       // only pass `{ file }` (no entity context), so there's no per-entity subfolder.
+      // Storage keys must be ASCII (Supabase rejects e.g. Hebrew with "Invalid key"),
+      // so a name with other characters is stored base64url-encoded as
+      // "<uuid>-b64-<encoded name>.<ext>" — the extension stays readable for the
+      // browser, and fileNameFromUrl (projects/grid/popoverCellEditors) decodes it.
       UploadFile: async ({ file }) => {
-        const path = `${crypto.randomUUID()}-${file.name}`;
+        const path = `${crypto.randomUUID()}-${storageSafeName(file.name)}`;
         const { error } = await supabase.storage.from('library-files').upload(path, file);
         if (error) throw error;
         const { data } = supabase.storage.from('library-files').getPublicUrl(path);

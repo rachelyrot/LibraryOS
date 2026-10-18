@@ -81,7 +81,13 @@ function FileUrlsCellButton({ row, column, onRowChange }) {
 export function fileNameFromUrl(url) {
   try {
     const last = decodeURIComponent(String(url).split('?')[0].split('/').pop() || '');
-    return /^[0-9a-f-]{36}-/i.test(last) ? last.slice(37) : last;
+    const name = /^[0-9a-f-]{36}-/i.test(last) ? last.slice(37) : last;
+    // a non-ASCII name is stored as "b64-<base64url>.<ext>" (UploadFile)
+    const m = name.match(/^b64-([\w-]+)(\.\w+)?$/);
+    if (!m) return name;
+    const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    const bytes = Uint8Array.from(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)), c => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes) + (m[2] || '');
   } catch {
     return String(url);
   }
