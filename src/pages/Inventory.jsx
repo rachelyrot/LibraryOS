@@ -14,7 +14,7 @@ import { motion } from 'framer-motion';
 import { canManageInventory } from '@/lib/permissions';
 import useCategories from '@/hooks/useCategories';
 import { cn } from '@/lib/utils';
-import { isSoftwareItem, isLowStock, licenseState } from '@/lib/inventory';
+import { isSoftwareItem, isLowStock, licenseState, tracksMinimum } from '@/lib/inventory';
 
 const CAT_COLORS = [
   'from-blue-100 to-purple-100 text-blue-600',
@@ -161,7 +161,7 @@ export default function Inventory() {
                   ) : (
                     <div className="text-left">
                       <span className={cn('text-2xl font-bold', isLow ? 'text-red-500' : 'text-foreground')}>{item.current_quantity}</span>
-                      <span className="text-xs text-muted-foreground"> / {item.minimum_quantity} מינ׳</span>
+                      {tracksMinimum(item) && <span className="text-xs text-muted-foreground"> / {item.minimum_quantity} מינ׳</span>}
                     </div>
                   )}
                 </div>
@@ -202,8 +202,13 @@ export default function Inventory() {
               ) : (
                 <>
                   <div className="space-y-1.5"><Label>כמות נוכחית</Label><Input type="number" value={form.current_quantity ?? ''} onChange={e => setForm(f => ({ ...f, current_quantity: Number(e.target.value) }))} /></div>
-                  <div className="space-y-1.5"><Label>כמות מינימום</Label><Input type="number" value={form.minimum_quantity ?? ''} onChange={e => setForm(f => ({ ...f, minimum_quantity: Number(e.target.value) }))} /></div>
-                  <div className="space-y-1.5"><Label>יחידת מידה</Label><Input value={form.unit || ''} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} /></div>
+                  {/* פעילות תרבות — בלי מינימום ויחידה */}
+                  {tracksMinimum(form) && (
+                    <>
+                      <div className="space-y-1.5"><Label>כמות מינימום</Label><Input type="number" value={form.minimum_quantity ?? ''} onChange={e => setForm(f => ({ ...f, minimum_quantity: Number(e.target.value) }))} /></div>
+                      <div className="space-y-1.5"><Label>יחידת מידה</Label><Input value={form.unit || ''} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} /></div>
+                    </>
+                  )}
                 </>
               )}
               {/* ISBN ומחבר — רק לספרים */}
