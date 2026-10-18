@@ -120,8 +120,8 @@ export function generateSupplierExcel(lines, supplierName = '') {
     b.title || '', b.author || '', b.publisher || '', b.isbn || '',
     // כריכה: תמיד "כן" — הספרייה כורכת כל ספר, גם כשבספר שמור "בלי" מברירת
     // המחדל הישנה
-    // ניילון: רק בספרים שצריכים ניילון; בכל השאר התא ריק
-    normalizeNylon(b.nylon_required) === 'with_nylon' ? 'עם ניילון' : '', 'כן', '',
+    // ניילון: "כן" / "לא" כשנקבע לספר; "לא משנה" — תא ריק
+    { with_nylon: 'כן', without_nylon: 'לא' }[normalizeNylon(b.nylon_required)] || '', 'כן', '',
     Number(b.requested_quantity) || 1, b.notes || '',
     b.sku || '', b.price != null && b.price !== '' ? Number(b.price) : '', '',
   ]);
