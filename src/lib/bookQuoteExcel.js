@@ -57,9 +57,12 @@ export function nylonFromChecked(checked) {
 // supplier, not something the quote is priced two ways for. Lives inside the
 // `books` jsonb array, so it needed no migration.
 
+// The library always binds: a book that says nothing about binding (older rows
+// saved before the field existed, an empty cell) counts as "with binding".
+// Only an explicit no (false / לא / בלי / 0) turns it off.
 export function isBindingChecked(val) {
   if (typeof val === 'boolean') return val;
-  if (val == null || val === '') return false;
+  if (val == null || val === '') return true;
   if (typeof val === 'number') return val !== 0;
   const s = String(val).trim().toLowerCase();
   if (!s || s === '0' || s === 'לא' || s === 'no' || s === 'false') return false;
@@ -115,7 +118,8 @@ export function generateSupplierExcel(lines, supplierName = '') {
   ];
   const rows = lines.map(b => [
     b.title || '', b.author || '', b.publisher || '', b.isbn || '',
-    nylonLabel(b.nylon_required), bindingLabel(b.binding_required), '',
+    // כריכה: "כן" / "לא" — הכותרת כבר אומרת שזו כריכה
+    nylonLabel(b.nylon_required), isBindingChecked(b.binding_required) ? 'כן' : 'לא', '',
     Number(b.requested_quantity) || 1, b.notes || '',
     b.sku || '', b.price != null && b.price !== '' ? Number(b.price) : '', '',
   ]);

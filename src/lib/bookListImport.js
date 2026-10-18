@@ -74,7 +74,8 @@ export const FIELD_LABELS = {
 export const EMPTY_BOOK = {
   title: '', author: '', publisher: '', isbn: '', category: '',
   supplier_price: 0, discounted_price: 0, recommended_quantity: 0, requested_quantity: 0,
-  nylon_required: 'any', binding_required: false, notes: '',
+  // ספרים תמיד צריכים כריכה — מסומן כברירת מחדל, ואפשר לבטל לספר מסוים
+  nylon_required: 'any', binding_required: true, notes: '',
   existing_in_agron: false, existing_copies: 0, system_recommendation: 'לבדיקה', recommendation_reason: '',
   marked_for_order: false, status: 'חדש',
 };
@@ -91,7 +92,10 @@ export function parseRow(row, columnKeys) {
   const requested_quantity_raw = g('requested_quantity');
   const requested_quantity = requested_quantity_raw != null ? parseInt(requested_quantity_raw, 10) : NaN;
   const nylon_required = normalizeNylon(g('nylon_required'));
-  const binding_required = isBindingChecked(g('binding_required'));
+  // כריכה מסומנת אלא אם הקובץ אומר במפורש שלא (לא / בלי / 0) — אין עמודה או
+  // שהתא ריק, הספר עם כריכה
+  const bindingCell = g('binding_required');
+  const binding_required = bindingCell == null || String(bindingCell).trim() === '' ? true : isBindingChecked(bindingCell);
   const notes = g('notes');
 
   if (isNaN(discounted_price) && !isNaN(supplier_price) && !isNaN(discount_percent))

@@ -194,7 +194,8 @@ export default function OrderDetail() {
           isbn: it.isbn || '',
           nylon_required: it.nylon_required
             || (notes.includes('בלי ניילון') ? 'without_nylon' : notes.includes('עם ניילון') ? 'with_nylon' : 'any'),
-          binding_required: it.binding_required ?? notes.includes('עם כריכה'),
+          // כריכה תמיד, אלא אם ההזמנה אומרת במפורש "בלי כריכה"
+          binding_required: it.binding_required ?? !notes.includes('בלי כריכה'),
           requested_quantity: Number(it.quantity) || 0,
           sku: it.sku || '',
           price: it.unit_price ?? '',
