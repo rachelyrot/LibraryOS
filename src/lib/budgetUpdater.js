@@ -1,5 +1,5 @@
 import { base44, supabase } from '@/api/base44Client';
-import { plannedByAllocation, projectCommitments, mergeCommitments, allocationCommitted } from '@/lib/workPlan';
+import { plannedByAllocation, projectCommitments, mergeCommitments, allocationCommitted, planSourceIds } from '@/lib/workPlan';
 
 /**
  * כמה תכניות עבודה ופרויקטים לוקחים מכל קטגוריית תקציב — אותו חשבון שמסך
@@ -12,7 +12,7 @@ export async function loadBudgetCommitments(sources, allocations) {
   const fromPlans = async () => {
     try {
       const plans = (await base44.entities.WorkPlan.list('-created_date', 50))
-        .filter(p => p.municipal_budget_source_id || p.ministry_budget_source_id);
+        .filter(p => planSourceIds(p).length > 0);
       const lists = await Promise.all(plans.map(p => base44.entities.WorkPlanItem.filter({ work_plan_id: p.id }, 'sort_order', 2000)));
       return plannedByAllocation(plans, new Map(plans.map((p, k) => [p.id, lists[k]])), sources, allocations);
     } catch { return new Map(); }

@@ -1,22 +1,26 @@
 import {
-  VIEWS, MONTHS, amountColumns, itemsForView, groupByCategory, parameterRows, monthlySchedule,
-  YEAR_PCT_LABELS, utilizationLabel, RULE_STATUS_LABELS, num, formatMoney, formatPct,
+  MONTHS, amountColumns, itemsForView, groupByCategory, parameterRows, monthlySchedule,
+  YEAR_PCT_LABELS, utilizationLabel, RULE_STATUS_LABELS, num, formatMoney, formatPct, planViews,
 } from '@/lib/workPlan';
 
 /**
  * ייצוא תכנית העבודה: קובץ Excel (טופס הפרמטרים, פירוט לכל תצוגה ולוח ניצול
  * חודשי) ומסמך להדפסה/PDF לתצוגה הנבחרת.
+ *
+ * sources — מקורות התכנית כפי שהדף מציג אותם: [{ id, name, support }].
+ * תצוגה היא 'all' או מזהה של מקור.
  */
 
-const viewLabel = (view) => VIEWS.find(v => v.id === view)?.label || '';
+const viewLabel = (view, sources) => planViews(sources).find(v => v.id === view)?.label || '';
+const supportOf = (sources) => sources.filter(s => s.support).map(s => s.id);
 const round = (v) => Math.round(num(v) * 100) / 100;
 const pct1 = (v) => Math.round(num(v) * 10) / 10;
 
 /** גיליון בנוסח טופס המשרד: פרמטר, סכומים ואחוזים לכל מקור, הגבלה ועמידה בה. */
-function formSheetRows(plan, items) {
-  const all = parameterRows(items, 'all');
-  const mun = parameterRows(items, 'municipal');
-  const min = parameterRows(items, 'ministry');
+function formSheetRows(plan, items, sources) {
+  const supportIds = supportOf(sources);
+  const all = parameterRows(items, 'all', supportIds);
+  const bySource = sources.map(s => parameterRows(items, s.id, supportIds));
   const find = (res, category) => res.rows.find(r => r.category === category) || { amount: 0, pct: 0, status: null };
 
   const rows = [
@@ -25,26 +29,25 @@ function formSheetRows(plan, items) {
     [],
     // עמידה בהגבלה נבדקת פעם אחת, על התכנית כולה ומול הבסיס של ההגבלה
     // (evaluateRules) — לכן עמודה אחת, ולא אחת לכל מקור
-    ['פרמטר', 'סה"כ', 'אחוז', 'תקציב עירוני', 'אחוז', 'משרד התרבות', 'אחוז', 'הגבלה', 'עמידה בהגבלה', 'אחוז מול בסיס ההגבלה', 'הערה'],
+    ['פרמטר', 'סה"כ', 'אחוז', ...sources.flatMap(s => [s.name, 'אחוז']), 'הגבלה', 'עמידה בהגבלה', 'אחוז מול בסיס ההגבלה', 'הערה'],
   ];
   for (const r of all.rows) {
-    const m = find(mun, r.category);
-    const k = find(min, r.category);
     rows.push([
-      r.category, round(r.amount), pct1(r.pct), round(m.amount), pct1(m.pct), round(k.amount), pct1(k.pct),
+      r.category, round(r.amount), pct1(r.pct),
+      ...bySource.flatMap(res => { const m = find(res, r.category); return [round(m.amount), pct1(m.pct)]; }),
       r.rule, r.status ? RULE_STATUS_LABELS[r.status] : '', r.status && r.rulePct != null ? pct1(r.rulePct) : '',
       r.param?.note || '',
     ]);
   }
-  rows.push(['סה"כ', round(all.total), all.total > 0 ? 100 : 0, round(mun.total), mun.total > 0 ? 100 : 0, round(min.total), min.total > 0 ? 100 : 0, '', '', '', '']);
+  rows.push(['סה"כ', round(all.total), all.total > 0 ? 100 : 0, ...bySource.flatMap(res => [round(res.total), res.total > 0 ? 100 : 0]), '', '', '', '']);
   return rows;
 }
 
-function detailSheetRows(plan, items, view) {
-  const cols = amountColumns(view);
+function detailSheetRows(plan, items, view, sources) {
+  const cols = amountColumns(view, sources);
   const rows = [
     [plan.title],
-    [`שנת ${plan.year} · פירוט · ${viewLabel(view)}`],
+    [`שנת ${plan.year} · פירוט · ${viewLabel(view, sources)}`],
     [],
     ['פרמטר', 'פירוט', 'תיאור', 'סעיף תקציבי', 'זמן ניצול', 'קהל יעד', 'משתתפים צפויים', ...cols.map(c => c.label), 'הערות'],
   ];
@@ -69,11 +72,11 @@ function detailSheetRows(plan, items, view) {
  * @param {string[]} headers שמות החודשים, או YEAR_PCT_LABELS — אותם סכומים,
  *   כשבאחוזים כל עמודה היא חודש (100/12) והכותרת היא אחוז השנה בסופו
  */
-function scheduleSheetRows(plan, items, view, headers = MONTHS) {
+function scheduleSheetRows(plan, items, view, sources, headers = MONTHS) {
   const s = monthlySchedule(items, view);
   const rows = [
     [plan.title],
-    [`שנת ${plan.year} · לוח ניצול ${headers === MONTHS ? 'חודשי' : 'לפי אחוזי שנה'} · ${viewLabel(view)}`],
+    [`שנת ${plan.year} · לוח ניצול ${headers === MONTHS ? 'חודשי' : 'לפי אחוזי שנה'} · ${viewLabel(view, sources)}`],
     ['הסכום של כל שורה מחולק שווה בין החודשים בתקופת הניצול שלה'],
     [],
     ['פרמטר', ...headers, 'לא נקבע', 'סה"כ'],
@@ -83,24 +86,34 @@ function scheduleSheetRows(plan, items, view, headers = MONTHS) {
   return rows;
 }
 
-export async function exportWorkPlanExcel(plan, items) {
+export async function exportWorkPlanExcel(plan, items, sources = []) {
   const { utils, writeFile } = await import('xlsx');
   const wb = utils.book_new();
 
+  // שם גיליון: עד 31 תווים, בלי התווים ש-Excel אוסר, ובלי כפילות (שני מקורות
+  // ששמם מתחיל אותו דבר)
+  const used = new Set();
+  const sheetName = (name) => {
+    const base = name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31);
+    let out = base;
+    for (let k = 2; used.has(out); k++) out = `${base.slice(0, 31 - String(k).length - 1)} ${k}`;
+    used.add(out);
+    return out;
+  };
   const addSheet = (rows, name, widths) => {
     const ws = utils.aoa_to_sheet(rows);
     ws['!cols'] = widths.map(wch => ({ wch }));
-    utils.book_append_sheet(wb, ws, name.slice(0, 31));
+    utils.book_append_sheet(wb, ws, sheetName(name));
   };
 
-  addSheet(formSheetRows(plan, items), 'תכנון לפי פרמטרים', [46, 14, 8, 14, 8, 14, 8, 30, 16, 12, 50]);
-  for (const v of VIEWS) {
-    addSheet(detailSheetRows(plan, items, v.id), `פירוט - ${v.label}`, [40, 30, 36, 14, 16, 16, 12, ...amountColumns(v.id).map(() => 14), 28]);
+  const views = planViews(sources);
+  const scheduleWidths = [46, ...MONTHS.map(() => 11), 11, 14];
+  addSheet(formSheetRows(plan, items, sources), 'תכנון לפי פרמטרים', [46, 14, 8, ...sources.flatMap(() => [14, 8]), 30, 16, 12, 50]);
+  for (const v of views) {
+    addSheet(detailSheetRows(plan, items, v.id, sources), `פירוט - ${v.label}`, [40, 30, 36, 14, 16, 16, 12, ...amountColumns(v.id, sources).map(() => 14), 28]);
   }
-  addSheet(scheduleSheetRows(plan, items, 'all'), 'לוח ניצול - כל התכנית', [46, ...MONTHS.map(() => 11), 11, 14]);
-  addSheet(scheduleSheetRows(plan, items, 'ministry'), 'לוח ניצול - משרד התרבות', [46, ...MONTHS.map(() => 11), 11, 14]);
-  addSheet(scheduleSheetRows(plan, items, 'all', YEAR_PCT_LABELS), 'אחוזים - כל התכנית', [46, ...MONTHS.map(() => 11), 11, 14]);
-  addSheet(scheduleSheetRows(plan, items, 'ministry', YEAR_PCT_LABELS), 'אחוזים - משרד התרבות', [46, ...MONTHS.map(() => 11), 11, 14]);
+  for (const v of views) addSheet(scheduleSheetRows(plan, items, v.id, sources), `לוח ניצול - ${v.label}`, scheduleWidths);
+  for (const v of views) addSheet(scheduleSheetRows(plan, items, v.id, sources, YEAR_PCT_LABELS), `אחוזים - ${v.label}`, scheduleWidths);
 
   // גיליונות מימין לשמאל
   wb.Workbook = { Views: [{ RTL: true }] };
@@ -118,9 +131,9 @@ const escapeHtml = (s) => String(s ?? '')
  *
  * @returns {boolean} false אם הדפדפן חסם את החלון
  */
-export function printWorkPlan(plan, items, view) {
-  const cols = amountColumns(view);
-  const form = parameterRows(items, view);
+export function printWorkPlan(plan, items, view, sources = []) {
+  const cols = amountColumns(view, sources);
+  const form = parameterRows(items, view, supportOf(sources));
   const schedule = monthlySchedule(items, view);
   const groups = groupByCategory(itemsForView(items, view), { includeEmpty: false });
   const all = groups.flatMap(g => g.items);
@@ -161,7 +174,7 @@ export function printWorkPlan(plan, items, view) {
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
-<title>${escapeHtml(plan.title)} — ${escapeHtml(viewLabel(view))}</title>
+<title>${escapeHtml(plan.title)} — ${escapeHtml(viewLabel(view, sources))}</title>
 <style>
   @page { size: A4 landscape; margin: 14mm; }
   * { box-sizing: border-box; }
@@ -193,7 +206,7 @@ export function printWorkPlan(plan, items, view) {
 <body>
   <header>
     <h1>תכנון התקציב של הספרייה לשנת ${escapeHtml(plan.year)}</h1>
-    <div class="meta">${escapeHtml(plan.title)} · ${escapeHtml(viewLabel(view))} · הופק ב-${new Date().toLocaleDateString('he-IL')}</div>
+    <div class="meta">${escapeHtml(plan.title)} · ${escapeHtml(viewLabel(view, sources))} · הופק ב-${new Date().toLocaleDateString('he-IL')}</div>
   </header>
 
   <h2>תכנון לפי פרמטרים</h2>

@@ -13,21 +13,25 @@ import PageHeader from '@/components/PageHeader';
 import WorkPlanGrid from '@/components/workPlan/WorkPlanGrid';
 import { canViewWorkPlan, canEditWorkPlan, canViewBudgets } from '@/lib/permissions';
 import {
-  PLAN_STATUSES, VIEWS, MONTHS, RULE_STATUS_LABELS, amountColumns, itemsForView, groupByCategory,
+  PLAN_STATUSES, MONTHS, RULE_STATUS_LABELS, amountColumns, itemsForView, groupByCategory,
   groupAmount, planTotals, parameterRows, monthlySchedule, YEAR_PCT_LABELS, planAllocationSplits, plannedByAllocation, projectCommitments, mergeCommitments, sourceLedger, formatMoney, formatPct, num,
-  linkedSourceIds, budgetActuals,
+  linkedSourceIds, budgetActuals, planSources, planSourceIds, planViews, legacyAmounts, itemTotal, amountOf,
 } from '@/lib/workPlan';
 import { exportWorkPlanExcel, printWorkPlan } from '@/lib/workPlanExport';
 
 const NO_COPY = '__none__';
-const NO_SOURCE = '__none__';
 
-// לכל עמודת סכום בתכנית — המקור שמממן אותה וסוג המימון שמוצע ראשון בבחירה
-// view — התצוגה שמסננת את המקור הזה בלבד (budgetActuals), והסכום בתכנית ב-planTotals
-const FUNDERS = [
-  { field: 'municipal_budget_source_id', label: 'מקור תקציב עירוני', title: 'תקציב עירוני', fundingType: 'municipal', view: 'municipal', accent: 'text-sky-600', bar: 'border-t-sky-400' },
-  { field: 'ministry_budget_source_id', label: 'מקור תקציב משרד התרבות', title: 'משרד התרבות', fundingType: 'culture_ministry', view: 'ministry', accent: 'text-violet-600', bar: 'border-t-violet-400' },
+// צבע לכל כרטיס מקור, לפי הסדר בתכנית
+const ACCENTS = [
+  { accent: 'text-sky-600', bar: 'border-t-sky-400' },
+  { accent: 'text-violet-600', bar: 'border-t-violet-400' },
+  { accent: 'text-emerald-600', bar: 'border-t-emerald-400' },
+  { accent: 'text-amber-600', bar: 'border-t-amber-400' },
+  { accent: 'text-rose-600', bar: 'border-t-rose-400' },
+  { accent: 'text-teal-600', bar: 'border-t-teal-400' },
 ];
+
+const sourceName = (s) => `${s.name}${s.year ? ` · ${s.year}` : ''}`;
 
 function RuleBadge({ status }) {
   if (!status) return <span className="text-xs text-muted-foreground">-</span>;
@@ -133,7 +137,7 @@ export default function WorkPlan() {
   const [otherItems, setOtherItems] = useState(() => new Map());
   const otherPlanIds = plans
     .filter(p => p.id !== activePlanId && (p.status === 'approved' || p.status === 'submitted')
-      && (p.municipal_budget_source_id || p.ministry_budget_source_id))
+      && planSourceIds(p).length > 0)
     .map(p => p.id).join(',');
   useEffect(() => {
     const ids = otherPlanIds ? otherPlanIds.split(',') : [];
@@ -150,7 +154,19 @@ export default function WorkPlan() {
     );
   }, [otherItems, items, activePlanId, plans, budgetSources, allocations, projects]);
 
-  // שורה שנערכה או נוספה בתצוגה של גורם מממן אחד נשארת גלויה גם כשהסכום שלה שם
+  // מקורות התכנית — כמה שצריך, כל אחד נבחר מתוך מקורות התקציב (מיגרציה 0020).
+  // source — שורת המקור ממקורות התקציב (חסרה אם המקור נמחק משם)
+  const planSrcList = useMemo(() => planSources(activePlan), [activePlan]);
+  const supportIds = useMemo(() => planSrcList.filter(s => s.support).map(s => s.source_id), [planSrcList]);
+  const sources = useMemo(() => planSrcList.map((ps, k) => {
+    const source = budgetSources.find(s => s.id === ps.source_id);
+    return { id: ps.source_id, support: !!ps.support, source, name: source ? sourceName(source) : `מקור ${k + 1}`, ...ACCENTS[k % ACCENTS.length] };
+  }), [planSrcList, budgetSources]);
+  const views = planViews(sources);
+  // מקור שהוסר מהתכנית — חוזרים לכל התכנית
+  useEffect(() => { if (view !== 'all' && !planSrcList.some(s => s.source_id === view)) setView('all'); }, [view, planSrcList]);
+
+  // שורה שנערכה או נוספה בתצוגה של מקור אחד נשארת גלויה גם כשהסכום שלה שם
   // עדיין/כבר 0, כדי שלא תיעלם מתחת ליד באמצע עריכה. מתאפס במעבר תצוגה.
   const [pinnedIds, setPinnedIds] = useState(() => new Set());
   useEffect(() => { setPinnedIds(new Set()); }, [view, activePlanId]);
@@ -158,33 +174,39 @@ export default function WorkPlan() {
     const visible = new Set(itemsForView(items, view).map(i => i.id));
     return groupByCategory(items.filter(i => visible.has(i.id) || pinnedIds.has(i.id)));
   }, [items, view, pinnedIds]);
-  const totals = useMemo(() => planTotals(items), [items]);
-  const form = useMemo(() => parameterRows(items, view), [items, view]);
+  const totals = useMemo(() => planTotals(items, supportIds), [items, supportIds]);
+  const form = useMemo(() => parameterRows(items, view, supportIds), [items, view, supportIds]);
   const schedule = useMemo(() => monthlySchedule(items, view), [items, view]);
-  const cols = amountColumns(view);
-  const viewLabel = VIEWS.find(v => v.id === view)?.label;
+  const cols = amountColumns(view, sources);
+  const viewLabel = views.find(v => v.id === view)?.label;
   const violations = form.rows.filter(r => r.status === 'below' || r.status === 'above');
   const hasLinkedSources = linkedSourceIds(activePlan, view).length > 0;
   const actuals = useMemo(() => budgetActuals(activePlan, budgetSources, allocations, view), [activePlan, budgetSources, allocations, view]);
   const actualUsed = actuals.totals.reserved + actuals.totals.spent;
-  // מאילו קטגוריות יורדת כל שורה — רק למקור מקושר שמחולק לקטגוריות. מקור בלי
-  // קטגוריות (0015) מסתנכרן כסכום אחד ואין בו מה לבחור.
+  // מאילו קטגוריות יורדת כל שורה — רק למקור שמחולק לקטגוריות. מקור בלי
+  // קטגוריות (0015) הוא סכום אחד ואין בו מה לבחור.
   const funding = useMemo(() => {
     const out = {};
-    for (const f of FUNDERS) {
-      const source = budgetSources.find(s => s.id === activePlan?.[f.field]);
-      if (!source || source.uses_categories === false) continue;
-      const options = allocations.filter(a => a.budget_source_id === source.id);
-      out[f.view] = { options, splits: planAllocationSplits(items, options, f.view) };
+    for (const s of sources) {
+      if (!s.source || s.source.uses_categories === false) continue;
+      const options = allocations.filter(a => a.budget_source_id === s.id);
+      out[s.id] = { options, splits: planAllocationSplits(items, options, s.id) };
     }
     return out;
-  }, [activePlan, budgetSources, allocations, items]);
+  }, [sources, allocations, items]);
 
-  // כרטיס נפרד לכל מקור בסנכרון — לא תלוי בתצוגה שנבחרה למטה
-  const funderActuals = useMemo(
-    () => FUNDERS.map(f => ({ ...f, actuals: budgetActuals(activePlan, budgetSources, allocations, f.view), planned: totals[f.view] })),
-    [activePlan, budgetSources, allocations, totals],
-  );
+  // כמה כסף יש בכל מקור (סכום הקטגוריות שלו) מול כמה התכנית מתכננת ממנו —
+  // לבדיקת חריגה בכל שורה, גם במקור בלי קטגוריות ובשורה בלי קטגוריות
+  const sourceBudgets = useMemo(() => {
+    const out = {};
+    for (const s of sources) {
+      if (!s.source) continue;
+      const available = allocations.filter(a => a.budget_source_id === s.id)
+        .reduce((sum, a) => sum + (Number(a.allocated_amount) || 0), 0);
+      out[s.id] = { available, planned: totals.bySource[s.id] || 0, name: s.name };
+    }
+    return out;
+  }, [sources, allocations, totals]);
 
   // שתי תצוגות של אותם סכומים חודשיים: אחוזים — הכותרות הן אחוז השנה (כל חודש
   // 100/12, דצמבר = 100%); חודשים — שמות החודשים
@@ -203,7 +225,12 @@ export default function WorkPlan() {
     if (!planForm.year.trim() || !planForm.title.trim()) { toast.error('יש להזין שנה וכותרת'); return; }
     setSavingPlan(true);
     try {
-      const created = await base44.entities.WorkPlan.create({ year: planForm.year.trim(), title: planForm.title.trim(), status: 'draft' });
+      // תכנית שמועתקת לוקחת גם את המקורות, כי הסכומים בשורות שמורים לפיהם
+      const copyPlan = plans.find(p => p.id === planForm.copyFrom);
+      const created = await base44.entities.WorkPlan.create({
+        year: planForm.year.trim(), title: planForm.title.trim(), status: 'draft',
+        ...(copyPlan ? { sources: planSources(copyPlan) } : {}),
+      });
       if (planForm.copyFrom !== NO_COPY) {
         const source = await base44.entities.WorkPlanItem.filter({ work_plan_id: planForm.copyFrom }, 'sort_order', 2000);
         if (source.length) {
@@ -252,18 +279,93 @@ export default function WorkPlan() {
     }
   };
 
-  // ── Budget sync ──────────────────────────────────────────────
-  const sourceOptions = (fundingType) => {
-    const matching = budgetSources.filter(s => s.funding_source_type === fundingType);
-    return matching.length ? matching : budgetSources;
+  // ── Plan sources ─────────────────────────────────────────────
+  // הכיוון הוא ממקורות התקציב אל התכנית בלבד: התכנית קוראת כמה כסף יש במקור
+  // (סכום כל הקטגוריות שלו) ומתכננת בתוכו, ולא כותבת למקורות.
+
+  // רשימת המקורות נשמרת ב-sources; השדות הישנים (0014) מתאפסים, אחרת תכנית
+  // שכל המקורות הוסרו ממנה הייתה חוזרת אליהם (planSources)
+  const saveSources = (next) => updatePlan({ sources: next, municipal_budget_source_id: null, ministry_budget_source_id: null });
+
+  // עדכון כמה שורות בבת אחת. fn(item) מחזיר את השינוי לשורה, או null
+  const patchItems = async (fn) => {
+    const patches = items.map(i => [i, fn(i)]).filter(([, p]) => p);
+    if (patches.length === 0) return true;
+    setItems(list => list.map(i => { const p = patches.find(([x]) => x.id === i.id)?.[1]; return p ? { ...i, ...p } : i; }));
+    try {
+      await Promise.all(patches.map(([i, p]) => base44.entities.WorkPlanItem.update(i.id, p)));
+      return true;
+    } catch (e) {
+      toast.error(e?.message || 'שגיאה בעדכון השורות');
+      return false;
+    }
   };
 
-  // הכיוון הוא ממקורות התקציב אל התכנית בלבד: התכנית קוראת כמה כסף יש במקור
-  // (סכום כל הקטגוריות שלו) ומתכננת בתוכו. היא לא כותבת למקורות — קודם לכן
-  // אישור התכנית דרס את הסכומים במקורות בסכומי התכנית (sync_work_plan_budget).
-  const linkSource = async (field, value) => {
-    await updatePlan({ [field]: value === NO_SOURCE ? null : value });
+  const addSource = async (sourceId) => {
+    if (!canEditWorkPlan(user) || !sourceId || planSrcList.some(s => s.source_id === sourceId)) return;
+    const source = budgetSources.find(s => s.id === sourceId);
+    const nextSrcs = [...planSrcList, { source_id: sourceId, support: source?.funding_source_type === 'culture_ministry' }];
+    // המקור הראשון בתכנית ישנה בלי מקור: הסכומים שכבר הוזנו בה עוברים אליו
+    if (planSrcList.length === 0) {
+      const nextSupport = nextSrcs.filter(s => s.support).map(s => s.source_id);
+      const ok = await patchItems(i => {
+        if (Object.keys(i.amounts || {}).length || itemTotal(i) === 0) return null;
+        const amounts = { [sourceId]: itemTotal(i) };
+        return { amounts, ...legacyAmounts(amounts, nextSupport) };
+      });
+      if (!ok) return;
+    }
+    await saveSources(nextSrcs);
   };
+
+  // החלפת המקור בכרטיס: הסכומים עוברים למקור החדש, הקטגוריות שנבחרו מתאפסות
+  // (הן שייכות למקור הקודם)
+  const replaceSource = async (oldId, newId) => {
+    if (!canEditWorkPlan(user) || oldId === newId || planSrcList.some(s => s.source_id === newId)) return;
+    const nextSrcs = planSrcList.map(s => (s.source_id === oldId ? { ...s, source_id: newId } : s));
+    const nextSupport = nextSrcs.filter(s => s.support).map(s => s.source_id);
+    const ok = await patchItems(i => {
+      if (!(oldId in (i.amounts || {})) && !(oldId in (i.allocation_ids || {}))) return null;
+      const { [oldId]: amount, ...amounts } = i.amounts || {};
+      const { [oldId]: _drop, ...allocation_ids } = i.allocation_ids || {};
+      if (amount != null) amounts[newId] = amount;
+      return { amounts, allocation_ids, ...legacyAmounts(amounts, nextSupport) };
+    });
+    if (ok) await saveSources(nextSrcs);
+  };
+
+  const removeSource = async (s) => {
+    if (!canEditWorkPlan(user)) return;
+    const used = items.filter(i => amountOf(i, s.id) > 0);
+    const sum = used.reduce((t, i) => t + amountOf(i, s.id), 0);
+    const msg = used.length
+      ? `להסיר את "${s.name}" מהתכנית? ${used.length} שורות מתכננות ממנו ${formatMoney(sum, 0)} — הסכומים האלה יימחקו מהשורות.`
+      : `להסיר את "${s.name}" מהתכנית?`;
+    if (!window.confirm(msg)) return;
+    const nextSrcs = planSrcList.filter(x => x.source_id !== s.id);
+    const nextSupport = nextSrcs.filter(x => x.support).map(x => x.source_id);
+    const ok = await patchItems(i => {
+      if (!(s.id in (i.amounts || {})) && !(s.id in (i.allocation_ids || {}))) return null;
+      const { [s.id]: _a, ...amounts } = i.amounts || {};
+      const { [s.id]: _b, ...allocation_ids } = i.allocation_ids || {};
+      return { amounts, allocation_ids, ...legacyAmounts(amounts, nextSupport) };
+    });
+    if (ok) await saveSources(nextSrcs);
+  };
+
+  // "כספי תמיכה של משרד התרבות" — מולם נבדקות הגבלות הטופס
+  const toggleSupport = async (s) => {
+    if (!canEditWorkPlan(user)) return;
+    const nextSrcs = planSrcList.map(x => (x.source_id === s.id ? { ...x, support: !x.support } : x));
+    const nextSupport = nextSrcs.filter(x => x.support).map(x => x.source_id);
+    if (await saveSources(nextSrcs)) {
+      // העמודות הישנות (תמיכה / השאר) נשמרות בהתאם, בלי הודעה
+      patchItems(i => (Object.keys(i.amounts || {}).length ? legacyAmounts(i.amounts, nextSupport) : null));
+    }
+  };
+
+  // מקורות שאפשר להוסיף — כל מקורות התקציב שעוד לא בתכנית
+  const addableSources = budgetSources.filter(s => !planSrcList.some(x => x.source_id === s.id));
 
   // ── Items ────────────────────────────────────────────────────
   // עריכה בתוך הטבלה (WorkPlanGrid): כל תא נשמר לבד כשיוצאים ממנו.
@@ -273,6 +375,8 @@ export default function WorkPlan() {
   const saveItemField = async (item, patch) => {
     if (!canEditWorkPlan(user) || !activePlan) return;
     pin(item.id);
+    // סכומים לפי מקור — העמודות הישנות (תמיכה / השאר) נשמרות יחד איתם
+    if (patch.amounts) patch = { ...patch, ...legacyAmounts(patch.amounts, supportIds) };
     // עדכון מיידי בטבלה; אם השמירה נכשלת — חוזרים לערך הקודם
     setItems(list => list.map(i => (i.id === item.id ? { ...i, ...patch } : i)));
     try {
@@ -318,10 +422,10 @@ export default function WorkPlan() {
 
   // ── Export ───────────────────────────────────────────────────
   const handleExcel = async () => {
-    try { await exportWorkPlanExcel(activePlan, items); } catch (e) { toast.error('שגיאה ביצירת קובץ Excel'); }
+    try { await exportWorkPlanExcel(activePlan, items, sources); } catch (e) { toast.error('שגיאה ביצירת קובץ Excel'); }
   };
   const handlePrint = () => {
-    if (!printWorkPlan(activePlan, items, view)) toast.error('הדפדפן חסם את חלון ההדפסה — יש לאפשר חלונות קופצים לאתר');
+    if (!printWorkPlan(activePlan, items, view, sources)) toast.error('הדפדפן חסם את חלון ההדפסה — יש לאפשר חלונות קופצים לאתר');
   };
 
   // ── Render ───────────────────────────────────────────────────
@@ -383,6 +487,10 @@ export default function WorkPlan() {
             {activePlan.submitted_date && (
               <span className="text-xs text-muted-foreground">הוגשה ב-{new Date(activePlan.submitted_date).toLocaleDateString('he-IL')}</span>
             )}
+            {/* סך התכנית — פעם אחת. הפיצול למקורות מופיע בכרטיסי המקורות */}
+            <span className="text-sm">
+              סה"כ התכנית <b dir="ltr">{formatMoney(totals.total, 0)}</b>
+            </span>
 
             <div className="flex-1" />
 
@@ -391,123 +499,102 @@ export default function WorkPlan() {
             {canEdit && <Button variant="ghost" size="icon" onClick={deletePlan} title="מחיקת התכנית"><Trash2 className="w-4 h-4 text-red-500" /></Button>}
           </div>
 
-          {/* Totals = view switch */}
-          <div className="grid gap-3 sm:grid-cols-3 mb-5">
-            {[
-              { id: 'all', label: 'סה"כ התכנית', value: totals.total, color: 'text-foreground' },
-              { id: 'municipal', label: 'תקציב עירוני', value: totals.municipal, color: 'text-sky-600' },
-              { id: 'ministry', label: 'משרד התרבות', value: totals.ministry, color: 'text-violet-600' },
-            ].map(card => (
-              <button key={card.id} onClick={() => setView(card.id)}
-                className={cn('text-right bg-card border rounded-2xl p-4 transition-all hover:shadow-sm', view === card.id ? 'border-violet-400 ring-2 ring-violet-100' : 'border-border')}>
-                <p className="text-xs text-muted-foreground">{card.label}</p>
-                <p className={cn('text-2xl font-bold mt-0.5', card.color)}>{formatMoney(card.value)}</p>
-                {card.id !== 'all' && totals.total > 0 && (
-                  <p className="text-xs text-muted-foreground mt-0.5">{((card.value / totals.total) * 100).toFixed(0)}% מהתכנית</p>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* Budget sources link — סכום כללי מול מה שנוצל בפועל */}
+          {/* מקורות התקציב — כרטיס אחד לכל מממן, וכל מספר בו פעם אחת */}
           {canViewBudgets(user) && (
             <div className="bg-card border border-border rounded-2xl p-4 mb-5">
-              <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-                <div>
-                  <p className="font-bold flex items-center gap-1.5"><Link2 className="w-4 h-4 text-violet-500" /> סנכרון עם מקורות תקציב</p>
-                  <p className="text-xs text-muted-foreground">בוחרים מקור, והתכנית מקבלת את כל הכסף שיש בו. התכנית מתכננת בתוך הסכום הזה ולא משנה את מקורות התקציב.</p>
-                </div>
-              </div>
+              <p className="font-bold flex items-center gap-1.5 mb-3"><Link2 className="w-4 h-4 text-violet-500" /> מקורות תקציב</p>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                {funderActuals.map(f => {
-                  const linked = !!activePlan[f.field];
-                  // תכנית מאושרת משוריינת: ההזמנות יורדות מתוכה, ולכן משוריין =
-                  // הגבוה מבין סכום התכנית למה שההזמנות לקחו, פחות מה שכבר נוצל
-                  const source = budgetSources.find(s => s.id === activePlan[f.field]);
-                  const sourceAllocs = allocations.filter(x => x.budget_source_id === source?.id);
-                  const catCount = sourceAllocs.length;
+              {sources.length === 0 && (
+                <p className="text-sm text-muted-foreground mb-3">
+                  לא נבחר עדיין מקור. בחרי מאיפה התקציב — אפשר כמה מקורות, וכל שורה בתכנית תקבל סכום לכל מקור.
+                </p>
+              )}
+              <div className={cn('grid gap-4', sources.length > 1 && 'md:grid-cols-2', sources.length > 2 && 'xl:grid-cols-3')}>
+                {sources.map(s => {
+                  const sourceAllocs = allocations.filter(x => x.budget_source_id === s.id);
                   // אותו חשבון כמו במסך מקורות תקציב (sourceLedger): כל התכניות
                   // המאושרות שמשריינות מהמקור, לא רק זו
                   const ledger = sourceLedger(sourceAllocs, plannedAll);
                   const available = ledger.allocated;
                   const reservedShown = ledger.reserved;
                   const balance = ledger.balance;
-                  const leftToPlan = available - f.planned;
+                  const planned = totals.bySource[s.id] || 0;
+                  const leftToPlan = available - planned;
                   return (
-                    <div key={f.field} className={cn('border border-border border-t-4 rounded-xl p-4', f.bar)}>
-                      <p className={cn('font-bold mb-3', f.accent)}>{f.title}</p>
-
-                      <div className="space-y-1.5 mb-4">
-                        <Label className="text-xs">{f.label}</Label>
-                        <Select value={activePlan[f.field] || NO_SOURCE} onValueChange={v => linkSource(f.field, v)} disabled={!canEdit}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NO_SOURCE}>לא מקושר</SelectItem>
-                            {sourceOptions(f.fundingType).map(s => (
-                              <SelectItem key={s.id} value={s.id}>{s.name}{s.year ? ` · ${s.year}` : ''}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                    <div key={s.id} className={cn('border border-border border-t-4 rounded-xl p-4', s.bar)}>
+                      <div className="mb-3 flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          {canEdit ? (
+                            <Select value={s.id} onValueChange={v => replaceSource(s.id, v)}>
+                              <SelectTrigger className={cn('font-bold', s.accent)}><SelectValue placeholder={s.name} /></SelectTrigger>
+                              <SelectContent>
+                                {s.source && <SelectItem value={s.id}>{s.name}</SelectItem>}
+                                {addableSources.map(b => <SelectItem key={b.id} value={b.id}>{sourceName(b)}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <p className={cn('font-bold truncate', s.accent)}>{s.name}</p>
+                          )}
+                        </div>
+                        {canEdit && (
+                          <button type="button" title="הסרת המקור מהתכנית"
+                            className="text-xs text-muted-foreground hover:text-red-600 shrink-0"
+                            onClick={() => removeSource(s)}>
+                            הסרה ✕
+                          </button>
+                        )}
                       </div>
+                      <label className={cn('flex items-center gap-2 text-xs mb-3', canEdit ? 'cursor-pointer' : 'opacity-70')}
+                        title="הגבלות טופס המשרד (תרבות ≥ 25%, שיווק + השתלמויות ≤ 10%) נמדדות מול סך המקורות המסומנים">
+                        <input type="checkbox" checked={s.support} disabled={!canEdit} onChange={() => toggleSupport(s)} />
+                        כספי תמיכה של משרד התרבות
+                      </label>
 
-                      {linked ? (
+                      {s.source ? (
                         <>
-                          {/* חשבון אחד מלמעלה למטה: כסף במקור − משוריין − נוצל = יתרה.
-                              יתרה אחת בלבד, כדי שלא יהיו שני מספרים לאותו דבר */}
+                          {/* חמש שורות קצרות, כל מספר פעם אחת: כמה התכנית מתכננת,
+                              כמה יש במקור, ומה מתוכו משוריין / נוצל / נשאר */}
                           <div className="rounded-lg bg-muted/40 divide-y divide-border/60 text-sm">
-                            <div className="flex items-center justify-between px-3 py-2">
-                              <div>
-                                <p>כסף במקור</p>
-                                <p className="text-[11px] text-muted-foreground">
-                                  {source?.uses_categories === false ? 'מקור ללא חלוקה לקטגוריות' : `סכום ${catCount} הקטגוריות של המקור`}
-                                </p>
+                            {[
+                              { label: 'מתוכנן בתכנית', value: formatMoney(planned, 0), cls: 'font-bold' },
+                              { label: 'כסף במקור', value: formatMoney(available, 0), cls: cn('font-bold', s.accent) },
+                              { label: 'משוריין', value: `− ${formatMoney(reservedShown, 0)}`, cls: 'font-bold text-amber-600' },
+                              { label: 'נוצל', value: `− ${formatMoney(ledger.spent, 0)}`, cls: 'font-bold text-red-500' },
+                            ].map(r => (
+                              <div key={r.label} className="flex items-center justify-between px-3 py-2">
+                                <span>{r.label}</span>
+                                <span className={r.cls} dir="ltr">{r.value}</span>
                               </div>
-                              <p className={cn('text-lg font-bold', f.accent)} dir="ltr">{formatMoney(available, 0)}</p>
-                            </div>
-                            <div className="flex items-center justify-between px-3 py-2">
-                              <div>
-                                <p>משוריין</p>
-                                <p className="text-[11px] text-muted-foreground">תכניות שהוגשו למשרד, והזמנות פתוחות מעבר להן</p>
-                                {activePlan.status === 'draft' && f.planned > 0.005 && (
-                                  <p className="text-[11px] text-violet-600">התכנית הזו בטיוטה ({formatMoney(f.planned, 0)}) — תשוריין כשתוגש למשרד</p>
-                                )}
-                              </div>
-                              <p className="font-bold text-amber-600" dir="ltr">− {formatMoney(reservedShown, 0)}</p>
-                            </div>
-                            <div className="flex items-center justify-between px-3 py-2">
-                              <div>
-                                <p>נוצל</p>
-                                <p className="text-[11px] text-muted-foreground">תכניות שאושרו, והוצאות מעבר להן</p>
-                              </div>
-                              <p className="font-bold text-red-500" dir="ltr">− {formatMoney(ledger.spent, 0)}</p>
-                            </div>
+                            ))}
                             <div className="flex items-center justify-between px-3 py-2.5 bg-card/60 rounded-b-lg">
-                              <p className="font-bold">יתרה</p>
-                              <p className="text-xl font-bold text-green-600" dir="ltr">{formatMoney(balance, 0)}</p>
+                              <span className="font-bold">יתרה</span>
+                              <span className="text-xl font-bold text-green-600" dir="ltr">{formatMoney(balance, 0)}</span>
                             </div>
                           </div>
                           {leftToPlan < -0.005 && (
                             <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-3">
-                              בתכנית תוכננו {formatMoney(-leftToPlan, 0)} יותר ממה שיש במקור.
+                              <b>חריגה מהתקציב:</b> בתכנית תוכננו {formatMoney(-leftToPlan, 0)} יותר ממה שיש במקור.
                             </p>
                           )}
-                          {(() => {
-                            const missing = [...(funding[f.view]?.splits.byItem.values() || [])].reduce((s, x) => s + x.shortfall, 0);
-                            return missing > 0.005 && (
-                              <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-3">
-                                בקטגוריות שנבחרו לשורות חסרים {formatMoney(missing, 0)} — הוסיפי קטגוריות לשורות המסומנות באדום.
-                              </p>
-                            );
-                          })()}
                         </>
                       ) : (
-                        <p className="text-sm text-muted-foreground">בחרי מקור תקציב כדי לראות כמה יש בו ומה נוצל ממנו.</p>
+                        <p className="text-sm text-amber-700">המקור הזה לא נמצא במקורות התקציב (ייתכן שנמחק). אפשר לבחור במקומו מקור אחר.</p>
                       )}
                     </div>
                   );
                 })}
               </div>
+              {/* הוספת מקור — בלי הגבלה על הכמות, מתוך רשימת מקורות התקציב */}
+              {canEdit && addableSources.length > 0 && (
+                <div className={cn('max-w-xs', sources.length > 0 && 'mt-3')}>
+                  <Select value="" onValueChange={addSource}>
+                    <SelectTrigger className="gap-1.5"><Plus className="w-3.5 h-3.5" /><SelectValue placeholder="הוספת מקור תקציב" /></SelectTrigger>
+                    <SelectContent>
+                      {addableSources.map(b => <SelectItem key={b.id} value={b.id}>{sourceName(b)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           )}
 
@@ -516,7 +603,7 @@ export default function WorkPlan() {
             <div className="flex flex-wrap items-center gap-2 justify-between px-4 py-3 border-b border-border">
               <div>
                 <p className="font-bold">תכנון התקציב לפי פרמטרים</p>
-                <p className="text-xs text-muted-foreground">{viewLabel} · עמודת "אחוז" היא מסך התצוגה; עמידה בהגבלות נבדקת על התכנית כולה, מול הבסיס של כל הגבלה</p>
+                <p className="text-xs text-muted-foreground">{viewLabel}</p>
               </div>
               {violations.length > 0 && (
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1">
@@ -587,13 +674,7 @@ export default function WorkPlan() {
           {/* Utilization schedule */}
           <div className="bg-card border border-border rounded-2xl overflow-hidden mb-5">
             <div className="flex flex-wrap items-center gap-2 justify-between px-4 py-3 border-b border-border">
-              <div>
-                <p className="font-bold flex items-center gap-1.5"><CalendarRange className="w-4 h-4 text-violet-500" /> לוח זמנים לניצול התקציב</p>
-                <p className="text-xs text-muted-foreground">
-                  סכום כל שורה מתחלק שווה בין החודשים בתקופת הניצול שלה.
-                  {scheduleMode === 'percent' && ' כל עמודה היא חודש — 100% חלקי 12 — והכותרת היא האחוז מהשנה בסופו.'}
-                </p>
-              </div>
+              <p className="font-bold flex items-center gap-1.5"><CalendarRange className="w-4 h-4 text-violet-500" /> לוח זמנים לניצול התקציב</p>
               <div className="inline-flex rounded-lg bg-muted p-0.5">
                 {[{ id: 'percent', label: 'אחוזים' }, { id: 'amount', label: 'חודשים' }].map(m => (
                   <button key={m.id} onClick={() => setScheduleMode(m.id)}
@@ -640,7 +721,7 @@ export default function WorkPlan() {
           <div className="flex flex-wrap items-center gap-2 mb-4">
             <p className="font-bold ml-2">פירוט</p>
             <div className="inline-flex rounded-xl bg-muted p-1">
-              {VIEWS.map(v => (
+              {views.map(v => (
                 <button key={v.id} onClick={() => setView(v.id)}
                   className={cn('px-3 py-1.5 text-sm rounded-lg transition-colors', view === v.id ? 'bg-card shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground')}>
                   {v.label}
@@ -648,7 +729,10 @@ export default function WorkPlan() {
               ))}
             </div>
             {view !== 'all' && (
-              <span className="text-xs text-muted-foreground">מוצגות רק שורות עם סכום ב{viewLabel}</span>
+              <span className="text-xs text-muted-foreground">מוצגות רק שורות עם סכום מ{viewLabel}</span>
+            )}
+            {canEdit && sources.length === 0 && (
+              <span className="text-xs text-amber-700">כדי להזין סכומים יש להוסיף מקור תקציב למעלה</span>
             )}
             <div className="flex-1" />
             {canEdit && <span className="text-xs text-muted-foreground">לעריכת שורה לחצי על העיפרון בתחילתה · Enter שומר ויורד שורה · Esc מבטל</span>}
@@ -677,6 +761,7 @@ export default function WorkPlan() {
                   onDelete={deleteItem}
                   focusToken={newRowFocus[g.category]}
                   funding={funding}
+                  sourceBudgets={sourceBudgets}
                 />
               </div>
             ))}

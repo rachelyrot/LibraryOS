@@ -81,14 +81,14 @@ export function ruleLabel(param) {
  * התצוגה, כי ההגבלות של המשרד הן על התקציב כולו.
  * @returns {Map<string, { pct: number, status: 'ok'|'below'|'above'|null }>} לפי שם פרמטר
  */
-export function evaluateRules(items) {
-  const totals = planTotals(items);
+export function evaluateRules(items, supportIds) {
+  const totals = planTotals(items, supportIds);
   const byName = new Map();
   for (const i of items) {
     const key = (i.category || '').trim();
     const e = byName.get(key) || { all: 0, ministry: 0 };
     e.all += itemTotal(i);
-    e.ministry += num(i.ministry_amount);
+    e.ministry += itemSupport(i, supportIds);
     byName.set(key, e);
   }
   const out = new Map();
@@ -136,18 +136,67 @@ export const QUARTERS = [
   { value: 'q4', label: "רבעון ד'", months: [10, 11, 12] },
 ];
 
-export const VIEWS = [
-  { id: 'all', label: 'כל התכנית' },
-  { id: 'municipal', label: 'תקציב עירוני' },
-  { id: 'ministry', label: 'משרד התרבות' },
-];
-
 export const num = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
-export const itemTotal = (item) => num(item.municipal_amount) + num(item.ministry_amount);
+// ── מקורות התכנית (מיגרציה 0020) ─────────────────────────────────────────────
+// לתכנית יש רשימת מקורות שנבחרו מתוך מקורות התקציב, בלי הגבלה על הכמות:
+// work_plans.sources = [{ source_id, support }]. לכל שורה יש סכום לכל מקור
+// (work_plan_items.amounts) וקטגוריות לכל מקור (allocation_ids). support מסמן
+// מקור שנחשב "כספי התמיכה" של משרד התרבות, שמולם נבדקות הגבלות הטופס.
+// "view" הוא 'all' (כל התכנית) או מזהה של מקור.
+
+/** מקורות התכנית: [{ source_id, support }]. תכנית מלפני 0020 — מהשדות הישנים. */
+export function planSources(plan) {
+  if (Array.isArray(plan?.sources) && plan.sources.length) return plan.sources.filter(s => s?.source_id);
+  const out = [];
+  if (plan?.municipal_budget_source_id) out.push({ source_id: plan.municipal_budget_source_id, support: false });
+  if (plan?.ministry_budget_source_id && plan.ministry_budget_source_id !== plan.municipal_budget_source_id) {
+    out.push({ source_id: plan.ministry_budget_source_id, support: true });
+  }
+  return out;
+}
+
+export const planSourceIds = (plan) => planSources(plan).map(s => s.source_id);
+export const supportSourceIds = (plan) => planSources(plan).filter(s => s.support).map(s => s.source_id);
+
+/** הסכום של שורה ממקור אחד. */
+export const amountOf = (item, sourceId) => num(item?.amounts?.[sourceId]);
+
+/** הקטגוריות שנבחרו לשורה במקור אחד. */
+export const allocIdsOf = (item, sourceId) => {
+  const ids = item?.allocation_ids?.[sourceId];
+  return Array.isArray(ids) ? ids : [];
+};
+
+/**
+ * סך השורה: סכום כל המקורות שלה. שורה שעוד אין לה סכומים לפי מקור (תכנית בלי
+ * מקור מקושר מלפני 0020) — מהעמודות הישנות.
+ */
+export const itemTotal = (item) => {
+  const vals = Object.values(item?.amounts || {});
+  return vals.length ? vals.reduce((s, v) => s + num(v), 0) : num(item?.municipal_amount) + num(item?.ministry_amount);
+};
+
+/** כספי התמיכה בשורה — סכום המקורות שמסומנים כתמיכת משרד התרבות. */
+export const itemSupport = (item, supportIds) => (
+  supportIds ? supportIds.reduce((s, id) => s + amountOf(item, id), 0) : num(item?.ministry_amount)
+);
+
+/**
+ * העמודות הישנות, שנשמרות בכל עדכון סכומים כדי שכל מה שעוד קורא אותן יישאר
+ * נכון: ministry_amount = כספי התמיכה, municipal_amount = כל השאר.
+ */
+export function legacyAmounts(amounts, supportIds) {
+  const support = (supportIds || []).reduce((s, id) => s + num(amounts?.[id]), 0);
+  const total = Object.values(amounts || {}).reduce((s, v) => s + num(v), 0);
+  return { ministry_amount: support, municipal_amount: total - support };
+}
+
+/** התצוגות: כל התכנית, ועוד אחת לכל מקור. sources: [{ id, name }]. */
+export const planViews = (sources) => [{ id: 'all', label: 'כל התכנית' }, ...sources.map(s => ({ id: s.id, label: s.name }))];
 
 /** @param {number} [digits] ספרות אחרי הנקודה — 0 ללוח הניצול, שבו החלוקה לחודשים יוצרת שברים */
 export const formatMoney = (v, digits = 2) => `₪${num(v).toLocaleString('he-IL', { maximumFractionDigits: digits })}`;
@@ -182,45 +231,41 @@ export function utilizationLabel(item) {
   return months.map(m => MONTHS[m - 1]).join(', ');
 }
 
-/** עמודות הסכום שמוצגות בכל תצוגה: [{ key, label, value(item) }]. */
-export function amountColumns(view) {
-  const municipal = { key: 'municipal', label: 'תקציב עירוני', value: i => num(i.municipal_amount) };
-  const ministry = { key: 'ministry', label: 'משרד התרבות', value: i => num(i.ministry_amount) };
-  const total = { key: 'total', label: 'סה"כ', value: itemTotal };
-  if (view === 'municipal') return [municipal];
-  if (view === 'ministry') return [ministry];
-  return [municipal, ministry, total];
+/**
+ * עמודות הסכום שמוצגות בכל תצוגה: [{ key, label, value(item) }].
+ * כל התכנית — עמודה לכל מקור ועוד סה"כ; תצוגה של מקור — רק הוא.
+ * key הוא מזהה המקור (או 'total'). sources: [{ id, name }].
+ */
+export function amountColumns(view, sources) {
+  const col = (s) => ({ key: s.id, label: s.name, value: i => amountOf(i, s.id) });
+  if (view !== 'all') {
+    const s = sources.find(x => x.id === view);
+    return s ? [col(s)] : [];
+  }
+  return [...sources.map(col), { key: 'total', label: 'סה"כ', value: itemTotal }];
 }
 
 /** הסכום של שורה בתצוגה הנתונה. */
-export function viewAmount(item, view) {
-  if (view === 'municipal') return num(item.municipal_amount);
-  if (view === 'ministry') return num(item.ministry_amount);
-  return itemTotal(item);
-}
+export const viewAmount = (item, view) => (view === 'all' ? itemTotal(item) : amountOf(item, view));
 
 /**
- * השורות ששייכות לתצוגה. בתצוגה של גורם מממן אחד מוצגות רק שורות שיש להן
- * סכום אצל אותו גורם — שורה במימון עירוני בלבד לא תופיע בהגשה למשרד.
+ * השורות ששייכות לתצוגה. בתצוגה של מקור אחד מוצגות רק שורות שיש להן סכום
+ * ממנו — שורה שממומנת ממקור אחר לא תופיע בה.
  */
-export function itemsForView(items, view) {
-  if (view === 'municipal') return items.filter(i => num(i.municipal_amount) > 0);
-  if (view === 'ministry') return items.filter(i => num(i.ministry_amount) > 0);
-  return items;
-}
+export const itemsForView = (items, view) => (view === 'all' ? items : items.filter(i => amountOf(i, view) > 0));
 
 /**
  * קיבוץ לפי פרמטר. חמשת הפרמטרים של המשרד מופיעים תמיד, בסדר של הטופס — גם
  * בלי שורות — כדי שהתכנית תיראה כמו הטופס. קטגוריות אחרות (שורות ישנות עם
  * טקסט חופשי) מופיעות אחריהם, כדי ששום שורה לא תיעלם מהתצוגה.
  *
- * @returns {{ category, param, items, municipal, ministry, total }[]}
+ * @returns {{ category, param, items, total }[]}
  */
 export function groupByCategory(items, { includeEmpty = true } = {}) {
   const map = new Map();
   const ensure = (category) => {
     if (!map.has(category)) {
-      map.set(category, { category, param: getParameter(category), items: [], municipal: 0, ministry: 0, total: 0 });
+      map.set(category, { category, param: getParameter(category), items: [], total: 0 });
     }
     return map.get(category);
   };
@@ -229,8 +274,6 @@ export function groupByCategory(items, { includeEmpty = true } = {}) {
   for (const item of items) {
     const g = ensure((item.category || 'ללא קטגוריה').trim());
     g.items.push(item);
-    g.municipal += num(item.municipal_amount);
-    g.ministry += num(item.ministry_amount);
     g.total += itemTotal(item);
   }
 
@@ -243,30 +286,32 @@ export function groupByCategory(items, { includeEmpty = true } = {}) {
   return groups;
 }
 
-export function planTotals(items) {
+/**
+ * סיכומי התכנית: total — הכל; ministry — כספי התמיכה (המקורות שמסומנים כתמיכת
+ * משרד התרבות); bySource — לכל מקור.
+ */
+export function planTotals(items, supportIds) {
+  const bySource = {};
+  for (const i of items) for (const [id, v] of Object.entries(i.amounts || {})) bySource[id] = (bySource[id] || 0) + num(v);
   return {
-    municipal: items.reduce((s, i) => s + num(i.municipal_amount), 0),
-    ministry: items.reduce((s, i) => s + num(i.ministry_amount), 0),
     total: items.reduce((s, i) => s + itemTotal(i), 0),
+    ministry: items.reduce((s, i) => s + itemSupport(i, supportIds), 0),
+    bySource,
   };
 }
 
 /** סכום קבוצה בתצוגה הנתונה. */
-export function groupAmount(group, view) {
-  if (view === 'municipal') return group.municipal;
-  if (view === 'ministry') return group.ministry;
-  return group.total;
-}
+export const groupAmount = (group, view) => group.items.reduce((s, i) => s + viewAmount(i, view), 0);
 
 /**
  * שורות טופס המשרד לתצוגה: סכום, אחוז מסך התצוגה ועמידה בהגבלה לכל פרמטר.
  */
-export function parameterRows(items, view) {
+export function parameterRows(items, view, supportIds) {
   const groups = groupByCategory(itemsForView(items, view));
   const total = groups.reduce((s, g) => s + groupAmount(g, view), 0);
   // ההגבלות נבדקות על התכנית כולה ומול הבסיס של כל אחת (evaluateRules), כך
   // שהעמידה בהן זהה בכל תצוגה; pct נשאר האחוז מסך התצוגה
-  const rules = evaluateRules(items);
+  const rules = evaluateRules(items, supportIds);
   const rows = groups.map(g => {
     const amount = groupAmount(g, view);
     const pct = total > 0 ? (amount / total) * 100 : 0;
@@ -306,14 +351,12 @@ export function monthlySchedule(items, view) {
 }
 
 /**
- * מקורות התקציב שמקושרים לתכנית ורלוונטיים לתצוגה: בתצוגה עירונית רק המקור
- * העירוני, בתצוגת המשרד רק מקור המשרד, ובתצוגה המלאה שניהם (מיגרציה 0014).
+ * מקורות התקציב שמקושרים לתכנית ורלוונטיים לתצוגה: בתצוגה של מקור — רק הוא;
+ * בכל התכנית — כל מקורות התכנית.
  */
 export function linkedSourceIds(plan, view) {
-  const ids = [];
-  if (view !== 'ministry' && plan?.municipal_budget_source_id) ids.push(plan.municipal_budget_source_id);
-  if (view !== 'municipal' && plan?.ministry_budget_source_id) ids.push(plan.ministry_budget_source_id);
-  return [...new Set(ids)];
+  const ids = planSourceIds(plan);
+  return view === 'all' ? ids : ids.filter(id => id === view);
 }
 
 /**
@@ -362,10 +405,7 @@ export function budgetActuals(plan, sources, allocations, view) {
  * מאילו קטגוריות תקציב יורדת כל שורה (מיגרציה 0017). לשורה נשמרות רק הקטגוריות
  * שנבחרו, לפי הסדר; החלוקה מחושבת כאן: עוברים על השורות לפי sort_order, וכל
  * שורה ממלאת את הקטגוריות שלה לפי הסדר, כל אחת עד מה שנשאר בה אחרי השורות
- * הקודמות. מה שלא נכנס הוא shortfall — "חסרים".
- *
- * @param {'municipal'|'ministry'} funder
- * @returns {{ byItem: Map<string, { splits: {id, amount}[], shortfall: number }>, used: Map<string, number> }}
+ * הקודמות. מה שלא נכנס הוא shortfall — "חסרים". (planAllocationSplits למטה)
  */
 /** קטגוריות המקור ששויכו לפרמטר של השורה (budget_allocations.work_plan_category). */
 export function parameterAllocations(item, allocations) {
@@ -377,21 +417,24 @@ export function parameterAllocations(item, allocations) {
  * הקטגוריות שהשורה יורדת מהן בפועל: מה שנבחר לה במפורש, ואם לא נבחר כלום —
  * כל הקטגוריות ששויכו לפרמטר שלה, לפי הסדר.
  */
-export function effectiveAllocationIds(item, funder, allocations) {
-  const ids = Array.isArray(item[`${funder}_allocation_ids`]) ? item[`${funder}_allocation_ids`] : [];
+export function effectiveAllocationIds(item, sourceId, allocations) {
+  const ids = allocIdsOf(item, sourceId);
   return ids.length ? ids : parameterAllocations(item, allocations).map(a => a.id);
 }
 
-export function planAllocationSplits(items, allocations, funder) {
-  const amountField = `${funder}_amount`;
+/**
+ * @param sourceId מקור התכנית שהסכום שלו מתחלק בין הקטגוריות
+ * @returns {{ byItem: Map<string, { splits: {id, amount}[], shortfall: number }>, used: Map<string, number> }}
+ */
+export function planAllocationSplits(items, allocations, sourceId) {
   const capacity = new Map(allocations.map(a => [a.id, num(a.allocated_amount)]));
   const used = new Map();
   const byItem = new Map();
   const ordered = [...items].sort((a, b) => num(a.sort_order) - num(b.sort_order));
   for (const item of ordered) {
-    const ids = effectiveAllocationIds(item, funder, allocations);
+    const ids = effectiveAllocationIds(item, sourceId, allocations);
     if (ids.length === 0) continue;
-    let left = num(item[amountField]);
+    let left = amountOf(item, sourceId);
     const splits = [];
     for (const id of ids) {
       if (!capacity.has(id)) continue; // קטגוריה שנמחקה או לא שייכת למקור המקושר
@@ -424,24 +467,20 @@ export function plannedByAllocation(plans, itemsByPlan, sources, allocations) {
     if (!e.plans.includes(title)) e.plans.push(title);
     out.set(id, e);
   };
-  const funders = [
-    { field: 'municipal_budget_source_id', funder: 'municipal' },
-    { field: 'ministry_budget_source_id', funder: 'ministry' },
-  ];
   for (const plan of plans) {
     if (plan.status !== 'approved' && plan.status !== 'submitted') continue;
     bucket = plan.status;
     const items = itemsByPlan.get(plan.id) || [];
     const title = `${plan.title}${plan.year ? ` (${plan.year})` : ''} — ${plan.status === 'approved' ? 'אושרה' : 'הוגשה'}`;
-    for (const { field, funder } of funders) {
-      const source = sources.find(s => s.id === plan[field]);
+    for (const sourceId of planSourceIds(plan)) {
+      const source = sources.find(s => s.id === sourceId);
       if (!source) continue;
       const allocs = allocations.filter(a => a.budget_source_id === source.id);
       if (source.uses_categories === false) {
-        if (allocs[0]) add(allocs[0].id, items.reduce((s, i) => s + num(i[`${funder}_amount`]), 0), title);
+        if (allocs[0]) add(allocs[0].id, items.reduce((s, i) => s + amountOf(i, sourceId), 0), title);
         continue;
       }
-      const { byItem } = planAllocationSplits(items, allocs, funder);
+      const { byItem } = planAllocationSplits(items, allocs, sourceId);
       for (const { splits } of byItem.values()) for (const s of splits) add(s.id, s.amount, title);
     }
   }
@@ -553,8 +592,8 @@ export function sourceLedger(allocs, planned) {
  * הסכום המקסימלי שהשורה יכולה לקבל מהקטגוריות שלה: מה שפנוי בהן אחרי כל
  * השורות האחרות. null — לשורה אין קטגוריות, ואין הגבלה.
  */
-export function rowAllocationLimit(item, funder, allocations, splits) {
-  const ids = effectiveAllocationIds(item, funder, allocations);
+export function rowAllocationLimit(item, sourceId, allocations, splits) {
+  const ids = effectiveAllocationIds(item, sourceId, allocations);
   if (ids.length === 0) return null;
   const own = new Map((splits.byItem.get(item.id)?.splits || []).map(s => [s.id, s.amount]));
   return ids.reduce((sum, id) => {

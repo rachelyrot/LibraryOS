@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Trash2, Pencil, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
-import { MINISTRY_PARAMETERS, MONTHS, itemMonths, num, formatMoney, parameterAllocations, rowAllocationLimit } from '@/lib/workPlan';
+import { MINISTRY_PARAMETERS, MONTHS, itemMonths, num, formatMoney, parameterAllocations, rowAllocationLimit, amountOf, allocIdsOf } from '@/lib/workPlan';
 import { allocationLabel } from '@/lib/budgetUpdater';
 
 /**
@@ -72,9 +71,9 @@ function MonthSelect({ value, onChange, col, disabled, allowEmpty, min }) {
  * הסכום מתחלק ביניהן לפי הסדר (planAllocationSplits), וכשאין בהן מספיק מוצג
  * כמה חסר.
  */
-function AllocationPicker({ item, funder, info, canEdit, onSave, limit }) {
-  const field = `${funder}_allocation_ids`;
-  const ids = Array.isArray(item[field]) ? item[field] : [];
+function AllocationPicker({ item, sourceId, info, canEdit, onSave, limit }) {
+  const ids = allocIdsOf(item, sourceId);
+  const setIds = (next) => onSave(item, { allocation_ids: { ...(item.allocation_ids || {}), [sourceId]: next } });
   const { splits = [], shortfall = 0 } = info.splits.byItem.get(item.id) || {};
   const byId = new Map(info.options.map(a => [a.id, a]));
   const free = (a) => Math.max(0, num(a.allocated_amount) - (info.splits.used.get(a.id) || 0));
@@ -101,7 +100,7 @@ function AllocationPicker({ item, funder, info, canEdit, onSave, limit }) {
           <span className="shrink-0" dir="ltr">{formatMoney(s.amount, 0)}</span>
           {canEdit && !auto && (
             <button className="shrink-0 hover:text-red-500" title="הסרת הקטגוריה"
-              onClick={() => onSave(item, { [field]: ids.filter(x => x !== s.id) })}>×</button>
+              onClick={() => setIds(ids.filter(x => x !== s.id))}>×</button>
           )}
         </div>
       ))}
@@ -111,7 +110,7 @@ function AllocationPicker({ item, funder, info, canEdit, onSave, limit }) {
       {/* בחירה ידנית: במקום כל קטגוריות הפרמטר — רק אלה שנבחרו, לפי הסדר */}
       {canEdit && remaining.length > 0 && (linked.length > 1 || !auto) && (
         <select value="" className={cn(cellInput, 'text-[11px] text-muted-foreground cursor-pointer px-0.5 py-0.5')}
-          onChange={e => e.target.value && onSave(item, { [field]: [...ids, e.target.value] })}>
+          onChange={e => e.target.value && setIds([...ids, e.target.value])}>
           <option value="">{auto ? 'בחירת קטגוריה מסוימת' : '+ עוד קטגוריה'}</option>
           {remaining.map(a => (
             <option key={a.id} value={a.id}>{allocationLabel(a)} · פנוי {formatMoney(free(a), 0)}</option>
@@ -122,7 +121,7 @@ function AllocationPicker({ item, funder, info, canEdit, onSave, limit }) {
   );
 }
 
-function ItemRow({ item, cols, canEdit, editing, onToggleEdit, onSave, onDelete, funding }) {
+function ItemRow({ item, cols, canEdit, editing, onToggleEdit, onSave, onDelete, funding, sourceBudgets }) {
   // עורכים רק אחרי לחיצה על העיפרון בתחילת השורה — לחיצה על תא לבד לא משנה כלום
   const editable = canEdit && editing;
   const months = itemMonths(item);
@@ -182,20 +181,30 @@ function ItemRow({ item, cols, canEdit, editing, onToggleEdit, onSave, onDelete,
               const info = funding?.[c.key];
               const limit = info ? rowAllocationLimit(item, c.key, info.options, info.splits) : null;
               const commit = (v) => {
-                // סכום מעבר למה שפנוי בקטגוריות הוא חריגה מהתקציב — מותר, אחרי
-                // אישור, והשורה מסומנת באדום ("חסרים") עד שמוסיפים קטגוריה
-                if (limit != null && num(v) > limit + 0.005) {
-                  const over = num(v) - limit;
-                  if (!window.confirm(`בקטגוריות של השורה פנויים ${formatMoney(limit, 0)}. הסכום ${formatMoney(num(v), 0)} הוא חריגה של ${formatMoney(over, 0)} מהתקציב.\n\nלשמור עם החריגה?`)) return;
-                  toast.warning(`נשמר עם חריגה של ${formatMoney(over, 0)} מהתקציב`);
+                // חריגה מהתקציב מותרת, אחרי אישור. שתי בדיקות:
+                //  - בשורה עם קטגוריות: מעבר למה שפנוי בקטגוריות שלה (השורה
+                //    מסומנת "חריגה מהתקציב")
+                //  - תמיד, כשהמקור מקושר: התכנית כולה מתכננת מהמקור יותר ממה
+                //    שיש בו (גם במקור בלי קטגוריות, כמו משרד התרבות)
+                const amount = num(v);
+                const sb = sourceBudgets?.[c.key];
+                const newPlanned = sb ? sb.planned - amountOf(item, c.key) + amount : 0;
+                const rowOver = limit != null && amount > limit + 0.005 ? amount - limit : 0;
+                const sourceOver = sb && newPlanned > sb.available + 0.005 ? newPlanned - sb.available : 0;
+                if (rowOver || sourceOver) {
+                  const lines = [];
+                  if (rowOver) lines.push(`בקטגוריות של השורה פנויים ${formatMoney(limit, 0)} — חריגה של ${formatMoney(rowOver, 0)}.`);
+                  if (sourceOver) lines.push(`ב${sb.name} יש ${formatMoney(sb.available, 0)}, והתכנית תתכנן ממנו ${formatMoney(newPlanned, 0)} — חריגה של ${formatMoney(sourceOver, 0)}.`);
+                  // החריגה מוצגת אחר כך במקום אחד — בכרטיס המקור למעלה
+                  if (!window.confirm(`${lines.join('\n')}\n\nלשמור עם החריגה?`)) return;
                 }
-                save({ [`${c.key}_amount`]: num(v) });
+                save({ amounts: { ...(item.amounts || {}), [c.key]: amount } });
               };
               return (
                 <>
-                  <Cell col={c.key} numeric value={item[`${c.key}_amount`] ?? 0} disabled={!editable}
+                  <Cell col={c.key} numeric value={amountOf(item, c.key)} disabled={!editable}
                     format={v => formatMoney(v)} onCommit={commit} />
-                  {info && <AllocationPicker item={item} funder={c.key} info={info} canEdit={editable} onSave={onSave} limit={limit} />}
+                  {info && <AllocationPicker item={item} sourceId={c.key} info={info} canEdit={editable} onSave={onSave} limit={limit} />}
                 </>
               );
             })()}
@@ -263,10 +272,10 @@ function NewRow({ colSpan, onCreate, onCreated, focusToken }) {
 }
 
 /**
- * funding — לכל גורם מממן שהמקור המקושר שלו מחולק לקטגוריות:
+ * funding — לפי מזהה מקור, לכל מקור בתכנית שמחולק לקטגוריות:
  *   { options: קטגוריות המקור, splits: planAllocationSplits(...) }
  */
-export default function WorkPlanGrid({ items, cols, canEdit, onSave, onCreate, onDelete, focusToken, funding }) {
+export default function WorkPlanGrid({ items, cols, canEdit, onSave, onCreate, onDelete, focusToken, funding, sourceBudgets }) {
   const [editingId, setEditingId] = useState(null);
   const colSpan = 6 + cols.length + 1 + (canEdit ? 2 : 0);
   return (
@@ -288,7 +297,7 @@ export default function WorkPlanGrid({ items, cols, canEdit, onSave, onCreate, o
         </thead>
         <tbody>
           {items.map(i => (
-            <ItemRow key={i.id} item={i} cols={cols} canEdit={canEdit} onSave={onSave} onDelete={onDelete} funding={funding}
+            <ItemRow key={i.id} item={i} cols={cols} canEdit={canEdit} onSave={onSave} onDelete={onDelete} funding={funding} sourceBudgets={sourceBudgets}
               editing={editingId === i.id} onToggleEdit={() => setEditingId(id => (id === i.id ? null : i.id))} />
           ))}
           {canEdit && <NewRow colSpan={colSpan} onCreate={onCreate} onCreated={setEditingId} focusToken={focusToken} />}
