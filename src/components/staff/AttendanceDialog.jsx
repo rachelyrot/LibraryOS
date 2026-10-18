@@ -40,9 +40,9 @@ export default function AttendanceDialog({ open, onOpenChange, initialData, empl
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{initialData ? 'עריכת נוכחות' : 'רישום נוכחות'}</DialogTitle></DialogHeader>
-        <div className="space-y-4">
+        <div className="form-grid">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>תאריך *</Label>

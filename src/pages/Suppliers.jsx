@@ -157,11 +157,11 @@ export default function Suppliers() {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-xl font-heebo" dir="rtl">
+        <DialogContent className="max-w-3xl font-heebo" dir="rtl">
           <DialogHeader>
             <DialogTitle>{editing ? 'עריכת ספק' : 'ספק חדש'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="form-grid">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>שם ספק *</Label><Input value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
               <div className="space-y-1.5">

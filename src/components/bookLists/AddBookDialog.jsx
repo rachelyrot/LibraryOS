@@ -31,9 +31,9 @@ export default function AddBookDialog({ open, onOpenChange, onAdd }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto font-heebo" dir="rtl">
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto font-heebo" dir="rtl">
         <DialogHeader><DialogTitle>הוספת ספר לרשימה</DialogTitle></DialogHeader>
-        <div className="space-y-3">
+        <div className="form-grid">
           <div className="space-y-1.5">
             <Label>שם ספר *</Label>
             <Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="שם הספר" autoFocus />

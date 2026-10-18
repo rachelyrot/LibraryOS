@@ -71,9 +71,9 @@ export default function BudgetSourceDialog({ open, onOpenChange, source, onSubmi
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto font-heebo" dir="rtl">
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto font-heebo" dir="rtl">
         <DialogHeader><DialogTitle>{source ? 'עריכת מקור תקציב' : 'מקור תקציב חדש'}</DialogTitle></DialogHeader>
-        <div className="space-y-4">
+        <div className="form-grid">
           <div className="space-y-1.5">
             <Label>שם מקור התקציב *</Label>
             <Input value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="עיריית בני ברק, משרד התרבות..." />

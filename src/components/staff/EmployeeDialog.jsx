@@ -39,9 +39,9 @@ export default function EmployeeDialog({ open, onOpenChange, initialData, branch
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
         <DialogHeader><DialogTitle>{initialData ? 'עריכת עובדת' : 'עובדת חדשה'}</DialogTitle></DialogHeader>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div><Label>שם פרטי *</Label><Input value={form.first_name || ''} onChange={e => set('first_name', e.target.value)} /></div>
           <div><Label>שם משפחה *</Label><Input value={form.last_name || ''} onChange={e => set('last_name', e.target.value)} /></div>
           <div><Label>מספר זהות</Label><Input value={form.id_number || ''} onChange={e => set('id_number', e.target.value)} /></div>

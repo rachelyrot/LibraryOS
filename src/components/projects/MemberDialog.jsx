@@ -58,9 +58,9 @@ export default function MemberDialog({ open, onOpenChange, initialData, employee
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{initialData ? 'עריכת שיוך' : 'שיוך כוח אדם לפרויקט'}</DialogTitle></DialogHeader>
-        <div className="space-y-4">
+        <div className="form-grid">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>סוג</Label>

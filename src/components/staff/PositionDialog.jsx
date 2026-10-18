@@ -37,9 +37,9 @@ export default function PositionDialog({ open, onOpenChange, initialData, branch
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-3xl">
         <DialogHeader><DialogTitle>{initialData ? 'עריכת תקן' : 'תקן חדש'}</DialogTitle></DialogHeader>
-        <div className="space-y-3">
+        <div className="form-grid">
           <div>
             <Label>סניף *</Label>
             <Select value={form.branch_id || ''} onValueChange={v => set('branch_id', v)}>

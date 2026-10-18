@@ -27,9 +27,9 @@ export default function ScheduleDialog({ open, onOpenChange, initialData, branch
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-3xl">
         <DialogHeader><DialogTitle>{initialData ? 'עריכת שיבוץ' : 'שיבוץ חדש'}</DialogTitle></DialogHeader>
-        <div className="space-y-3">
+        <div className="form-grid">
           <div className="grid grid-cols-2 gap-3">
             <div><Label>תאריך *</Label><Input type="date" value={form.date || ''} onChange={e => set('date', e.target.value)} /></div>
             <div><Label>יום</Label><Input value={dayName} disabled className="bg-muted/50" /></div>

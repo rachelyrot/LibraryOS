@@ -23,9 +23,9 @@ export default function VolunteerDialog({ open, onOpenChange, initialData, branc
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-4xl">
         <DialogHeader><DialogTitle>{initialData ? 'עריכת מתנדבת' : 'מתנדבת חדשה'}</DialogTitle></DialogHeader>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div><Label>שם פרטי *</Label><Input value={form.first_name || ''} onChange={e => set('first_name', e.target.value)} /></div>
           <div><Label>שם משפחה *</Label><Input value={form.last_name || ''} onChange={e => set('last_name', e.target.value)} /></div>
           <div><Label>טלפון</Label><Input value={form.phone || ''} onChange={e => set('phone', e.target.value)} /></div>

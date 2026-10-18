@@ -258,10 +258,10 @@ export default function SupplierDetail() {
       </Tabs>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-xl font-heebo" dir="rtl">
+        <DialogContent className="max-w-3xl font-heebo" dir="rtl">
           <DialogHeader><DialogTitle>עריכת ספק</DialogTitle></DialogHeader>
           {form && (
-            <div className="space-y-4">
+            <div className="form-grid">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5"><Label>שם ספק *</Label><Input value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
                 <div className="space-y-1.5">

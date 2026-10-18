@@ -28,9 +28,9 @@ export default function GoalDialog({ open, onOpenChange, initialData, onSave }) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{initialData ? 'עריכת יעד' : 'יעד חדש'}</DialogTitle></DialogHeader>
-        <div className="space-y-4">
+        <div className="form-grid">
           <div>
             <Label>שם יעד *</Label>
             <Input value={form.name || ''} onChange={e => set('name', e.target.value)} />

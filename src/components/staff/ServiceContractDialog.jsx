@@ -61,10 +61,10 @@ export default function ServiceContractDialog({ open, onOpenChange, initialData,
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto" dir="rtl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto" dir="rtl">
         <DialogHeader><DialogTitle>{initialData ? `עריכת ${serviceLabel}` : `${serviceLabel} — חברה חדשה`}</DialogTitle></DialogHeader>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div>
             <Label>סניף *</Label>
             <Select value={form.branch_id || ''} onValueChange={v => set('branch_id', v)}>

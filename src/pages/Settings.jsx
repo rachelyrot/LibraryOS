@@ -214,11 +214,11 @@ export default function SettingsPage() {
 
       {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md font-heebo" dir="rtl">
+        <DialogContent className="max-w-3xl font-heebo" dir="rtl">
           <DialogHeader>
             <DialogTitle>{dialogMode === 'new' ? 'קטגוריה חדשה' : 'עריכת קטגוריה'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="form-grid">
             <div className="space-y-1.5">
               <Label>שם *</Label>
               <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="שם הקטגוריה" />

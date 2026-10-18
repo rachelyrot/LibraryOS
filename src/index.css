@@ -75,6 +75,28 @@
   block-size: 100%;
 }
 
+/*
+ * טופס בחלונית — רחב ונמוך במקום צר וארוך: השדות מסתדרים בעמודות (כמה שנכנסות,
+ * כל אחת לפחות 220px). מה שצריך את כל הרוחב תופס שורה שלמה: הערות (textarea),
+ * שורת הכפתורים, קבוצות שכבר מסודרות בעמודות משלהן (.grid), תיבות מידע
+ * ממוסגרות/צבועות, ו-.col-full. בטלפון — עמודה אחת.
+ */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+.form-grid > * { margin-top: 0 !important; margin-bottom: 0 !important; }
+.form-grid > .col-full,
+.form-grid > :has(textarea),
+.form-grid > .grid,
+.form-grid > .flex.justify-end,
+.form-grid > [class*="border"],
+.form-grid > [class*="bg-"] {
+  grid-column: 1 / -1;
+}
+
 /* השורה שנמצאת בעריכה (כפתור העיפרון ב-ProjectDataGrid) */
 .rdg-row-editing {
   --rdg-background-color: hsl(48 100% 96%);

@@ -307,12 +307,12 @@ export default function Users() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md font-heebo" dir="rtl">
+        <DialogContent className="max-w-3xl font-heebo" dir="rtl">
           <DialogHeader>
             <DialogTitle>הוספת משתמש/ת</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="form-grid">
             <div className="space-y-1.5">
               <Label>שם מלא *</Label>
               <Input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="שם מלא" />
@@ -346,7 +346,7 @@ export default function Users() {
             </div>
 
             {byEmail ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground col-full">
                 יישלח מייל עם קישור, והמשתמש/ת תקבע סיסמה בעצמה. אם המייל לא מגיע — אפשר לעבור ל&quot;סיסמה ידנית&quot;.
               </p>
             ) : (

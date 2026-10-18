@@ -173,10 +173,10 @@ export default function Inventory() {
 
       {/* Item Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto font-heebo" dir="rtl">
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto font-heebo" dir="rtl">
           <DialogHeader><DialogTitle>{editing ? 'עריכת פריט' : 'פריט חדש'}</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <div className="space-y-1.5 col-span-2"><Label>שם הפריט *</Label><Input value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
               <div className="space-y-1.5">
                 <Label>קטגוריה</Label>
@@ -230,7 +230,7 @@ export default function Inventory() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5 col-span-2"><Label>הערות</Label><Textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></div>
+              <div className="space-y-1.5 col-span-full"><Label>הערות</Label><Textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></div>
             </div>
 
             {/* Movement history */}

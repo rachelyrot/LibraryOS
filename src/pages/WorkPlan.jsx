@@ -783,7 +783,7 @@ export default function WorkPlan() {
 
       {/* New plan */}
       <Dialog open={planDialogOpen} onOpenChange={setPlanDialogOpen}>
-        <DialogContent className="max-w-md" dir="rtl">
+        <DialogContent className="max-w-2xl" dir="rtl">
           <DialogHeader><DialogTitle>תכנית עבודה חדשה</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-[100px_1fr] gap-3">

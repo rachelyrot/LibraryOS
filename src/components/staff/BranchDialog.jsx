@@ -23,9 +23,9 @@ export default function BranchDialog({ open, onOpenChange, initialData, onSave }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-3xl">
         <DialogHeader><DialogTitle>{initialData ? 'עריכת סניף' : 'סניף חדש'}</DialogTitle></DialogHeader>
-        <div className="space-y-3">
+        <div className="form-grid">
           <div><Label>שם סניף *</Label><Input value={form.name || ''} onChange={e => set('name', e.target.value)} /></div>
           <div><Label>כתובת</Label><Input value={form.address || ''} onChange={e => set('address', e.target.value)} /></div>
           <div><Label>טלפון</Label><Input value={form.phone || ''} onChange={e => set('phone', e.target.value)} /></div>
