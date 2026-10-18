@@ -63,7 +63,14 @@ export default function WorkPlan() {
     try {
       const list = await base44.entities.WorkPlan.list('-year', 50);
       setPlans(list);
-      setActivePlanId(selectId || list[0]?.id || null);
+      // ברירת המחדל היא תכנית השנה הנוכחית, לא האחרונה שנוצרה (שעשויה להיות של
+      // השנה הבאה). אין לשנה הנוכחית תכנית — האחרונה שלפניה, ואם אין — הראשונה.
+      const thisYear = new Date().getFullYear();
+      const byYear = (p) => Number(p.year) || 0;
+      const current = list.find(p => byYear(p) === thisYear)
+        || list.filter(p => byYear(p) && byYear(p) < thisYear).sort((a, b) => byYear(b) - byYear(a))[0]
+        || list[0];
+      setActivePlanId(selectId || current?.id || null);
       setLoadError(null);
     } catch (e) {
       // הטבלה לא קיימת עדיין — מיגרציה 0012 לא הורצה
@@ -414,7 +421,6 @@ export default function WorkPlan() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 {funderActuals.map(f => {
-                  const a = f.actuals;
                   const linked = !!activePlan[f.field];
                   // תכנית מאושרת משוריינת: ההזמנות יורדות מתוכה, ולכן משוריין =
                   // הגבוה מבין סכום התכנית למה שההזמנות לקחו, פחות מה שכבר נוצל

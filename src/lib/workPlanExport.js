@@ -46,22 +46,22 @@ function detailSheetRows(plan, items, view) {
     [plan.title],
     [`שנת ${plan.year} · פירוט · ${viewLabel(view)}`],
     [],
-    ['פרמטר', 'פירוט', 'תיאור', 'זמן ניצול', 'קהל יעד', 'משתתפים צפויים', ...cols.map(c => c.label), 'הערות'],
+    ['פרמטר', 'פירוט', 'תיאור', 'סעיף תקציבי', 'זמן ניצול', 'קהל יעד', 'משתתפים צפויים', ...cols.map(c => c.label), 'הערות'],
   ];
   const groups = groupByCategory(itemsForView(items, view), { includeEmpty: false });
   for (const g of groups) {
     for (const i of g.items) {
       rows.push([
-        g.category, i.activity_name || '', i.description || '', utilizationLabel(i) || 'לא נקבע',
+        g.category, i.activity_name || '', i.description || '', i.budget_line || '', utilizationLabel(i) || 'לא נקבע',
         i.target_audience || '', i.expected_participants != null ? num(i.expected_participants) : '',
         ...cols.map(c => round(c.value(i))), i.notes || '',
       ]);
     }
-    rows.push([`סה"כ ${g.category}`, '', '', '', '', '', ...cols.map(c => round(g.items.reduce((s, i) => s + c.value(i), 0))), '']);
+    rows.push([`סה"כ ${g.category}`, '', '', '', '', '', '', ...cols.map(c => round(g.items.reduce((s, i) => s + c.value(i), 0))), '']);
     rows.push([]);
   }
   const all = groups.flatMap(g => g.items);
-  rows.push(['סה"כ התכנית', '', '', '', '', '', ...cols.map(c => round(all.reduce((s, i) => s + c.value(i), 0))), '']);
+  rows.push(['סה"כ התכנית', '', '', '', '', '', '', ...cols.map(c => round(all.reduce((s, i) => s + c.value(i), 0))), '']);
   return rows;
 }
 
@@ -95,7 +95,7 @@ export async function exportWorkPlanExcel(plan, items) {
 
   addSheet(formSheetRows(plan, items), 'תכנון לפי פרמטרים', [46, 14, 8, 14, 8, 14, 8, 30, 16, 12, 50]);
   for (const v of VIEWS) {
-    addSheet(detailSheetRows(plan, items, v.id), `פירוט - ${v.label}`, [40, 30, 36, 16, 16, 12, ...amountColumns(v.id).map(() => 14), 28]);
+    addSheet(detailSheetRows(plan, items, v.id), `פירוט - ${v.label}`, [40, 30, 36, 14, 16, 16, 12, ...amountColumns(v.id).map(() => 14), 28]);
   }
   addSheet(scheduleSheetRows(plan, items, 'all'), 'לוח ניצול - כל התכנית', [46, ...MONTHS.map(() => 11), 11, 14]);
   addSheet(scheduleSheetRows(plan, items, 'ministry'), 'לוח ניצול - משרד התרבות', [46, ...MONTHS.map(() => 11), 11, 14]);

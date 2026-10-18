@@ -106,7 +106,7 @@ function AllocationPicker({ item, funder, info, canEdit, onSave, limit }) {
         </div>
       ))}
       {shortfall > 0.005 && (
-        <p className="text-[11px] font-medium text-red-600">חסרים {formatMoney(shortfall, 0)}</p>
+        <p className="text-[11px] font-medium text-red-600 bg-red-50 rounded px-1">חריגה מהתקציב: {formatMoney(shortfall, 0)}</p>
       )}
       {/* בחירה ידנית: במקום כל קטגוריות הפרמטר — רק אלה שנבחרו, לפי הסדר */}
       {canEdit && remaining.length > 0 && (linked.length > 1 || !auto) && (
@@ -157,6 +157,10 @@ function ItemRow({ item, cols, canEdit, editing, onToggleEdit, onSave, onDelete,
         <Cell col="description" value={item.description} disabled={!editable} placeholder={editable ? 'תיאור' : ''}
           className="text-xs text-muted-foreground" onCommit={v => save({ description: v })} />
       </td>
+      <td className="p-1 w-28">
+        <Cell col="budget_line" value={item.budget_line} disabled={!editable} placeholder={editable ? 'סעיף' : ''}
+          className="text-xs" onCommit={v => save({ budget_line: v.trim() })} />
+      </td>
       <td className="p-1 w-28"><MonthSelect col="start" value={start} disabled={!editable} allowEmpty onChange={setStart} /></td>
       <td className="p-1 w-28">
         {start == null
@@ -178,10 +182,12 @@ function ItemRow({ item, cols, canEdit, editing, onToggleEdit, onSave, onDelete,
               const info = funding?.[c.key];
               const limit = info ? rowAllocationLimit(item, c.key, info.options, info.splits) : null;
               const commit = (v) => {
-                // אי אפשר לתכנן בשורה יותר ממה שפנוי בקטגוריות שלה
+                // סכום מעבר למה שפנוי בקטגוריות הוא חריגה מהתקציב — מותר, אחרי
+                // אישור, והשורה מסומנת באדום ("חסרים") עד שמוסיפים קטגוריה
                 if (limit != null && num(v) > limit + 0.005) {
-                  toast.error(`אפשר לתכנן בשורה הזו עד ${formatMoney(limit, 0)} — זה מה שפנוי בקטגוריות שלה`);
-                  return;
+                  const over = num(v) - limit;
+                  if (!window.confirm(`בקטגוריות של השורה פנויים ${formatMoney(limit, 0)}. הסכום ${formatMoney(num(v), 0)} הוא חריגה של ${formatMoney(over, 0)} מהתקציב.\n\nלשמור עם החריגה?`)) return;
+                  toast.warning(`נשמר עם חריגה של ${formatMoney(over, 0)} מהתקציב`);
                 }
                 save({ [`${c.key}_amount`]: num(v) });
               };
@@ -262,7 +268,7 @@ function NewRow({ colSpan, onCreate, onCreated, focusToken }) {
  */
 export default function WorkPlanGrid({ items, cols, canEdit, onSave, onCreate, onDelete, focusToken, funding }) {
   const [editingId, setEditingId] = useState(null);
-  const colSpan = 5 + cols.length + 1 + (canEdit ? 2 : 0);
+  const colSpan = 6 + cols.length + 1 + (canEdit ? 2 : 0);
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -270,6 +276,7 @@ export default function WorkPlanGrid({ items, cols, canEdit, onSave, onCreate, o
           <tr className="text-xs text-muted-foreground border-b border-border/60">
             {canEdit && <th className="w-9" />}
             <th className="text-right font-medium p-2.5">פירוט</th>
+            <th className="text-right font-medium p-2.5 whitespace-nowrap">סעיף תקציבי</th>
             <th className="text-right font-medium p-2.5 whitespace-nowrap">מחודש</th>
             <th className="text-right font-medium p-2.5 whitespace-nowrap">עד חודש</th>
             <th className="text-right font-medium p-2.5 hidden md:table-cell">קהל יעד</th>
