@@ -127,6 +127,16 @@ export function generateSupplierExcel(lines, supplierName = '') {
     const v = (Number(row[7]) || 0) * (Number(row[10]) || 0);
     ws[`L${r}`] = { t: 'n', v, f: `H${r}*K${r}` };
   });
+  // שורת סה"כ בסוף: סך הכמות וסכום ההזמנה לספק — נוסחאות, כך שהן מתעדכנות
+  // כשהספק ממלא מחירים
+  if (rows.length) {
+    const last = rows.length + 1;
+    const t = last + 1;
+    ws[`A${t}`] = { t: 's', v: 'סה"כ הזמנה' };
+    ws[`H${t}`] = { t: 'n', v: rows.reduce((s, row) => s + (Number(row[7]) || 0), 0), f: `SUM(H2:H${last})` };
+    ws[`L${t}`] = { t: 'n', v: rows.reduce((s, row) => s + (Number(row[7]) || 0) * (Number(row[10]) || 0), 0), f: `SUM(L2:L${last})` };
+    ws['!ref'] = `A1:L${t}`;
+  }
   ws['!cols'] = [
     { wch: 50 }, { wch: 16 }, { wch: 12 }, { wch: 15 }, { wch: 13 }, { wch: 11 }, { wch: 10 },
     { wch: 6 }, { wch: 20 }, { wch: 17 }, { wch: 33.5 }, { wch: 17.83 },
@@ -352,7 +362,8 @@ export function parseSupplierQuote(rows) {
       notes: String(g('notes') || '').trim(),
       sku: skuKey ? String(row[skuKey] ?? '').trim() : '',
     };
-  }).filter(r => r.title || r.isbn);
+  // שורת סה"כ (כמו זו שבקובץ שאנחנו שולחים) היא לא ספר
+  }).filter(r => (r.title || r.isbn) && !/^סה["״]?כ/.test(r.title));
 }
 
 /** Which price columns a supplier file was read with — for the upload message. */
