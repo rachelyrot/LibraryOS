@@ -107,7 +107,7 @@ export default function TasksTab({ project, user, tasks, setTasks, onLoad, proje
       <div className="flex justify-between items-center flex-wrap gap-2">
         <h3 className="text-lg font-semibold">משימות ({filtered.length})</h3>
         <div className="flex gap-2">
-          {canCreate && <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2"><Upload className="w-4 h-4" /> ייבוא מאקסל</Button>}
+          {canCreate && <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2"><Upload className="w-4 h-4" /> ייבוא מאקסל / PDF</Button>}
         </div>
       </div>
 

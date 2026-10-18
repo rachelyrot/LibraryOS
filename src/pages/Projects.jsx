@@ -142,7 +142,7 @@ export default function Projects() {
         subtitle="ניהול פרויקטים, תוכניות עבודה, משימות, תקציבים וכוח אדם"
         actions={
           <div className="flex gap-2">
-            {canManage && <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2"><Upload className="w-4 h-4" /> ייבוא מאקסל</Button>}
+            {canManage && <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2"><Upload className="w-4 h-4" /> ייבוא מאקסל / PDF</Button>}
             {canViewReports && <Button variant="outline" onClick={exportProjects} className="gap-2"><Download className="w-4 h-4" /> ייצא דוח</Button>}
             {canManage && <Button onClick={handleAdd} className="gap-2"><Plus className="w-4 h-4" /> פרויקט חדש</Button>}
           </div>

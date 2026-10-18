@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { PRIORITY_LABELS, TASK_STATUS_LABELS } from '@/lib/projectUtils';
+import { pdfToRows } from '@/lib/pdfTable';
 
 const HEADER_MAP = {
   'שלב': 'phase', 'phase': 'phase', 'שלבים': 'phase',
@@ -71,9 +72,19 @@ export default function ImportTasksDialog({ open, onOpenChange, projects, defaul
     setImported(0);
     try {
       const data = await file.arrayBuffer();
-      const wb = XLSX.read(data, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      // PDF: הטבלה נבנית מחדש מהטקסט (pdfToRows) לאותה צורה כמו שורות אקסל,
+      // ומשם אותו מיפוי עמודות
+      let rows;
+      if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
+        rows = await pdfToRows(data, {
+          isHeader: (text) => !!HEADER_MAP[normalizeHeader(text)],
+          fallbackHeader: 'משימה',
+        });
+      } else {
+        const wb = XLSX.read(data, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      }
 
       const headers = Object.keys(rows[0] || {}).map(h => HEADER_MAP[normalizeHeader(h)]);
       const hasTask = headers.includes('task_description');
@@ -141,7 +152,7 @@ export default function ImportTasksDialog({ open, onOpenChange, projects, defaul
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>ייבוא תוכנית עבודה מאקסל</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>ייבוא משימות מאקסל או PDF</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -152,9 +163,9 @@ export default function ImportTasksDialog({ open, onOpenChange, projects, defaul
               </Select>
             </div>
             <div>
-              <Label>קובץ Excel</Label>
+              <Label>קובץ Excel או PDF</Label>
               <div className="flex items-center gap-2">
-                <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" id="import-file" />
+                <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf,application/pdf" onChange={handleFile} className="hidden" id="import-file" />
                 <Button variant="outline" onClick={() => document.getElementById('import-file').click()} className="gap-2 w-full">
                   <Upload className="w-4 h-4" /> {fileName || 'בחר קובץ'}
                 </Button>
@@ -165,6 +176,7 @@ export default function ImportTasksDialog({ open, onOpenChange, projects, defaul
           <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-2">
             עמודות מזוהות: תחום, תת-תחום, משימה/פירוט, אחראי בפועל, שותפים, גורמים לביצוע, איש קשר, טלפון, מייל, תאריך יעד, משך משוער, עדיפות, סטטוס, הערות.
             עמודות חסרות לא יפילו את הקובץ — יתאפשר להשלים ידנית.
+            ב-PDF הטבלה נקראת מתוך הטקסט שבקובץ — כדאי לעבור על התצוגה המקדימה לפני הייבוא. PDF סרוק (תמונה) לא ניתן לקריאה; PDF בלי טבלה — כל שורה תהיה משימה.
           </div>
 
           {preview.length > 0 && (
