@@ -14,6 +14,7 @@ import { motion } from 'framer-motion';
 import { canManageInventory } from '@/lib/permissions';
 import useCategories from '@/hooks/useCategories';
 import { cn } from '@/lib/utils';
+import { isSoftwareItem, isLowStock, licenseState } from '@/lib/inventory';
 
 const CAT_COLORS = [
   'from-blue-100 to-purple-100 text-blue-600',
@@ -42,6 +43,9 @@ const CAT_CARD = [
   { card: 'bg-amber-50 border-amber-100', chip: 'bg-amber-100 text-amber-700' },
   { card: 'bg-slate-50 border-slate-200', chip: 'bg-slate-100 text-slate-700' },
 ];
+
+const LICENSE_LABEL = { expired: 'התוקף פג', soon: 'תוקף מסתיים בקרוב' };
+const needsAttention = (i) => isLowStock(i) || ['expired', 'soon'].includes(licenseState(i));
 
 const EMPTY = { name: '', category: '', subcategory: '', current_quantity: 0, minimum_quantity: 0, unit: 'יחידות', supplier_id: '', supplier_name: '', notes: '', isbn: '', author: '' };
 
@@ -78,11 +82,12 @@ export default function Inventory() {
   const filtered = items.filter(i => {
     const matchSearch = !search || i.name?.includes(search) || i.isbn?.includes(search) || i.author?.includes(search);
     const matchCat = !catFilter || i.category === catFilter;
-    const matchLow = !showLow || i.current_quantity <= i.minimum_quantity;
+    // "מלאי נמוך" כולל גם תוכנה שהתוקף שלה עבר או קרוב
+    const matchLow = !showLow || needsAttention(i);
     return matchSearch && matchCat && matchLow;
   });
 
-  const lowCount = items.filter(i => i.current_quantity <= i.minimum_quantity).length;
+  const lowCount = items.filter(needsAttention).length;
   // מספר הצבע של קטגוריה — לפי המיקום שלה ברשימה; קטגוריה לא מוכרת מקבלת אפור
   const catIndex = (category) => {
     const i = mains.findIndex(m => m.value === category);
@@ -114,7 +119,7 @@ export default function Inventory() {
             <button key={m.value} onClick={() => setCatFilter(catFilter === m.value ? '' : m.value)} className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${catFilter === m.value ? 'bg-primary text-primary-foreground' : `${CAT_CARD[catIndex(m.value)].chip} hover:opacity-80`}`}>{m.label}</button>
           ))}
           <button onClick={() => setShowLow(!showLow)} className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 transition-all ${showLow ? 'bg-red-500 text-white' : 'bg-muted text-muted-foreground hover:bg-secondary'}`}>
-            <AlertTriangle className="w-3 h-3" /> מלאי נמוך {lowCount > 0 && `(${lowCount})`}
+            <AlertTriangle className="w-3 h-3" /> מלאי נמוך / תוקף {lowCount > 0 && `(${lowCount})`}
           </button>
         </div>
       </div>
@@ -124,7 +129,10 @@ export default function Inventory() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map(item => {
-            const isLow = item.current_quantity <= item.minimum_quantity;
+            const software = isSoftwareItem(item);
+            const license = licenseState(item);
+            // מסגרת: מלאי נמוך, או תוכנה שהתוקף שלה עבר / מסתיים בקרוב
+            const isLow = needsAttention(item);
             const hasMovements = (item.movements || []).length > 0;
             return (
               <motion.div key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -135,17 +143,26 @@ export default function Inventory() {
                   <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${CAT_COLORS[catIndex(item.category)]} flex items-center justify-center shrink-0`}>
                     <Package className="w-4 h-4" />
                   </div>
-                  {isLow && <span className="flex items-center gap-1 text-xs text-red-500 font-medium"><AlertTriangle className="w-3 h-3" /> נמוך</span>}
+                  {isLow && <span className="flex items-center gap-1 text-xs text-red-500 font-medium"><AlertTriangle className="w-3 h-3" /> {software ? LICENSE_LABEL[license] : 'נמוך'}</span>}
                   {hasMovements && !isLow && <span className="flex items-center gap-1 text-xs text-green-600 font-medium"><Clock className="w-3 h-3" /> {item.movements.length}</span>}
                 </div>
                 <p className="font-semibold mt-2 text-sm">{item.name}</p>
                 {item.author && <p className="text-xs text-muted-foreground">{item.author}</p>}
                 <div className="flex items-end justify-between mt-3">
                   <span className={cn('text-xs px-2 py-0.5 rounded-full', CAT_CARD[catIndex(item.category)].chip)}>{getLabel(item.category) || 'ללא קטגוריה'}{item.subcategory ? ` · ${item.subcategory}` : ''}</span>
-                  <div className="text-left">
-                    <span className={cn('text-2xl font-bold', isLow ? 'text-red-500' : 'text-foreground')}>{item.current_quantity}</span>
-                    <span className="text-xs text-muted-foreground"> / {item.minimum_quantity} מינ׳</span>
-                  </div>
+                  {software ? (
+                    <div className="text-left">
+                      <span className="text-[11px] text-muted-foreground block">תוקף</span>
+                      <span className={cn('text-sm font-bold', isLow ? 'text-red-500' : 'text-foreground')}>
+                        {item.license_expiry ? new Date(`${item.license_expiry}T00:00:00`).toLocaleDateString('he-IL') : 'לא הוזן'}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-left">
+                      <span className={cn('text-2xl font-bold', isLow ? 'text-red-500' : 'text-foreground')}>{item.current_quantity}</span>
+                      <span className="text-xs text-muted-foreground"> / {item.minimum_quantity} מינ׳</span>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             );
@@ -178,9 +195,16 @@ export default function Inventory() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5"><Label>כמות נוכחית</Label><Input type="number" value={form.current_quantity ?? ''} onChange={e => setForm(f => ({ ...f, current_quantity: Number(e.target.value) }))} /></div>
-              <div className="space-y-1.5"><Label>כמות מינימום</Label><Input type="number" value={form.minimum_quantity ?? ''} onChange={e => setForm(f => ({ ...f, minimum_quantity: Number(e.target.value) }))} /></div>
-              <div className="space-y-1.5"><Label>יחידת מידה</Label><Input value={form.unit || ''} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} /></div>
+              {/* תקשורת ומחשוב — תוכנות: תוקף במקום כמויות */}
+              {isSoftwareItem(form) ? (
+                <div className="space-y-1.5"><Label>תוקף התוכנה</Label><Input type="date" value={form.license_expiry || ''} onChange={e => setForm(f => ({ ...f, license_expiry: e.target.value }))} /></div>
+              ) : (
+                <>
+                  <div className="space-y-1.5"><Label>כמות נוכחית</Label><Input type="number" value={form.current_quantity ?? ''} onChange={e => setForm(f => ({ ...f, current_quantity: Number(e.target.value) }))} /></div>
+                  <div className="space-y-1.5"><Label>כמות מינימום</Label><Input type="number" value={form.minimum_quantity ?? ''} onChange={e => setForm(f => ({ ...f, minimum_quantity: Number(e.target.value) }))} /></div>
+                  <div className="space-y-1.5"><Label>יחידת מידה</Label><Input value={form.unit || ''} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} /></div>
+                </>
+              )}
               <div className="space-y-1.5"><Label>ISBN (לספרים)</Label><Input value={form.isbn || ''} onChange={e => setForm(f => ({ ...f, isbn: e.target.value }))} /></div>
               <div className="space-y-1.5"><Label>מחבר</Label><Input value={form.author || ''} onChange={e => setForm(f => ({ ...f, author: e.target.value }))} /></div>
               <div className="space-y-1.5">
@@ -195,7 +219,6 @@ export default function Inventory() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5"><Label>עותקים באגרון</Label><Input type="number" value={form.copies_in_agron ?? ''} onChange={e => setForm(f => ({ ...f, copies_in_agron: Number(e.target.value) }))} /></div>
               <div className="space-y-1.5 col-span-2"><Label>הערות</Label><Textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></div>
             </div>
 

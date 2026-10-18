@@ -13,6 +13,7 @@ import StatusBadge from '@/components/StatusBadge';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { isSoftwareItem, isLowStock } from '@/lib/inventory';
 import moment from 'moment';
 import { canViewBudgets, canViewSensitiveBudgetData, isAdmin } from '@/lib/permissions';
 import StaffDashboardCards from '@/components/staff/StaffDashboardCards';
@@ -248,7 +249,7 @@ export default function Dashboard() {
     { title: 'הזמנות פתוחות', value: orders.filter(o => ['draft', 'pending_approval', 'approved', 'ordered'].includes(o.status)).length, icon: ShoppingCart, color: 'from-blue-500 to-purple-500', to: '/orders?status=draft,pending_approval,approved,ordered' },
     { title: 'ממתינות לאישור', value: orders.filter(o => o.status === 'pending_approval').length, icon: Clock, color: 'from-amber-500 to-orange-500', to: '/orders?status=pending_approval' },
     { title: 'התקבלו החודש', value: orders.filter(o => ['received_full', 'received_partial'].includes(o.status) && moment(o.received_date).isSame(moment(), 'month')).length, icon: CheckCircle, color: 'from-green-500 to-emerald-500', to: '/orders?receivedMonth=1' },
-    { title: 'מלאי נמוך', value: inventoryItems.filter(i => i.current_quantity <= i.minimum_quantity).length, icon: AlertTriangle, color: 'from-red-500 to-rose-500', to: '/inventory?low=1' },
+    { title: 'מלאי נמוך', value: inventoryItems.filter(isLowStock).length, icon: AlertTriangle, color: 'from-red-500 to-rose-500', to: '/inventory?low=1' },
     { title: 'רשימות לא מטופלות', value: bookLists.filter(l => l.status === 'received' || l.status === 'in_review').length, icon: BookOpen, color: 'from-pink-500 to-rose-500', to: '/book-procurement?status=received,in_review' },
   ];
 
@@ -803,15 +804,15 @@ export default function Dashboard() {
                 </div>
                 <div className="text-center p-3 bg-red-50 rounded-lg">
                   <p className="text-xs text-red-700">מתחת למינימום</p>
-                  <p className="text-lg font-bold text-red-700">{filteredInventory.filter(i => i.current_quantity <= i.minimum_quantity).length}</p>
+                  <p className="text-lg font-bold text-red-700">{filteredInventory.filter(isLowStock).length}</p>
                 </div>
                 <div className="text-center p-3 bg-amber-50 rounded-lg">
                   <p className="text-xs text-amber-700">חסרים (0 במלאי)</p>
-                  <p className="text-lg font-bold text-amber-700">{filteredInventory.filter(i => i.current_quantity === 0).length}</p>
+                  <p className="text-lg font-bold text-amber-700">{filteredInventory.filter(i => !isSoftwareItem(i) && i.current_quantity === 0).length}</p>
                 </div>
                 <div className="text-center p-3 bg-green-50 rounded-lg">
                   <p className="text-xs text-green-700">תקינים</p>
-                  <p className="text-lg font-bold text-green-700">{filteredInventory.filter(i => i.current_quantity > i.minimum_quantity).length}</p>
+                  <p className="text-lg font-bold text-green-700">{filteredInventory.filter(i => !isSoftwareItem(i) && i.current_quantity > i.minimum_quantity).length}</p>
                 </div>
               </div>
 
@@ -832,8 +833,9 @@ export default function Dashboard() {
                   </TableHeader>
                   <TableBody>
                     {filteredInventory.map(item => {
-                      const isLow = item.current_quantity <= item.minimum_quantity;
-                      const isZero = item.current_quantity === 0;
+                      const software = isSoftwareItem(item);
+                      const isLow = isLowStock(item);
+                      const isZero = !software && item.current_quantity === 0;
                       return (
                         <TableRow key={item.id}>
                           <TableCell className="font-medium">{item.name}</TableCell>
@@ -848,7 +850,7 @@ export default function Dashboard() {
                             <span className={cn('text-xs px-2 py-1 rounded-full font-medium',
                               isZero ? 'bg-red-100 text-red-700' : isLow ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
                             )}>
-                              {isZero ? 'חסר' : isLow ? 'נמוך' : 'תקין'}
+                              {software ? 'תוכנה' : isZero ? 'חסר' : isLow ? 'נמוך' : 'תקין'}
                             </span>
                           </TableCell>
                         </TableRow>
