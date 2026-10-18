@@ -205,7 +205,9 @@ export default function Inventory() {
                   <div className="space-y-1.5"><Label>יחידת מידה</Label><Input value={form.unit || ''} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} /></div>
                 </>
               )}
-              <div className="space-y-1.5"><Label>ISBN (לספרים)</Label><Input value={form.isbn || ''} onChange={e => setForm(f => ({ ...f, isbn: e.target.value }))} /></div>
+              {(form.category || '').trim() === 'ספרים' && (
+                <div className="space-y-1.5"><Label>ISBN</Label><Input value={form.isbn || ''} onChange={e => setForm(f => ({ ...f, isbn: e.target.value }))} /></div>
+              )}
               <div className="space-y-1.5"><Label>מחבר</Label><Input value={form.author || ''} onChange={e => setForm(f => ({ ...f, author: e.target.value }))} /></div>
               <div className="space-y-1.5">
                 <Label>ספק</Label>
