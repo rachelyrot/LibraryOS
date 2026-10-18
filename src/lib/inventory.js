@@ -8,7 +8,10 @@
 export const SOFTWARE_CATEGORY = 'תקשורת ומחשוב';
 export const LICENSE_WARN_DAYS = 30;
 
-export const isSoftwareItem = (item) => (item?.category || '').trim() === SOFTWARE_CATEGORY;
+// Matched by the word "מחשוב", not the exact name: the category is a row in the
+// categories table, so its spelling there (spacing, "מחשוב ותקשורת"...) is
+// whatever was typed in Settings.
+export const isSoftwareItem = (item) => /מחשוב/.test(String(item?.category || ''));
 
 export const isLowStock = (item) =>
   !isSoftwareItem(item) && Number(item?.current_quantity || 0) <= Number(item?.minimum_quantity || 0);
