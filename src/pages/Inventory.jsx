@@ -69,7 +69,8 @@ export default function Inventory() {
   const loadSuppliers = () => base44.entities.Supplier.list('name', 500).then(setSuppliers).catch(() => {});
   useEffect(() => { load(); loadSuppliers(); base44.auth.me().then(setUser).catch(() => {}); }, []);
 
-  const openNew = () => { setEditing(null); setForm(EMPTY); setOpen(true); };
+  // פריט חדש מתוך סינון של קטגוריה — הקטגוריה כבר ממולאת, ונשאר לבחור תת-קטגוריה
+  const openNew = () => { setEditing(null); setForm({ ...EMPTY, category: catFilter || '' }); setOpen(true); };
   const openEdit = (item) => { setEditing(item); setForm(item); setOpen(true); };
 
   const save = async () => {
@@ -205,10 +206,13 @@ export default function Inventory() {
                   <div className="space-y-1.5"><Label>יחידת מידה</Label><Input value={form.unit || ''} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} /></div>
                 </>
               )}
+              {/* ISBN ומחבר — רק לספרים */}
               {(form.category || '').trim() === 'ספרים' && (
-                <div className="space-y-1.5"><Label>ISBN</Label><Input value={form.isbn || ''} onChange={e => setForm(f => ({ ...f, isbn: e.target.value }))} /></div>
+                <>
+                  <div className="space-y-1.5"><Label>ISBN</Label><Input value={form.isbn || ''} onChange={e => setForm(f => ({ ...f, isbn: e.target.value }))} /></div>
+                  <div className="space-y-1.5"><Label>מחבר</Label><Input value={form.author || ''} onChange={e => setForm(f => ({ ...f, author: e.target.value }))} /></div>
+                </>
               )}
-              <div className="space-y-1.5"><Label>מחבר</Label><Input value={form.author || ''} onChange={e => setForm(f => ({ ...f, author: e.target.value }))} /></div>
               <div className="space-y-1.5">
                 <Label>ספק</Label>
                 <Select value={form.supplier_id || ''} onValueChange={v => {
