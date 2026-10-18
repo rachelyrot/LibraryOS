@@ -158,12 +158,12 @@ export default function Inventory() {
                         {item.license_expiry ? new Date(`${item.license_expiry}T00:00:00`).toLocaleDateString('he-IL') : 'לא הוזן'}
                       </span>
                     </div>
-                  ) : (
+                  ) : tracksMinimum(item) ? (
                     <div className="text-left">
                       <span className={cn('text-2xl font-bold', isLow ? 'text-red-500' : 'text-foreground')}>{item.current_quantity}</span>
-                      {tracksMinimum(item) && <span className="text-xs text-muted-foreground"> / {item.minimum_quantity} מינ׳</span>}
+                      <span className="text-xs text-muted-foreground"> / {item.minimum_quantity} מינ׳</span>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </motion.div>
             );
@@ -201,10 +201,10 @@ export default function Inventory() {
                 <div className="space-y-1.5"><Label>תוקף התוכנה</Label><Input type="date" value={form.license_expiry || ''} onChange={e => setForm(f => ({ ...f, license_expiry: e.target.value }))} /></div>
               ) : (
                 <>
-                  <div className="space-y-1.5"><Label>כמות נוכחית</Label><Input type="number" value={form.current_quantity ?? ''} onChange={e => setForm(f => ({ ...f, current_quantity: Number(e.target.value) }))} /></div>
-                  {/* פעילות תרבות — בלי מינימום ויחידה */}
+                  {/* פעילות תרבות — בלי כמויות ויחידה */}
                   {tracksMinimum(form) && (
                     <>
+                      <div className="space-y-1.5"><Label>כמות נוכחית</Label><Input type="number" value={form.current_quantity ?? ''} onChange={e => setForm(f => ({ ...f, current_quantity: Number(e.target.value) }))} /></div>
                       <div className="space-y-1.5"><Label>כמות מינימום</Label><Input type="number" value={form.minimum_quantity ?? ''} onChange={e => setForm(f => ({ ...f, minimum_quantity: Number(e.target.value) }))} /></div>
                       <div className="space-y-1.5"><Label>יחידת מידה</Label><Input value={form.unit || ''} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} /></div>
                     </>

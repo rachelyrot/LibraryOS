@@ -13,7 +13,7 @@ export const LICENSE_WARN_DAYS = 30;
 // whatever was typed in Settings.
 export const isSoftwareItem = (item) => /מחשוב/.test(String(item?.category || ''));
 
-// פעילות תרבות: כמות בלבד — בלי כמות מינימום ויחידת מידה, ולכן גם לא "מלאי נמוך"
+// פעילות תרבות: בלי כמויות ויחידת מידה בכלל, ולכן גם לא "מלאי נמוך"
 export const isCultureItem = (item) => /תרבות/.test(String(item?.category || ''));
 
 /** Does the item track a minimum quantity (and so can be low stock)? */
