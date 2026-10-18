@@ -15,12 +15,11 @@ import { makeGridSaveHandler } from './grid/gridSave';
 
 export default function TasksTab({ project, user, tasks, setTasks, onLoad, projects, domains }) {
   const [importOpen, setImportOpen] = useState(false);
-  const [filters, setFilters] = useState({ domain: 'all', sub_domain: 'all', status: 'all', priority: 'all', phase: 'all', search: '' });
+  const [filters, setFilters] = useState({ domain: 'all', sub_domain: 'all', status: 'all', priority: 'all', search: '' });
 
   const canCreate = canCreateTasks(user);
   const canUpdate = canUpdateTaskStatus(user);
 
-  const phases = [...new Set(tasks.map(t => t.phase).filter(Boolean))];
   const domainNames = domains?.filter(d => !d.parent_domain_id).map(d => d.name) || [];
   const subDomainNames = domains?.filter(d => d.parent_domain_id).map(d => d.name) || [];
   const availableSubDomains = filters.domain !== 'all' ? subDomainNames : [...new Set(tasks.map(t => t.sub_domain).filter(Boolean))];
@@ -30,7 +29,6 @@ export default function TasksTab({ project, user, tasks, setTasks, onLoad, proje
     if (filters.sub_domain !== 'all' && t.sub_domain !== filters.sub_domain) return false;
     if (filters.status !== 'all' && t.status !== filters.status) return false;
     if (filters.priority !== 'all' && t.priority !== filters.priority) return false;
-    if (filters.phase !== 'all' && t.phase !== filters.phase) return false;
     if (filters.search && !t.task_description?.includes(filters.search) && !t.assignee?.includes(filters.search) && !t.contact_name?.includes(filters.search)) return false;
     return true;
   });
@@ -61,7 +59,6 @@ export default function TasksTab({ project, user, tasks, setTasks, onLoad, proje
     textColumn('task_description', 'משימה', { editable: canCreate, width: 220 }),
     enumColumn('status', 'סטטוס', TASK_STATUS_LABELS, TASK_STATUS_COLORS, { editable: canUpdate, width: 140 }),
     enumColumn('priority', 'עדיפות', PRIORITY_LABELS, PRIORITY_COLORS, { editable: canCreate, width: 100 }),
-    textColumn('phase', 'שלב', { editable: canCreate, width: 100 }),
     textColumn('domain', 'תחום', { editable: canCreate, width: 120 }),
     textColumn('sub_domain', 'תת-תחום', { editable: canCreate, width: 120 }),
     textColumn('assignee', 'אחראית', { editable: canCreate, width: 120 }),
@@ -77,7 +74,7 @@ export default function TasksTab({ project, user, tasks, setTasks, onLoad, proje
     numberColumn('progress_percentage', 'התקדמות %', { editable: canCreate, width: 100, min: 0, max: 100 }),
     fkPickerColumn('depends_on_task_id', 'depends_on_task_name', 'תלוי במשימה', otherTasks, (t) => t.task_description, { editable: canCreate, width: 150 }),
     fileUrlsColumn('file_urls', 'קבצים', { width: 70 }),
-    textColumn('notes', 'הערות', { editable: canCreate, width: 160 }),
+    textColumn('notes', 'פירוט', { editable: canCreate, width: 200 }),
   ];
 
   return (
@@ -99,10 +96,6 @@ export default function TasksTab({ project, user, tasks, setTasks, onLoad, proje
         <Select value={filters.sub_domain} onValueChange={v => setFilters(f => ({ ...f, sub_domain: v }))}>
           <SelectTrigger className="w-32"><SelectValue placeholder="תת-תחום" /></SelectTrigger>
           <SelectContent><SelectItem value="all">כל תתי-התחומים</SelectItem>{availableSubDomains.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
-        </Select>
-        <Select value={filters.phase} onValueChange={v => setFilters(f => ({ ...f, phase: v }))}>
-          <SelectTrigger className="w-32"><SelectValue placeholder="שלב" /></SelectTrigger>
-          <SelectContent><SelectItem value="all">כל השלבים</SelectItem>{phases.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
         </Select>
         <Select value={filters.status} onValueChange={v => setFilters(f => ({ ...f, status: v }))}>
           <SelectTrigger className="w-36"><SelectValue placeholder="סטטוס" /></SelectTrigger>

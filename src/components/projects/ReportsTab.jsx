@@ -20,12 +20,12 @@ export default function ReportsTab({ project, user, tasks, domains, contacts, pu
     setExporting('tasks');
     try {
       const data = tasks.map(t => ({
-        'שלב': t.phase || '', 'תחום': t.domain || '', 'תת-תחום': t.sub_domain || '',
+        'תחום': t.domain || '', 'תת-תחום': t.sub_domain || '',
         'משימה': t.task_description || '', 'אחראי בפועל': t.assignee || '', 'שותפים': t.partners || '',
         'גורמים לביצוע': t.executing_parties || '', 'איש קשר': t.contact_name || '',
         'טלפון': t.contact_phone || '', 'מייל': t.contact_email || '',
         'תאריך יעד': t.due_date || '', 'עדיפות': PRIORITY_LABELS[t.priority] || '',
-        'סטטוס': TASK_STATUS_LABELS[t.status] || '', 'אחוז התקדמות': t.progress_percentage || 0, 'הערות': t.notes || ''
+        'סטטוס': TASK_STATUS_LABELS[t.status] || '', 'אחוז התקדמות': t.progress_percentage || 0, 'פירוט': t.notes || ''
       }));
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();

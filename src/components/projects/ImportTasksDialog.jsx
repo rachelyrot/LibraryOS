@@ -13,7 +13,7 @@ const HEADER_MAP = {
   'שלב': 'phase', 'phase': 'phase', 'שלבים': 'phase',
   'תחום': 'domain', 'domain': 'domain', 'תחומים': 'domain',
   'תת-תחום': 'sub_domain', 'תת תחום': 'sub_domain', 'תתתחום': 'sub_domain', 'sub_domain': 'sub_domain',
-  'משימה': 'task_description', 'משימה מפורטת': 'task_description', 'task': 'task_description', 'תיאור משימה': 'task_description', 'פירוט': 'task_description',
+  'משימה': 'task_description', 'משימה מפורטת': 'task_description', 'task': 'task_description', 'תיאור משימה': 'task_description', 'פירוט': 'notes',
   'אחראית': 'assignee', 'אחראי': 'assignee', 'assignee': 'assignee', 'אחראי בפועל': 'assignee', 'אחראי/ת': 'assignee',
   'שותפים': 'partners', 'partners': 'partners', 'שותף': 'partners', 'שותפים לפרויקט': 'partners',
   'גורמים לביצוע': 'executing_parties', 'גורמי ביצוע': 'executing_parties', 'גורמים': 'executing_parties', 'executing_parties': 'executing_parties',
@@ -75,6 +75,9 @@ export default function ImportTasksDialog({ open, onOpenChange, projects, defaul
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
 
+      const headers = Object.keys(rows[0] || {}).map(h => HEADER_MAP[normalizeHeader(h)]);
+      const hasTask = headers.includes('task_description');
+      const hasDetail = Object.keys(rows[0] || {}).some(h => normalizeHeader(h) === 'פירוט');
       const parsed = rows.map((row) => {
         const task = {
           phase: '', domain: '', sub_domain: '', task_description: '', assignee: '', partners: '',
@@ -93,7 +96,9 @@ export default function ImportTasksDialog({ open, onOpenChange, projects, defaul
             task[mapped] = String(val).trim();
           }
         });
-        if (!task.phase) task.phase = 'ללא שלב';
+        // "פירוט" הוא שם העמודה של notes (כמו בטבלה ובייצוא). בקובץ ישן בלי עמודת
+        // "משימה" הוא היה תיאור המשימה — אז הוא נשאר שם
+        if (!task.task_description && task.notes && hasDetail && !hasTask) { task.task_description = task.notes; task.notes = ''; }
         return task;
       }).filter(t => t.task_description?.trim());
 
