@@ -109,6 +109,37 @@ export function enumColumn(key, name, labels, colors, { editable = true, width }
   };
 }
 
+// A text field chosen from a list instead of typed — e.g. a task's domain from
+// the project's domains. getOptions(row) returns the allowed strings (they may
+// depend on the row, like sub-domains of the row's domain). A value already
+// saved that is not in the list stays selectable, so it isn't silently lost.
+// onPick(row, value) may return extra fields to change together (e.g. clearing
+// a sub-domain that doesn't belong to the newly picked domain).
+export function optionsColumn(key, name, getOptions, { editable = true, width, onPick, emptyLabel = '—' } = {}) {
+  return {
+    key, name, width, editable, resizable: true,
+    renderEditCell({ row, onRowChange }) {
+      const options = getOptions(row) || [];
+      const current = row[key] || '';
+      const list = current && !options.includes(current) ? [current, ...options] : options;
+      return (
+        <select
+          autoFocus
+          className={selectInputBase}
+          value={current}
+          onChange={(e) => {
+            const value = e.target.value;
+            onRowChange({ ...row, [key]: value, ...(onPick?.(row, value) || {}) }, true);
+          }}
+        >
+          <option value="">{emptyLabel}</option>
+          {list.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      );
+    },
+  };
+}
+
 // Boolean columns commit immediately on click — no separate edit mode, matching
 // the spreadsheet-native feel of clicking a checkbox directly.
 export function booleanColumn(key, name, { editable = true, width, onToggle } = {}) {

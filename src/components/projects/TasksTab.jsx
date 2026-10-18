@@ -9,7 +9,7 @@ import { TASK_STATUS_LABELS, TASK_STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLOR
 import { canCreateTasks, canUpdateTaskStatus } from '@/lib/permissions';
 import ImportTasksDialog from './ImportTasksDialog';
 import ProjectDataGrid from './grid/ProjectDataGrid';
-import { textColumn, dateColumn, enumColumn, numberColumn, fkPickerColumn } from './grid/columnHelpers';
+import { textColumn, dateColumn, enumColumn, numberColumn, fkPickerColumn, optionsColumn } from './grid/columnHelpers';
 import { fileUrlsColumn } from './grid/popoverCellEditors';
 import { makeGridSaveHandler } from './grid/gridSave';
 
@@ -21,8 +21,6 @@ export default function TasksTab({ project, user, tasks, setTasks, onLoad, proje
   const canUpdate = canUpdateTaskStatus(user);
 
   const domainNames = domains?.filter(d => !d.parent_domain_id).map(d => d.name) || [];
-  const subDomainNames = domains?.filter(d => d.parent_domain_id).map(d => d.name) || [];
-  const availableSubDomains = filters.domain !== 'all' ? subDomainNames : [...new Set(tasks.map(t => t.sub_domain).filter(Boolean))];
 
   const filtered = tasks.filter(t => {
     if (filters.domain !== 'all' && t.domain !== filters.domain) return false;
@@ -48,8 +46,18 @@ export default function TasksTab({ project, user, tasks, setTasks, onLoad, proje
     catch (e) { toast.error('שגיאה במחיקה'); }
   };
 
+  // תחום ותת-תחום נבחרים מלשונית התחומים של הפרויקט: תחום = שורה בלי תחום
+  // אב, תת-תחום = שורה שתחת תחום. נשמרים כשם (כמו קודם), והשניים נשמרים יחד,
+  // כי בחירה באחד יכולה לשנות את השני
+  const topDomains = (domains || []).filter(d => !d.parent_domain_id);
+  const parentNameOf = (sub) => sub.parent_domain_name || topDomains.find(d => d.id === sub.parent_domain_id)?.name || '';
+  const subDomainsOf = (domainName) => (domains || [])
+    .filter(d => d.parent_domain_id && (!domainName || parentNameOf(d) === domainName))
+    .map(d => d.name);
+  const availableSubDomains = filters.domain !== 'all' ? subDomainsOf(filters.domain) : [...new Set(tasks.map(t => t.sub_domain).filter(Boolean))];
+
   const handleRowsChange = makeGridSaveHandler(base44.entities.ProjectTask, setTasks, {
-    pairedFields: { depends_on_task_id: 'depends_on_task_name' },
+    pairedFields: { depends_on_task_id: 'depends_on_task_name', domain: 'sub_domain', sub_domain: 'domain' },
     onError: onLoad,
   });
 
@@ -59,8 +67,19 @@ export default function TasksTab({ project, user, tasks, setTasks, onLoad, proje
     textColumn('task_description', 'משימה', { editable: canCreate, width: 220 }),
     enumColumn('status', 'סטטוס', TASK_STATUS_LABELS, TASK_STATUS_COLORS, { editable: canUpdate, width: 140 }),
     enumColumn('priority', 'עדיפות', PRIORITY_LABELS, PRIORITY_COLORS, { editable: canCreate, width: 100 }),
-    textColumn('domain', 'תחום', { editable: canCreate, width: 120 }),
-    textColumn('sub_domain', 'תת-תחום', { editable: canCreate, width: 120 }),
+    optionsColumn('domain', 'תחום', () => topDomains.map(d => d.name), {
+      editable: canCreate, width: 130,
+      // תת-תחום שלא שייך לתחום החדש מתנקה
+      onPick: (row, value) => (row.sub_domain && !subDomainsOf(value).includes(row.sub_domain) ? { sub_domain: '' } : {}),
+    }),
+    optionsColumn('sub_domain', 'תת-תחום', (row) => subDomainsOf(row.domain), {
+      editable: canCreate, width: 130,
+      // בחירת תת-תחום בלי תחום ממלאת את התחום שלו
+      onPick: (row, value) => {
+        const sub = (domains || []).find(d => d.parent_domain_id && d.name === value);
+        return !row.domain && sub ? { domain: parentNameOf(sub) } : {};
+      },
+    }),
     textColumn('assignee', 'אחראית', { editable: canCreate, width: 120 }),
     textColumn('partners', 'שותפים', { editable: canCreate, width: 120 }),
     textColumn('executing_parties', 'גורמים לביצוע', { editable: canCreate, width: 150 }),
