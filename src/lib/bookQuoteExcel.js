@@ -150,6 +150,72 @@ export function generateSupplierExcel(lines, supplierName = '') {
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
+/**
+ * The price comparison as an Excel file: one row per book, a price column per
+ * supplier (the price that counts for the book's nylon choice, as in
+ * getEffectivePrice), then the cheapest, the chosen supplier and the line total.
+ * A total row at the end gives each supplier's total for the books it priced
+ * and the total of the chosen suppliers.
+ *
+ * books: computeCheapestSuppliers(...) output. suppliers: [{ id, name }].
+ * Returns a Blob.
+ */
+export function generateComparisonExcel(books, suppliers, title = '') {
+  const nameOf = (id) => suppliers.find(s => s.id === id)?.name || '';
+  const priceFrom = (b, sid) => {
+    const q = (b.supplier_quotes || []).find(sq => sq.supplier_id === sid && sq.matched);
+    const p = q ? getEffectivePrice(b, q) : undefined;
+    return p != null && Number.isFinite(Number(p)) ? Number(p) : null;
+  };
+  const qty = (b) => Number(b.requested_quantity) || 1;
+  const header = [
+    'שם ספר', 'מחבר/ת', 'הו"ל', 'ISBN', 'כמות', 'ניילון', 'כריכה',
+    ...suppliers.map(s => `מחיר ${s.name}`),
+    'הזול ביותר', 'מחיר הזול', 'ספק שנבחר', 'מחיר שנבחר', 'סה"כ לשורה', 'סיבת בחירה',
+  ];
+  const totals = suppliers.map(() => 0);
+  let chosenTotal = 0;
+  const rows = books.map(b => {
+    const prices = suppliers.map((s, k) => {
+      const p = priceFrom(b, s.id);
+      if (p != null) totals[k] += p * qty(b);
+      return p ?? '';
+    });
+    const chosenPrice = b.selected_supplier_id ? priceFrom(b, b.selected_supplier_id) : null;
+    const line = chosenPrice != null ? chosenPrice * qty(b) : '';
+    if (line !== '') chosenTotal += line;
+    return [
+      b.title || '', b.author || '', b.publisher || '', b.isbn || '', qty(b),
+      normalizeNylon(b.nylon_required) === 'with_nylon' ? 'כן' : 'לא', 'כן',
+      ...prices,
+      b.cheapest_supplier_id ? nameOf(b.cheapest_supplier_id) : '',
+      b.cheapest_price != null ? Number(b.cheapest_price) : '',
+      b.selected_supplier_id ? (b.selected_supplier_name || nameOf(b.selected_supplier_id)) : '',
+      chosenPrice ?? '', line, b.selection_reason || '',
+    ];
+  });
+  const totalRow = [
+    'סה"כ', '', '', '', books.reduce((s, b) => s + qty(b), 0), '', '',
+    ...totals.map(t => Math.round(t * 100) / 100),
+    '', '', '', '', Math.round(chosenTotal * 100) / 100, '',
+  ];
+  const aoa = [];
+  if (title) aoa.push([`השוואת מחירים — ${title}`], []);
+  aoa.push(header, ...rows, [], totalRow);
+  aoa.push(['בשורת הסה"כ: לכל ספק — סך כמות × מחיר בספרים שתמחר; בסה"כ לשורה — סכום ההזמנה לפי הספקים שנבחרו.']);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [
+    { wch: 45 }, { wch: 16 }, { wch: 12 }, { wch: 15 }, { wch: 6 }, { wch: 7 }, { wch: 7 },
+    ...suppliers.map(() => ({ wch: 14 })),
+    { wch: 16 }, { wch: 10 }, { wch: 16 }, { wch: 11 }, { wch: 12 }, { wch: 28 },
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'השוואת מחירים');
+  wb.Workbook = { Views: [{ RTL: true }] };
+  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
 /** File name for a supplier's quote file: "הצעת_מחיר_<רשימה>_<ספק>.xlsx". */
 export function supplierExcelName(listTitle, supplierName) {
   const clean = (x) => String(x || '').replace(/[\\/:*?"<>|]/g, '').trim();

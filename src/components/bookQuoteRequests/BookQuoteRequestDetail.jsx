@@ -11,7 +11,7 @@ import { Upload, Send, ShoppingCart, ExternalLink, Mail, FileSpreadsheet, Loader
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
 import StatusBadge from '@/components/StatusBadge';
-import { generateSupplierExcel, supplierExcelName, downloadBlob, parseSupplierQuote, sheetToQuoteRows, describePriceColumns, matchQuoteToBook, computeCheapestSuppliers, getEffectivePrice, nylonLabel, normalizeNylon, bindingLabel, isBindingChecked } from '@/lib/bookQuoteExcel';
+import { generateSupplierExcel, generateComparisonExcel, supplierExcelName, downloadBlob, parseSupplierQuote, sheetToQuoteRows, describePriceColumns, matchQuoteToBook, computeCheapestSuppliers, getEffectivePrice, nylonLabel, normalizeNylon, bindingLabel, isBindingChecked } from '@/lib/bookQuoteExcel';
 import * as XLSX from 'xlsx';
 import { canReceiveQuotePrices, canComparePrices, canSelectSuppliers, canCreateOrdersFromQuoteRequest, isAdmin } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
@@ -378,11 +378,21 @@ export function ComparisonTab({ req, canSelect, updateBooks, updateReq }) {
     <div className="space-y-3 p-2" dir="rtl">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">ברירת מחדל: הספק הזול ביותר לפי העדפת ניילון. ניתן לבחור ספק אחר ידנית (חובה לציין סיבה).</p>
-        {canSelect && (
-          <Button onClick={autoSelectAll} size="sm" variant="outline" className="gap-1.5 shrink-0" disabled={pricedCount === 0}>
-            <Check className="w-3.5 h-3.5" /> בחר זול ביותר להכל ({pricedCount})
+        <div className="flex items-center gap-2 shrink-0">
+          <Button size="sm" variant="outline" className="gap-1.5" disabled={quotedCount === 0}
+            onClick={() => {
+              const suppliers = supplierIds.map(sid => ({ id: sid, name: getSupplierName(req, sid) }));
+              const clean = String(req.title || 'בקשה').replace(/[\\/:*?"<>|]/g, '').trim();
+              downloadBlob(generateComparisonExcel(books, suppliers, req.title), `השוואת_מחירים_${clean}.xlsx`);
+            }}>
+            <FileSpreadsheet className="w-3.5 h-3.5" /> ייצוא ל-Excel
           </Button>
-        )}
+          {canSelect && (
+            <Button onClick={autoSelectAll} size="sm" variant="outline" className="gap-1.5" disabled={pricedCount === 0}>
+              <Check className="w-3.5 h-3.5" /> בחר זול ביותר להכל ({pricedCount})
+            </Button>
+          )}
+        </div>
       </div>
       {pricedCount < books.length && (
         <div className="flex items-start gap-2 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2">
