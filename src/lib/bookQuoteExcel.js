@@ -118,8 +118,9 @@ export function generateSupplierExcel(lines, supplierName = '') {
   ];
   const rows = lines.map(b => [
     b.title || '', b.author || '', b.publisher || '', b.isbn || '',
-    // כריכה: "כן" / "לא" — הכותרת כבר אומרת שזו כריכה
-    nylonLabel(b.nylon_required), isBindingChecked(b.binding_required) ? 'כן' : 'לא', '',
+    // כריכה: תמיד "כן" — הספרייה כורכת כל ספר, גם כשבספר שמור "בלי" מברירת
+    // המחדל הישנה
+    nylonLabel(b.nylon_required), 'כן', '',
     Number(b.requested_quantity) || 1, b.notes || '',
     b.sku || '', b.price != null && b.price !== '' ? Number(b.price) : '', '',
   ]);
