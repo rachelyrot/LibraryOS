@@ -44,9 +44,21 @@ export default function DomainTab({ project, user, domains, setDomains, onLoad }
 
   const topLevelDomains = domains.filter((d) => !d.parent_domain_id);
 
+  // תחום (ההורה) ותת תחום (השורה עצמה); עלות לכל שורה, ריקה עד שמזינים
+  const costColumn = {
+    ...numberColumn('cost', 'עלות', { editable: canManage, width: 120, min: 0 }),
+    renderCell: ({ row }) => (
+      <div className="text-left w-full px-2" dir="ltr">
+        {row.cost != null && row.cost !== '' ? `₪${Number(row.cost).toLocaleString('he-IL')}` : ''}
+      </div>
+    ),
+  };
+  const totalCost = domains.reduce((s, d) => s + (Number(d.cost) || 0), 0);
+
   const columns = [
-    textColumn('name', 'שם תחום', { editable: canManage }),
-    fkPickerColumn('parent_domain_id', 'parent_domain_name', 'תחום אב', topLevelDomains, (d) => d.name, { editable: canManage, width: 160 }),
+    fkPickerColumn('parent_domain_id', 'parent_domain_name', 'תחום', topLevelDomains, (d) => d.name, { editable: canManage, width: 160 }),
+    textColumn('name', 'תת תחום', { editable: canManage }),
+    costColumn,
     enumColumn('status', 'סטטוס', DOMAIN_STATUS_LABELS, DOMAIN_STATUS_COLORS, { editable: canManage, width: 110 }),
     numberColumn('sort_order', 'סדר מיון', { editable: canManage, width: 90 }),
     textColumn('notes', 'הערות', { editable: canManage }),
@@ -55,7 +67,10 @@ export default function DomainTab({ project, user, domains, setDomains, onLoad }
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-2">
-        <h3 className="text-lg font-semibold">תחומים ({domains.length})</h3>
+        <h3 className="text-lg font-semibold">
+          תחומים ({domains.length})
+          {totalCost > 0 && <span className="text-sm font-normal text-muted-foreground mr-2">· סה"כ עלות <b dir="ltr">₪{totalCost.toLocaleString('he-IL')}</b></span>}
+        </h3>
         {canManage && domains.length === 0 && (
           <Button variant="outline" onClick={addDefaultDomains} className="gap-2">
             <Layers className="w-4 h-4" /> תחומים ברירת מחדל
