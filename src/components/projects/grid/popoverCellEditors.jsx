@@ -22,16 +22,23 @@ function FileUrlsCellButton({ row, column, onRowChange }) {
   const urls = row[key] || [];
   const [uploading, setUploading] = useState(false);
 
+  // כמה קבצים בבת אחת; כל מה שהועלה נשמר יחד, גם אם קובץ אחד נכשל
   const handleUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = [...(e.target.files || [])];
+    if (files.length === 0) return;
     setUploading(true);
-    try {
-      const res = await base44.integrations.Core.UploadFile({ file });
-      onRowChange({ ...row, [key]: [...urls, res.file_url] });
-      toast.success('קובץ הועלה');
-    } catch (err) {
-      toast.error('שגיאה בהעלאת קובץ');
+    const added = [];
+    for (const file of files) {
+      try {
+        const res = await base44.integrations.Core.UploadFile({ file });
+        added.push(res.file_url);
+      } catch (err) {
+        toast.error(`שגיאה בהעלאת ${file.name}`);
+      }
+    }
+    if (added.length) {
+      onRowChange({ ...row, [key]: [...urls, ...added] });
+      toast.success(added.length === 1 ? 'קובץ הועלה' : `${added.length} קבצים הועלו`);
     }
     setUploading(false);
     e.target.value = '';
@@ -52,19 +59,32 @@ function FileUrlsCellButton({ row, column, onRowChange }) {
           {urls.length === 0 && <p className="text-xs text-muted-foreground">אין קבצים</p>}
           {urls.map((url, i) => (
             <div key={i} className="flex items-center gap-2">
-              <a href={url} target="_blank" rel="noreferrer" className="text-xs text-primary truncate flex-1 hover:underline">{url}</a>
+              <a href={url} target="_blank" rel="noreferrer" className="text-xs text-primary truncate flex-1 hover:underline" title={fileNameFromUrl(url)}>{fileNameFromUrl(url)}</a>
               <button type="button" onClick={() => removeAt(i)}><Trash2 className="w-3.5 h-3.5 text-red-400" /></button>
             </div>
           ))}
           <label className={cnUpload(uploading)}>
             {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            {uploading ? 'מעלה...' : 'הוספת קובץ'}
-            <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+            {uploading ? 'מעלה...' : 'הוספת קבצים'}
+            <input type="file" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
           </label>
         </div>
       </PopoverContent>
     </Popover>
   );
+}
+
+/**
+ * The original file name from an uploaded file's URL. UploadFile stores files as
+ * "<uuid>-<original name>", so the name is what follows the 36-char uuid.
+ */
+export function fileNameFromUrl(url) {
+  try {
+    const last = decodeURIComponent(String(url).split('?')[0].split('/').pop() || '');
+    return /^[0-9a-f-]{36}-/i.test(last) ? last.slice(37) : last;
+  } catch {
+    return String(url);
+  }
 }
 
 function cnUpload(uploading) {

@@ -124,7 +124,7 @@ export default function ProjectDetail() {
         <TabsContent value="milestones"><MilestonesTab project={project} user={user} milestones={milestones} setMilestones={setMilestones} tasks={tasks} onLoad={load} /></TabsContent>
         {canViewBudget && <TabsContent value="budget"><BudgetTab project={project} user={user} purchaseOrders={purchaseOrders} credits={credits} onLoad={load} /></TabsContent>}
         <TabsContent value="contacts"><ContactsTab project={project} user={user} contacts={contacts} setContacts={setContacts} tasks={tasks} onLoad={load} /></TabsContent>
-        <TabsContent value="documents"><DocumentsTab project={project} user={user} documents={documents} setDocuments={setDocuments} onLoad={load} /></TabsContent>
+        <TabsContent value="documents"><DocumentsTab project={project} user={user} documents={documents} tasks={tasks} domains={domains} onLoad={load} /></TabsContent>
         {canViewReports && <TabsContent value="reports"><ReportsTab project={project} user={user} tasks={tasks} domains={domains} contacts={contacts} purchaseOrders={purchaseOrders} milestones={milestones} /></TabsContent>}
       </Tabs>
     </div>
