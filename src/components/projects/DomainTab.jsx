@@ -3,7 +3,7 @@ import { Layers } from 'lucide-react';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { DOMAIN_STATUS_LABELS, DOMAIN_STATUS_COLORS, DEFAULT_DOMAINS } from '@/lib/projectUtils';
-import { canCreateTasks } from '@/lib/permissions';
+import { canCreateTasks, canViewProjectBudget } from '@/lib/permissions';
 import ProjectDataGrid from './grid/ProjectDataGrid';
 import { textColumn, enumColumn, numberColumn, fkPickerColumn } from './grid/columnHelpers';
 import { makeGridSaveHandler } from './grid/gridSave';
@@ -55,6 +55,15 @@ export default function DomainTab({ project, user, domains, setDomains, onLoad }
   };
   const totalCost = domains.reduce((s, d) => s + (Number(d.cost) || 0), 0);
 
+  // השוואה לתקציב הפרויקט (לשונית תקציב): המאושר אם התקציב אושר, אחרת המתוכנן.
+  // העלויות כאן לא יורדות ממקורות התקציב — הפרויקט כבר יורד משם דרך לשונית
+  // התקציב, וירידה נוספת הייתה סופרת את אותו כסף פעמיים.
+  const showBudget = canViewProjectBudget(user);
+  const budgetApproved = !!project.budget_is_approved && Number(project.budget_approved) > 0;
+  const budget = Number(budgetApproved ? project.budget_approved : project.budget_planned) || 0;
+  const left = budget - totalCost;
+  const money = (v) => `₪${Math.round(v).toLocaleString('he-IL')}`;
+
   const columns = [
     fkPickerColumn('parent_domain_id', 'parent_domain_name', 'תחום', topLevelDomains, (d) => d.name, { editable: canManage, width: 160 }),
     textColumn('name', 'תת תחום', { editable: canManage }),
@@ -67,16 +76,29 @@ export default function DomainTab({ project, user, domains, setDomains, onLoad }
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-2">
-        <h3 className="text-lg font-semibold">
-          תחומים ({domains.length})
-          {totalCost > 0 && <span className="text-sm font-normal text-muted-foreground mr-2">· סה"כ עלות <b dir="ltr">₪{totalCost.toLocaleString('he-IL')}</b></span>}
-        </h3>
+        <h3 className="text-lg font-semibold">תחומים ({domains.length})</h3>
         {canManage && domains.length === 0 && (
           <Button variant="outline" onClick={addDefaultDomains} className="gap-2">
             <Layers className="w-4 h-4" /> תחומים ברירת מחדל
           </Button>
         )}
       </div>
+
+      {(totalCost > 0 || (showBudget && budget > 0)) && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-xl border border-border bg-muted/30 px-4 py-2.5 text-sm">
+          <span>עלות התחומים <b dir="ltr">{money(totalCost)}</b></span>
+          {showBudget && (budget > 0 ? (
+            <>
+              <span>תקציב הפרויקט ({budgetApproved ? 'מאושר' : 'מתוכנן'}) <b dir="ltr">{money(budget)}</b></span>
+              {left >= -0.005
+                ? <span className="text-green-700">נשאר לחלוקה <b dir="ltr">{money(left)}</b></span>
+                : <span className="text-red-600 font-medium">חריגה מהתקציב <b dir="ltr">{money(-left)}</b></span>}
+            </>
+          ) : (
+            <span className="text-muted-foreground">לפרויקט עדיין אין תקציב — מגדירים אותו בלשונית תקציב</span>
+          ))}
+        </div>
+      )}
 
       <ProjectDataGrid
         rows={domains}
