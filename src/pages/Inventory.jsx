@@ -28,6 +28,21 @@ const CAT_COLORS = [
   'from-gray-100 to-slate-100 text-slate-600',
 ];
 
+// צבע הרקע של כרטיס לפי הקטגוריה (באותו סדר כמו CAT_COLORS), וצבע הכפתור שלה
+// בסינון — כך שרואים מיד לאיזו קטגוריה פריט שייך. מלאי נמוך מסומן במסגרת.
+const CAT_CARD = [
+  { card: 'bg-blue-50 border-blue-100', chip: 'bg-blue-100 text-blue-700' },
+  { card: 'bg-teal-50 border-teal-100', chip: 'bg-teal-100 text-teal-700' },
+  { card: 'bg-orange-50 border-orange-100', chip: 'bg-orange-100 text-orange-700' },
+  { card: 'bg-pink-50 border-pink-100', chip: 'bg-pink-100 text-pink-700' },
+  { card: 'bg-green-50 border-green-100', chip: 'bg-green-100 text-green-700' },
+  { card: 'bg-cyan-50 border-cyan-100', chip: 'bg-cyan-100 text-cyan-700' },
+  { card: 'bg-violet-50 border-violet-100', chip: 'bg-violet-100 text-violet-700' },
+  { card: 'bg-rose-50 border-rose-100', chip: 'bg-rose-100 text-rose-700' },
+  { card: 'bg-amber-50 border-amber-100', chip: 'bg-amber-100 text-amber-700' },
+  { card: 'bg-slate-50 border-slate-200', chip: 'bg-slate-100 text-slate-700' },
+];
+
 const EMPTY = { name: '', category: '', subcategory: '', current_quantity: 0, minimum_quantity: 0, unit: 'יחידות', supplier_id: '', supplier_name: '', notes: '', isbn: '', author: '' };
 
 export default function Inventory() {
@@ -68,6 +83,11 @@ export default function Inventory() {
   });
 
   const lowCount = items.filter(i => i.current_quantity <= i.minimum_quantity).length;
+  // מספר הצבע של קטגוריה — לפי המיקום שלה ברשימה; קטגוריה לא מוכרת מקבלת אפור
+  const catIndex = (category) => {
+    const i = mains.findIndex(m => m.value === category);
+    return i < 0 ? CAT_CARD.length - 1 : i % CAT_CARD.length;
+  };
 
   return (
     <div className="p-6 max-w-6xl mx-auto animate-fade-in">
@@ -91,7 +111,7 @@ export default function Inventory() {
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => setCatFilter('')} className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${!catFilter ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-secondary'}`}>הכל</button>
           {mains.map(m => (
-            <button key={m.value} onClick={() => setCatFilter(catFilter === m.value ? '' : m.value)} className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${catFilter === m.value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-secondary'}`}>{m.label}</button>
+            <button key={m.value} onClick={() => setCatFilter(catFilter === m.value ? '' : m.value)} className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${catFilter === m.value ? 'bg-primary text-primary-foreground' : `${CAT_CARD[catIndex(m.value)].chip} hover:opacity-80`}`}>{m.label}</button>
           ))}
           <button onClick={() => setShowLow(!showLow)} className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 transition-all ${showLow ? 'bg-red-500 text-white' : 'bg-muted text-muted-foreground hover:bg-secondary'}`}>
             <AlertTriangle className="w-3 h-3" /> מלאי נמוך {lowCount > 0 && `(${lowCount})`}
@@ -108,10 +128,11 @@ export default function Inventory() {
             const hasMovements = (item.movements || []).length > 0;
             return (
               <motion.div key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                className={cn('bg-card border rounded-2xl p-4 cursor-pointer hover:shadow-sm transition-all', isLow ? 'border-red-300 bg-red-50/50' : 'border-border hover:border-orange-300')}
+                className={cn('rounded-2xl p-4 cursor-pointer hover:shadow-md transition-all', CAT_CARD[catIndex(item.category)].card,
+                  isLow ? 'border-2 border-red-500 ring-2 ring-red-200' : 'border')}
                 onClick={() => { if (canEditInventory) openEdit(item); }}>
                 <div className="flex items-start justify-between gap-2">
-                  <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${CAT_COLORS[mains.findIndex(m => m.value === item.category) % CAT_COLORS.length] || CAT_COLORS[CAT_COLORS.length - 1]} flex items-center justify-center shrink-0`}>
+                  <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${CAT_COLORS[catIndex(item.category)]} flex items-center justify-center shrink-0`}>
                     <Package className="w-4 h-4" />
                   </div>
                   {isLow && <span className="flex items-center gap-1 text-xs text-red-500 font-medium"><AlertTriangle className="w-3 h-3" /> נמוך</span>}
@@ -120,7 +141,7 @@ export default function Inventory() {
                 <p className="font-semibold mt-2 text-sm">{item.name}</p>
                 {item.author && <p className="text-xs text-muted-foreground">{item.author}</p>}
                 <div className="flex items-end justify-between mt-3">
-                  <span className="text-xs text-muted-foreground">{getLabel(item.category)}{item.subcategory ? ` · ${item.subcategory}` : ''}</span>
+                  <span className={cn('text-xs px-2 py-0.5 rounded-full', CAT_CARD[catIndex(item.category)].chip)}>{getLabel(item.category) || 'ללא קטגוריה'}{item.subcategory ? ` · ${item.subcategory}` : ''}</span>
                   <div className="text-left">
                     <span className={cn('text-2xl font-bold', isLow ? 'text-red-500' : 'text-foreground')}>{item.current_quantity}</span>
                     <span className="text-xs text-muted-foreground"> / {item.minimum_quantity} מינ׳</span>
